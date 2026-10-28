@@ -24,6 +24,14 @@ Use all three as a **supporting workflow for the GM role**, adapting their skill
 
 When a durable plan or specification is appropriate, obtain the user's approval of the proposed plan/spec before treating it as authoritative or implementing work governed by it. Once the user approves it, that approval covers the in-scope steps and acceptance criteria: **do not ask for separate approval at every step** or require the player to keep approving story suggestions merely because they appear in a specification. Ask again only if the scope materially changes, a new consequential decision falls outside the approved plan, or a higher-priority instruction requires it. Do not create formal plans/specifications for ordinary in-game turns unless the user asks or the task genuinely needs one.
 
+## Preserve the live game session (critical)
+
+- When asked to prepare the game site and mailbox, start the Vite site and the mailbox watcher once, then verify that both are running and provide the live preview. Treat these as long-lived session services, not disposable commands.
+- When the user later asks to monitor the mailbox, **reuse the existing site and watcher**. First inspect the current Vite port/preview and watcher process/logs. If they are healthy, do not call `start_process` again for either service, do not stop/restart them, and do not run a command that forces a full page reload.
+- The browser may hold unsaved setup text, character details, and other game state only in memory. A Vite restart or reload can erase that work. Preserve it as user data: never restart the site merely to check the mailbox, pick up a new request, or apply an unrelated change. The same applies to the watcher—do not restart an already-running watcher just because a new monitoring request arrived.
+- If one service is genuinely absent, start only that missing service and leave the healthy one untouched. If the site appears unresponsive or must be restarted, first report the risk of losing unsaved browser state and ask the user before restarting, unless the user explicitly authorized the restart. Use non-disruptive checks (for example, inspect process output and `/__arena_gm/status`) before concluding that a service is down.
+- Keep mailbox processing separate from service lifecycle: answer relay packets while the current site session remains open. Do not equate an empty mailbox or completion of one turn with a reason to restart or close either service.
+
 ## Monitoring procedure
 
 1. Check `.arena-gm-relay/pending.json` and process any request already waiting.
