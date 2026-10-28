@@ -7,7 +7,7 @@ This is a practical setup guide for rebuilding the Arena-adapted game from the r
 From the repository root in an Arena terminal:
 
 ```sh
-npm install
+npm ci
 npm run dev -- --host 0.0.0.0
 ```
 
