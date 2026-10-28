@@ -4,30 +4,22 @@ import { SaveFile, DBSaveSlotInfo } from "../types";
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
-export async function saveGameToFile(saveData: SaveFile, t: TFunction): Promise<void> {
-  try {
-    // Trigger the download synchronously while the user's click activation is
-    // still active. Deferring a.click() with a timeout can be blocked by browsers.
-    const jsonString = JSON.stringify(saveData);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `gemini-rpg-save-${new Date().toISOString().slice(0, 10)}.json`;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
+export interface PreparedSaveFile {
+  filename: string;
+  url: string;
+}
 
-    // Keep the object URL alive long enough for the browser to start the download.
-    window.setTimeout(() => {
-      a.remove();
-      URL.revokeObjectURL(url);
-    }, 1000);
+/** Prepare a save as a Blob URL; the UI renders a real user-clickable download link. */
+export function prepareSaveGameFile(saveData: SaveFile): PreparedSaveFile {
+  const blob = new Blob([JSON.stringify(saveData)], { type: 'application/json;charset=utf-8' });
+  return {
+    filename: `gemini-rpg-save-${new Date().toISOString().slice(0, 10)}.json`,
+    url: URL.createObjectURL(blob),
+  };
+}
 
-  } catch (err) {
-    console.error('[FileManager] Error saving game file:', err);
-    alert(t('Could not save the game file.') + ` ${err}`);
-  }
+export function releasePreparedSaveFile(saveFile: PreparedSaveFile): void {
+  URL.revokeObjectURL(saveFile.url);
 }
 
 export async function saveConfigurationToFile(configData: any, t: TFunction): Promise<void> {

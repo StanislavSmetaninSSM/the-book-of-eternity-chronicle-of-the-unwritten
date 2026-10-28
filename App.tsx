@@ -29,7 +29,7 @@ import { ChatMessage, Cinematic, Faction, Item, Location, NPC, NetworkRole, Play
 import { gameData } from './utils/localizationGameData';
 import TextReaderModal from './components/TextReaderModal';
 import { useSpeech } from './context/SpeechContext';
-import { consumeStartupLoadRequest } from './utils/fileManager';
+import { consumeStartupLoadRequest, releasePreparedSaveFile, type PreparedSaveFile } from './utils/fileManager';
 import StorageScreen from './components/StorageScreen';
 import CinemaPlayer from './components/CinemaPlayer';
 import CinemaHall from './components/CinemaHall';
@@ -288,7 +288,9 @@ export default function App(): React.ReactNode {
     const [messageModalState, setMessageModalState] = useState<{ title: string; content: string } | null>(null);
     const [textReaderState, setTextReaderState] = useState<{ title: string; content: string } | null>(null);
     const [imageModalInfo, setImageModalInfo] = useState<ImageModalInfo | null>(null);
+    const [preparedSaveFile, setPreparedSaveFile] = useState<PreparedSaveFile | null>(null);
     const [detailModalStack, setDetailModalStack] = useState<{ title: string; data: any }[]>([]);
+
     const [isDetailModalFullScreen, setIsDetailModalFullScreen] = useState(false);
     const [editModalData, setEditModalData] = useState<{ index: number, message: ChatMessage } | null>(null);
     const [editContent, setEditContent] = useState('');
@@ -614,7 +616,19 @@ export default function App(): React.ReactNode {
     };
 
     const handleSaveGame = async () => {
-        await saveGame();
+        const prepared = await saveGame();
+        if (!prepared) return;
+        if (preparedSaveFile) {
+            window.setTimeout(() => releasePreparedSaveFile(preparedSaveFile), 60_000);
+        }
+        setPreparedSaveFile(prepared);
+    };
+
+    const closePreparedSaveFile = () => {
+        if (preparedSaveFile) {
+            window.setTimeout(() => releasePreparedSaveFile(preparedSaveFile), 60_000);
+        }
+        setPreparedSaveFile(null);
     };
 
     const handleLoadGame = async () => {
@@ -1653,6 +1667,29 @@ export default function App(): React.ReactNode {
                 isOpen={isCinemaVisible}
                 onClose={closeCinemaPlayer}
             />
+            {preparedSaveFile && (
+                <Modal isOpen={true} onClose={closePreparedSaveFile} title={t('Save file is ready')}>
+                    <div className="space-y-4 text-gray-200">
+                        <p>{t('Choose how to save your game file.')}</p>
+                        <a
+                            href={preparedSaveFile.url}
+                            download={preparedSaveFile.filename}
+                            className="flex w-full items-center justify-center rounded-md bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500"
+                        >
+                            {t('Download save file')} ({preparedSaveFile.filename})
+                        </a>
+                        <a
+                            href={preparedSaveFile.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex w-full items-center justify-center rounded-md border border-gray-600 px-4 py-3 font-semibold text-cyan-200 hover:bg-gray-700"
+                        >
+                            {t('Open save file in new tab')}
+                        </a>
+                        <p className="text-sm text-gray-400">{t('If the download is blocked, open the save in a new tab and use your browser’s Save command.')}</p>
+                    </div>
+                </Modal>
+            )}
             {isSaving && (
                 <div className="fixed bottom-4 right-4 z-[1100] bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-down">
                     <LoadingSpinner />

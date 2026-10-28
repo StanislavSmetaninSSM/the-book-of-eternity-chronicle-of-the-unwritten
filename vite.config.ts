@@ -258,7 +258,17 @@ function arenaGmFilesystemRelay(): Plugin {
               readJsonIfPresent<QueuedRelayRequest>(activeRequestPath),
               readdir(requestQueueDirectory).catch(() => [] as string[]),
             ]);
-            send(200, { enabled: true, activeCorrelationId: active?.packet.correlationId || null, queuedCount: queuedNames.filter(name => name.endsWith('.json')).length });
+            const queuedRequests = await Promise.all(queuedNames
+              .filter(name => name.endsWith('.json'))
+              .map(name => readJsonIfPresent<QueuedRelayRequest>(path.join(requestQueueDirectory, name))));
+            const queuedTurnCount = queuedRequests.filter(request => request?.packet?.kind !== 'arena-gm-image').length;
+            send(200, {
+              enabled: true,
+              activeCorrelationId: active?.packet.correlationId || null,
+              activeKind: active?.packet.kind || null,
+              queuedCount: queuedRequests.filter(Boolean).length,
+              queuedTurnCount,
+            });
             return;
           }
           send(404, { error: 'Unknown relay endpoint.' });

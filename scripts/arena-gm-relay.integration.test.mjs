@@ -82,10 +82,18 @@ test('relay queues requests without clobbering, prioritizes turn work, isolates 
   assert.equal((await imageQueued.json()).queued, true);
   const pendingDuringQueue = JSON.parse(await readFile(path.join(relayDirectory, 'pending.json'), 'utf8'));
   assert.equal(pendingDuringQueue.correlationId, 'turn-first');
+  assert.deepEqual(await status(), {
+    enabled: true,
+    activeCorrelationId: 'turn-first',
+    activeKind: 'arena-gm-step',
+    queuedCount: 1,
+    queuedTurnCount: 0,
+  });
 
   const nextTurn = await post('turn', makeStep('turn-priority'));
   assert.equal((await nextTurn.json()).queued, true);
   assert.equal(JSON.parse(await readFile(path.join(relayDirectory, 'pending.json'), 'utf8')).correlationId, 'turn-first');
+  assert.equal((await status()).queuedTurnCount, 1);
 
   await writeStepResponse('turn-first');
   const firstResponse = await consume('turn-first');
