@@ -22,21 +22,13 @@ export function releasePreparedSaveFile(saveFile: PreparedSaveFile): void {
   URL.revokeObjectURL(saveFile.url);
 }
 
-export async function saveConfigurationToFile(configData: any, t: TFunction): Promise<void> {
-  try {
-    const blob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `gemini-rpg-config-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    console.error('Error saving configuration file:', err);
-    alert(t('Could not save the configuration file.'));
-  }
+/** Prepare a configuration as a Blob URL so the UI can offer a real clickable download link. */
+export function prepareConfigurationFile(configData: unknown): PreparedSaveFile {
+  const blob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json;charset=utf-8' });
+  return {
+    filename: `gemini-rpg-config-${new Date().toISOString().slice(0, 10)}.json`,
+    url: URL.createObjectURL(blob),
+  };
 }
 
 export function loadGameFromFile(t: TFunction): Promise<SaveFile | null> {
