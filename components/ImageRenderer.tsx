@@ -6,6 +6,7 @@ import { ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { GameSettings, ImageCacheEntry } from '../types';
+import { requestArenaGmImage } from '../utils/arenaGmRelay';
 
 interface ImageRendererProps {
     prompt: string | null | undefined;
@@ -161,8 +162,10 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
         }
     }, [prompt]);
 
-    const generateWithNanoBanana = useCallback(async (p: string, signal: AbortSignal) => {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const generateWithNanoBanana = useCallback(async (p: string, signal: AbortSignal, configuredApiKey?: string) => {
+        const apiKey = configuredApiKey || (typeof process !== 'undefined' ? process.env?.API_KEY : undefined);
+        if (!apiKey) throw new Error('Gemini API key is not configured.');
+        const ai = new GoogleGenAI({ apiKey });
         const modelConfig: any = {
             model: 'gemini-2.5-flash-image',
             contents: { parts: [{ text: p }] },
@@ -185,12 +188,14 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
         throw new Error("Nano Banana (Gemini) response did not contain image data.");
     }, [onImageGenerated]);
     
-    const generateWithImagen = useCallback(async (p: string, model: 'normal' | 'ultra' | 'fast', signal: AbortSignal) => {
+    const generateWithImagen = useCallback(async (p: string, model: 'normal' | 'ultra' | 'fast', signal: AbortSignal, configuredApiKey?: string) => {
         let modelName = 'imagen-4.0-generate-001';
         if (model === 'ultra') modelName = 'imagen-4.0-ultra-generate-001';
         if (model === 'fast') modelName = 'imagen-4.0-fast-generate-001';
         
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const apiKey = configuredApiKey || (typeof process !== 'undefined' ? process.env?.API_KEY : undefined);
+        if (!apiKey) throw new Error('Gemini API key is not configured.');
+        const ai = new GoogleGenAI({ apiKey });
         const modelConfig: any = {
             model: modelName,
             prompt: p,
@@ -232,11 +237,15 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
         manualCancelRef.current = false;
         conversionInProgress.add(p);
     
-        const pipeline = settings?.imageGenerationModelPipeline || [
-            { provider: 'nanobanana' },
-            { provider: 'imagen', model: 'normal' },
-            { provider: 'imagen', model: 'ultra' },
-            { provider: 'imagen', model: 'fast' }
+        const configuredPipeline = settings?.imageGenerationModelPipeline?.length ? settings.imageGenerationModelPipeline : [
+            { provider: 'nanobanana' } as const,
+            { provider: 'imagen', model: 'normal' } as const,
+            { provider: 'imagen', model: 'ultra' } as const,
+            { provider: 'imagen', model: 'fast' } as const,
+        ];
+        const pipeline = [
+            { provider: 'arena-gm' } as const,
+            ...configuredPipeline.filter(source => source.provider !== 'arena-gm'),
         ];
     
         try {
@@ -253,10 +262,13 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
                         const sourceInfo = source.provider + (source.provider === 'imagen' ? ` (${source.model})` : '');
                         console.log(`Attempting with provider: ${sourceInfo}`);
     
-                        if (source.provider === 'nanobanana') {
-                            await generateWithNanoBanana(p, signal);
+                        if (source.provider === 'arena-gm') {
+                            const imageUrl = await requestArenaGmImage(p, width, height, signal);
+                            if (!signal.aborted) onImageGenerated(p, imageUrl, 'Arena GM', 'arena-gm-relay');
+                        } else if (source.provider === 'nanobanana') {
+                            await generateWithNanoBanana(p, signal, settings?.geminiApiKey);
                         } else if (source.provider === 'imagen') {
-                            await generateWithImagen(p, source.model, signal);
+                            await generateWithImagen(p, source.model, signal, settings?.geminiApiKey);
                         }
     
                         console.log(`Successfully generated image with ${sourceInfo}`);

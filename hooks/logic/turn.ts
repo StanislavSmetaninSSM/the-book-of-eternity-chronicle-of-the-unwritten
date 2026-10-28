@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { GameState, GameContext, ChatMessage, GameResponse, WorldStateFlag, Location, NPC, PeerInfo, NetworkRole, GameSettings, NetworkMessage, SaveFile, Item } from '../types';
+import { GameState, GameContext, ChatMessage, GameResponse, WorldStateFlag, Location, NPC, PeerInfo, NetworkRole, GameSettings, NetworkMessage, SaveFile, Item } from '../../types';
 import { executeTurn, askGmQuestion as executeGmQuestion, getModelForStep, executeWorldProgression } from '../../utils/gemini';
 import { createInitialContext, buildNextContext } from '../../utils/gameContext';
 import { formatError } from '../../utils/errorUtils';
@@ -125,10 +125,10 @@ export const createTurnManager = (
             }
             
             const finalResponseRaw = await executeTurn(
-                context, 
-                abortControllerRef.current.signal, 
-                onPartialResponse, 
-                onStreamingChunk, 
+                context,
+                abortControllerRef.current.signal,
+                onPartialResponse,
+                onStreamingChunk,
                 onStepStart
             );
             

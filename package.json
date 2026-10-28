@@ -1,13 +1,13 @@
 {
-  "name": "the-book-of-eternity:-chronicle-of-the-unwritten",
+  "name": "book-of-eternity-chronicle-of-the-unwritten",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.9.14",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node tests/regression-tests.mjs",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "relay:watch": "node scripts/arena-gm-mailbox-watcher.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.10.0",

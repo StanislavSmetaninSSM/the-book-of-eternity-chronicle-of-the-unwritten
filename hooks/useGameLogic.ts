@@ -36,6 +36,7 @@ import { executeCancellableJsonGeneration, RegenerationRequiredError } from '../
 import { deepStripModerationSymbols } from '../utils/textUtils';
 import { gameData } from '../utils/localizationGameData';
 import { translate } from '../utils/localization';
+import { requestArenaGmImage } from '../utils/arenaGmRelay';
 
 
 interface UseGameLogicProps {
@@ -2356,22 +2357,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
                 setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newCinematic.frames.length}` }));
                 
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                const imageResponse = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash-image',
-                    contents: { parts: [{ text: newCinematic.frames[i].imagePrompt }] },
-                    config: { responseModalities: [Modality.IMAGE] },
-                });
-                
-                let imageUrl = '';
-                for (const part of imageResponse.candidates[0].content.parts) {
-                    if (part.inlineData) {
-                        const base64ImageBytes: string = part.inlineData.data;
-                        imageUrl = `data:image/png;base64,${base64ImageBytes}`;
-                    }
-                }
-
-                if(imageUrl) {
+                const imageUrl = await requestArenaGmImage(
+                    newCinematic.frames[i].imagePrompt,
+                    1024,
+                    1024,
+                    abortControllerRef.current.signal,
+                );
+                if (!abortControllerRef.current.signal.aborted) {
                     newCinematic.frames[i].imageUrl = imageUrl;
                 }
             }

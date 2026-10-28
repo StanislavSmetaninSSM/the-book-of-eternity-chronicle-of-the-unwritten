@@ -1015,6 +1015,23 @@
   <body>
     <div id="root"></div>
     <div id="modal-root"></div>
+    <div id="boot-status" role="status" style="display:none;position:fixed;z-index:99999;inset:1rem auto auto 1rem;max-width:min(42rem,calc(100vw - 2rem));padding:1rem 1.25rem;border:1px solid #f87171;border-radius:.75rem;background:#111827;color:#fee2e2;font:14px/1.5 system-ui,sans-serif;white-space:pre-wrap;box-shadow:0 10px 30px #0008"></div>
+    <script>
+      (() => {
+        const root = document.getElementById('root');
+        const panel = document.getElementById('boot-status');
+        let firstError = '';
+        const showError = (message) => {
+          firstError = firstError || message;
+          panel.textContent = `Не удалось загрузить приложение.\n${firstError}\nОбновите страницу; если ошибка повторится, пришлите этот текст.`;
+          panel.style.display = 'block';
+        };
+        window.addEventListener('error', (event) => showError(event.message || 'Ошибка загрузки JavaScript.'));
+        window.addEventListener('unhandledrejection', (event) => showError(event.reason?.message || String(event.reason || 'Ошибка запуска приложения.')));
+        new MutationObserver(() => { if (root?.children.length) panel.style.display = 'none'; }).observe(root, { childList: true });
+        setTimeout(() => { if (!root?.children.length) showError(firstError || 'Интерфейс не смонтировался за 8 секунд.'); }, 8000);
+      })();
+    </script>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

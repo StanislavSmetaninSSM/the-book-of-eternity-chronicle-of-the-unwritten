@@ -15,8 +15,12 @@ import narrativeStyleGuide from '../prompts/narrativeStyleGuide.js';
 import worldLogicGuide from '../prompts/worldLogicGuide.js';
 import { deepMergeResponses } from "./responseProcessor";
 import { deepStripModerationSymbols } from "./textUtils";
+import { isArenaGmRelayEnabled, requestArenaGmStep } from './arenaGmRelay';
 
 const MAX_REGENERATION_RETRIES = 10;
+
+const getEnvironmentApiKey = (): string | undefined =>
+    typeof process !== 'undefined' ? process.env?.API_KEY : undefined;
 
 // The custom error class for signaling a need for response regeneration.
 export class RegenerationRequiredError extends Error {
@@ -111,8 +115,21 @@ async function callGenerativeApiRaw(
     
     let responseText: string;
 
+    if (isArenaGmRelayEnabled()) {
+        const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
+        const result = await requestArenaGmStep(
+            prompt,
+            context.currentStepFocus || 'StandaloneGeneration',
+            finalModelName,
+            relayContext.isRegenerationAttempt ? 2 : 1,
+            abortSignal,
+            context.gameSettings.adultMode ? getAdultPrompt() : undefined,
+        );
+        return result.text;
+    }
+
     if (aiProvider === 'gemini') {
-        const effectiveApiKey = process.env.API_KEY;
+        const effectiveApiKey = getEnvironmentApiKey();
         if (!effectiveApiKey) {
             throw new Error("Gemini API Key not found in process.env.API_KEY.");
         }
@@ -223,8 +240,29 @@ export async function callGenerativeApi(
     let fullResponseText = '';
     let capturedSignature: string | undefined = undefined;
 
+    if (isArenaGmRelayEnabled()) {
+        const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
+        const relayResult = await requestArenaGmStep(
+            prompt,
+            context.currentStepFocus || 'StandaloneGeneration',
+            finalModelName,
+            relayContext.isRegenerationAttempt ? 2 : 1,
+            abortSignal,
+            context.gameSettings.adultMode ? getAdultPrompt() : undefined,
+        );
+        fullResponseText = relayResult.text;
+        capturedSignature = relayResult.thoughtSignature;
+        onStreamingChunk(fullResponseText);
+        try {
+            const parsed = JSON.parse(cleanJsonString(fullResponseText));
+            return { data: parsed, signature: capturedSignature };
+        } catch (error: any) {
+            throw new RegenerationRequiredError(error.message, `Invalid JSON returned by Arena GM for ${context.currentStepFocus || 'step'}.`, fullResponseText);
+        }
+    }
+
     if (aiProvider === 'gemini') {
-        const effectiveApiKey = process.env.API_KEY;
+        const effectiveApiKey = getEnvironmentApiKey();
         if (!effectiveApiKey) {
             throw new Error("Gemini API Key not found in process.env.API_KEY.");
         }
@@ -408,6 +446,8 @@ async function attemptCorrection(
     const correctionContext = { 
         ...context, 
         image: null,
+        currentStepFocus: `${context.currentStepFocus || 'Step'}_Correction`,
+        isRegenerationAttempt: true,
         gameSettings: {
             ...context.gameSettings,
             useGoogleSearch: false // Always disable search for correction
@@ -747,7 +787,7 @@ export async function getMusicSuggestionFromAi(
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            const apiKey = process.env.API_KEY;
+            const apiKey = getEnvironmentApiKey();
             if (!apiKey) {
                 throw new Error("Gemini API Key not found in process.env.API_KEY.");
             }
@@ -804,7 +844,7 @@ export async function getMusicSuggestionFromAi(
 
 export async function generateSurpriseMusicPrompt(): Promise<string> {
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: getEnvironmentApiKey() });
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: "Generate a creative and descriptive prompt for an AI music generator. The prompt should be evocative and detailed, suitable for creating instrumental music for a fantasy RPG. Don't use quotes or labels. Just provide the prompt text itself."
@@ -826,7 +866,7 @@ export async function translateToEnglish(text: string, context: GameContext): Pr
     }
 
     try {
-        const apiKey = process.env.API_KEY;
+        const apiKey = getEnvironmentApiKey();
         if (!apiKey) {
             console.warn("Gemini API Key not found for translation.");
             return text;
@@ -866,7 +906,7 @@ export async function executeCancellableJsonGeneration(
         throw new Error("Only Gemini provider is supported for this cinematic generation feature.");
     }
     
-    const effectiveApiKey = process.env.API_KEY;
+    const effectiveApiKey = getEnvironmentApiKey();
     if (!effectiveApiKey) {
         throw new Error("Gemini API Key not found in process.env.API_KEY.");
     }

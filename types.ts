@@ -25,12 +25,13 @@ export interface Calendar {
 }
 
 export type ImageGenerationSource = 
+  { provider: 'arena-gm'; } |
   { provider: 'nanobanana'; } |
   { provider: 'imagen'; model: 'normal' | 'ultra' | 'fast' };
 
 export type ImageCacheEntry = {
   src: string;
-  sourceProvider: 'Nano Banana' | 'Imagen' | 'Custom Upload';
+  sourceProvider: 'Nano Banana' | 'Imagen' | 'Arena GM' | 'Custom Upload';
   sourceModel?: string;
 };
 

@@ -36,6 +36,7 @@ import CinemaHall from './components/CinemaHall';
 import ConfirmationModal from './components/ConfirmationModal';
 import LoadingSpinner from './components/LoadingSpinner';
 import ImageCacheGallery from './components/ImageCacheGallery';
+import ArenaGmRelayPanel from './components/ArenaGmRelayPanel';
 
 
 interface ImageModalInfo {
@@ -833,23 +834,28 @@ export default function App(): React.ReactNode {
     }, [isRegenerating, sendMessage, askQuestion]);
 
     if (!hasStarted) {
-        return <StartScreen
-            onStartLocal={handleStartGame}
-            onStartHost={handleStartHost}
-            onJoinGame={handleJoinGame}
-            onLoadGame={handleLoadGame}
-            onLoadAutosave={handleLoadAutosave}
-            autosaveTimestamp={autosaveTimestamp}
-            crashRecoveryInfo={crashRecoveryInfo}
-            crashRecoveryMarker={crashRecoveryMarker}
-            onLoadCrashRecovery={handleLoadCrashRecovery}
-            onLoadFromSlot={handleLoadGameFromSlot}
-            dbSaveSlots={dbSaveSlots}
-        />;
+        return <>
+            <ArenaGmRelayPanel />
+            <StartScreen
+                onStartLocal={handleStartGame}
+                onStartHost={handleStartHost}
+                onJoinGame={handleJoinGame}
+                onLoadGame={handleLoadGame}
+                onLoadAutosave={handleLoadAutosave}
+                autosaveTimestamp={autosaveTimestamp}
+                crashRecoveryInfo={crashRecoveryInfo}
+                crashRecoveryMarker={crashRecoveryMarker}
+                onLoadCrashRecovery={handleLoadCrashRecovery}
+                onLoadFromSlot={handleLoadGameFromSlot}
+                dbSaveSlots={dbSaveSlots}
+            />
+        </>;
     }
 
     if (isCreatingPlayer && gameSettings && gameState) {
         return (
+            <>
+            <ArenaGmRelayPanel />
             <PlayerCreationModal
                 isOpen={isCreatingPlayer}
                 onClose={() => { /* Disconnect logic could go here */ }}
@@ -860,11 +866,13 @@ export default function App(): React.ReactNode {
                 partyLevel={gameState.playerCharacter.level || 1}
                 shareCharacteristics={gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false}
             />
+            </>
         );
     }
 
     return (
         <>
+            <ArenaGmRelayPanel />
             <div className="bg-gray-900/50 text-gray-200 min-h-screen flex flex-col md:flex-row font-sans backdrop-blur-sm">
                 <div className="relative flex-1 h-screen min-w-0">
                     {sceneImagePrompt && (
