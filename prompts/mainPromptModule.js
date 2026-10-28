@@ -151,7 +151,7 @@ export const getGameMasterGuideRules = (configuration) => {
         <ConditionalFlows>
             <Title>Conditional and Special Execution Paths</Title>
             
-            <Step id="StepSimpleFullResponse_TaskGuid">
+            <Step id="StepSimpleFullResponse_TaskGuide">
                  <Name>Task: One-Shot Full JSON Response Generation (Simple Turn)</Name>
                  <Role>The Express Executor</Role>
                  <Purpose>A shortcut for non-complex turns, identified in Step 0. This step combines the logic of all other steps into a single, efficient generation pass.</Purpose>

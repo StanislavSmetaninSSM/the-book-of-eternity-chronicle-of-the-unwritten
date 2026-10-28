@@ -2147,7 +2147,9 @@ export const getStepSimpleFullResponse = () => {
                 **POPULATION CHECKLIST (Based on Step 0 Logs):**
 
                 1.  **Narrative ('response' & 'dialogueOptions'):**
-                    -   Translate the mechanical events from Step 0 into an artistic description.
+                    -   Read and follow the appended `<GameMasterGuide_NarrativeStyle>` in full. Its requirements are mandatory for this one-shot path just as they are for the dedicated Step 6 narrative path.
+                    -   Do not reduce the turn to a one-line summary or a list of mechanical outcomes. For a meaningful in-world action, write a scene in at least two substantive paragraphs: establish relevant immediate surroundings and atmosphere using the supplied location, time, and weather; then dramatize the action, observable reactions, and its verified consequences with fitting sensory detail and dialogue where appropriate.
+                    -   Keep every event faithful to Step 0 and the game state. Do not invent environmental changes, character actions, or mechanical outcomes just to add length. For a genuinely trivial action, remain proportionate while still giving the player an immersive, polished response.
                     -   Provide 5 suggested actions or specific dialogue choices.
 
                 2.  **Core State ('currentLocationData', 'playerStatus'):**

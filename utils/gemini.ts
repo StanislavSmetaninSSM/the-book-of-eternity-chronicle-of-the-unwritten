@@ -162,8 +162,9 @@ export async function executeStepWithCorrection(
         additionalGuides += narrativeStyleGuide.getGuide();
         additionalGuides += worldLogicGuide.getGuide();
     }
-    // Step 1 renamed to Step 6
-    if (stepName === 'Step6_NarrativeGeneration_TaskGuide') {
+    // Every step that writes player-facing prose must receive the narrative guide.
+    // Simple turns bypass Step 6, so they need the same guide on their one-shot response step.
+    if (stepName === 'Step6_NarrativeGeneration_TaskGuide' || stepName === 'StepSimpleFullResponse_TaskGuide') {
         additionalGuides += narrativeStyleGuide.getGuide();
     }
     // Step 3 Logs
