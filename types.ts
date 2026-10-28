@@ -24,13 +24,9 @@ export interface Calendar {
   dayNames: DayInfo[];
 }
 
-export type ImageGenerationSource = 
-  { provider: 'nanobanana'; } |
-  { provider: 'imagen'; model: 'normal' | 'ultra' | 'fast' };
-
 export type ImageCacheEntry = {
   src: string;
-  sourceProvider: 'Nano Banana' | 'Imagen' | 'Custom Upload';
+  sourceProvider: 'Nano Banana' | 'Imagen' | 'Arena GM' | 'Custom Upload';
   sourceModel?: string;
 };
 
@@ -43,18 +39,7 @@ export interface GameSettings {
     customInfo: string;
     calendar?: Calendar;
   };
-  modelName: string;
-  correctionModelName?: string;
-  aiProvider: 'gemini' | 'openrouter';
-  isCustomModel: boolean;
-  customModelName?: string;
-  openRouterModelName?: string;
-  geminiThinkingBudget?: number;
-  geminiThinkingLevel?: 'low' | 'high';
-  useDynamicThinkingBudget?: boolean;
   adultMode: boolean;
-  geminiApiKey?: string;
-  openRouterApiKey?: string;
   // FIX: Added missing youtubeApiKey property to GameSettings interface.
   youtubeApiKey?: string;
   allowHistoryManipulation: boolean;
@@ -76,8 +61,6 @@ export interface GameSettings {
     shareInventory: boolean;
   };
   doNotUseWorldEvents: boolean;
-  imageGenerationModelPipeline: ImageGenerationSource[];
-  useGoogleSearch?: boolean;
   showImageSourceInfo?: boolean;
   generateWorldEventImages?: boolean;
 }

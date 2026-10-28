@@ -10,9 +10,9 @@ const narrativeStyleGuide = {
 
 <GameMasterGuide_NarrativeStyle>
     <!-- 
-        This guide is injected ONLY during Step 1 (Narrative Generation) and Step 4 (NPC Details Processing).
+        This guide is injected into player-facing narrative generation steps, including the standard narrative step, simple-turn full response, NPC details, and question/correction responses.
         Its sole purpose is to instruct the AI on HOW to write compelling, atmospheric, and well-structured prose and dialogue.
-        It focuses on the art of storytelling, using the mechanical outcomes from Step 0 as its factual basis.
+        It focuses on the art of storytelling, using verified game outcomes as its factual basis.
     -->
     <Title>THE GUIDE FOR GAME MASTER: NARRATIVE, DESCRIPTION, AND DIALOGUE STYLE</Title>
     <Preamble>

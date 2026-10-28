@@ -1,7 +1,14 @@
 {
-  "name": "(TEST VERSION 0.9.14) Copy of The Book of Eternity: Chronicle of the Unwritten 0.9",
-  "description": "An immersive text-based role-playing game powered by Gemini. Forge your destiny in a world that reacts to your every choice, with a dynamic story, evolving characters, and a rich, persistent world state.",
+  "name": "The Book of Eternity: Chronicle of the Unwritten",
+  "description": "A persistent, text-driven fantasy role-playing game adapted for Arena. Explore a reactive world, shape its story through consequential choices, develop characters, pursue quests, and manage an evolving world state. The Arena conversation agent can serve as the game master through a manual, staged workspace relay.",
   "requestFramePermissions": [],
   "prompt": "",
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "Persistent text-based role-playing game",
+    "Staged Arena GM relay",
+    "Character progression and inventory",
+    "Quests, factions, and reactive world simulation",
+    "Save and load support",
+    "Optional multiplayer"
+  ]
 }

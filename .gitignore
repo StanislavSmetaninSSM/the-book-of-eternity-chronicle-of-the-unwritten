@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.arena-gm-relay/
+.env
+.env.*
+!.env.example

@@ -327,8 +327,10 @@ export const getStep0 = () => {
                 13. Custom State threshold crossed.
                 14. Stealth state changed.
 
-            -   **isSimpleTurn:** Set to 'true' **ONLY** if 'needsSelfCorrection' is 'false'.
-                *Criteria for Simple Turn:* 
+            -   **isSimpleTurn (CRITICAL FIRST-TURN OVERRIDE):**
+                - If 'currentTurnNumber' is 1, you MUST set 'isSimpleTurn' to 'false', even when the player's immediate action is mundane and 'needsSelfCorrection' is false. The first message is a narrative premise, not an ordinary simple turn. Route it through the full staged setup so the starting state, location, quest, chronicle, inventory, image prompt, and relevant world/faction initialization are handled in their dedicated steps.
+                - For turn 2+, set 'isSimpleTurn' to 'true' ONLY if 'needsSelfCorrection' is 'false' and the turn meets the simple-turn criteria below.
+                *Criteria for Simple Turn (turn 2+ only):*
                 - Simple movement to known location.
                 - Casual conversation (no dice roll, no rep change).
                 - Eating food (simple resource update).
@@ -750,6 +752,7 @@ export const getStep2 = () => {
                     -   If Safe: Set to 'null'.
 
                 6.  **Quests ('questUpdates'):**
+                    -   **CRITICAL TURN 1 DIRECTIVE:** If 'currentTurnNumber' is 1 and 'activeQuests' is empty, you MUST create a starting quest, as required by Rule #18. Use the player's accepted first-turn premise and the initial character chronicle/plot outline as its source. The quest must be a plausible, player-agency-preserving next step; do not invent a crisis unrelated to the premise.
                     -   *Scenario A: New Quest.* Send FULL object with 'questId: null' (**Rule #18.2**). Ensure 'detailsLog' has the first entry.
                     -   *Scenario B: Existing Quest Update.* Send PARTIAL object with 'questId: "guid"'.
                         -   **CRITICAL:** Do NOT re-send 'detailsLog'. Use 'newDetailsLogEntry' to append the narrative progress (**Rule #18.4**).
@@ -2147,7 +2150,9 @@ export const getStepSimpleFullResponse = () => {
                 **POPULATION CHECKLIST (Based on Step 0 Logs):**
 
                 1.  **Narrative ('response' & 'dialogueOptions'):**
-                    -   Translate the mechanical events from Step 0 into an artistic description.
+                    -   Read and follow the appended <GameMasterGuide_NarrativeStyle> in full. Its requirements are mandatory for this one-shot path just as they are for the dedicated Step 6 narrative path.
+                    -   Do not reduce the turn to a one-line summary or a list of mechanical outcomes. For a meaningful in-world action, write a scene in at least two substantive paragraphs: establish relevant immediate surroundings and atmosphere using the supplied location, time, and weather; then dramatize the action, observable reactions, and its verified consequences with fitting sensory detail and dialogue where appropriate.
+                    -   Keep every event faithful to Step 0 and the game state. Do not invent environmental changes, character actions, or mechanical outcomes just to add length. For a genuinely trivial action, remain proportionate while still giving the player an immersive, polished response.
                     -   Provide 5 suggested actions or specific dialogue choices.
 
                 2.  **Core State ('currentLocationData', 'playerStatus'):**
@@ -2534,6 +2539,11 @@ export const getStepFactionProgression = () => {
 
                 **SIMULATION CHECKLIST (Follow Sequentially):**
 
+                0.  **Mandatory First-Turn Faction Initialization:**
+                    - If 'currentTurnNumber' is 1 and 'encounteredFactions' is empty, establish a compact baseline of at least two factions that logically belong to the setting and starting premise. Derive their roles and names from the campaign information, character background, and starting location (for example, local civic authority/trade and an underworld group for a rogue beginning in a tavern); do not create unrelated world-spanning powers.
+                    - Create full faction records and the required rank structures using 'factionDataChanges' and 'factionRankChanges'. Initialize the player's standing as neutral/non-member unless the premise establishes otherwise. Log why each faction belongs in this starting region.
+                    - This is world setup, not an event caused by the player's action. Do not invent wars, completed projects, or resource gains; normal economy still uses the elapsed-time calculation below.
+
                 1.  **Time Calculation:**
                     -   Calculate 'Time_Elapsed' since 'lastFactionProgressionTimeInMinutes'.
                     -   Calculate 'NumberOfCycles' (24-hour blocks) per **Rule #21.A.2.3.1**.
@@ -2743,9 +2753,16 @@ export const getStepWorldProgression = () => {
 
                 **SIMULATION CHECKLIST (Follow Sequentially):**
 
+                0.  **Mandatory First-Turn World Event (Higher Priority Than the Significance Audit):**
+                    -   Check 'Context.currentTurnNumber' and 'Context.gameSettings.doNotUseWorldEvents'.
+                    -   If this is turn 1, Instruction Block 30 is enabled, and 'doNotUseWorldEvents' is not true, generate at least one coherent foundational event in 'worldEventsLog', even when no prior threats, NPC goals, global flags, or elapsed time exist.
+                    -   This is part of initializing a living campaign world, not a reaction to the player's ordinary action. Ground the event in the actual era, campaign premise, and established setting; do not invent an unrelated crisis, force a plot hook, or claim the player witnessed an off-screen event without a plausible in-world source.
+                    -   A quiet but consequential development or opportunity is acceptable. Record its time accurately and apply only consequences supported by the event. Do not use the following 'no active threads' shortcut to suppress this required first-turn event.
+                    -   If 'doNotUseWorldEvents' is true or Instruction Block 30 is disabled, generate no world event and log that the feature is intentionally disabled.
+
                 1.  **Significance Audit (Rule #30.0):**
                     -   *Check:* Are there active threads (Threats, NPC goals, Global Flags)?
-                    -   *If NO:* Log "No significant events possible." -> Skip to Tracker Update.
+                    -   *If NO and this is not the mandatory first-turn setup above:* Log "No significant events possible." -> Skip to Tracker Update.
                     -   *If YES:* Proceed. Calculate 'MaxEvents' limit (Rule #30.1).
 
                 2.  **Active Threat Simulation (Rule #30.1.B):**
