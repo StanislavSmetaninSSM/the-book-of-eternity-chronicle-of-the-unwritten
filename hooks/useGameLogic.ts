@@ -2320,7 +2320,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         try {
             const cinemaContext = {
                 ...gameContextRef.current,
-                superInstructions: narrativeStyleGuide + '\n' + superInstructions,
+                superInstructions: narrativeStyleGuide.getGuide() + '\n' + superInstructions,
             };
 
             const prompt = getCinemaPrompt(userPrompt, cinemaContext);
@@ -2394,7 +2394,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         try {
             const cinemaContext = {
                 ...gameContextRef.current,
-                superInstructions: narrativeStyleGuide + '\n' + superInstructions,
+                superInstructions: narrativeStyleGuide.getGuide() + '\n' + superInstructions,
             };
 
             const prompt = getContinueCinemaPrompt(cinematicToExtend, cinemaContext);
