@@ -2753,9 +2753,16 @@ export const getStepWorldProgression = () => {
 
                 **SIMULATION CHECKLIST (Follow Sequentially):**
 
+                0.  **Mandatory First-Turn World Event (Higher Priority Than the Significance Audit):**
+                    -   Check 'Context.currentTurnNumber' and 'Context.gameSettings.doNotUseWorldEvents'.
+                    -   If this is turn 1, Instruction Block 30 is enabled, and 'doNotUseWorldEvents' is not true, generate at least one coherent foundational event in 'worldEventsLog', even when no prior threats, NPC goals, global flags, or elapsed time exist.
+                    -   This is part of initializing a living campaign world, not a reaction to the player's ordinary action. Ground the event in the actual era, campaign premise, and established setting; do not invent an unrelated crisis, force a plot hook, or claim the player witnessed an off-screen event without a plausible in-world source.
+                    -   A quiet but consequential development or opportunity is acceptable. Record its time accurately and apply only consequences supported by the event. Do not use the following 'no active threads' shortcut to suppress this required first-turn event.
+                    -   If 'doNotUseWorldEvents' is true or Instruction Block 30 is disabled, generate no world event and log that the feature is intentionally disabled.
+
                 1.  **Significance Audit (Rule #30.0):**
                     -   *Check:* Are there active threads (Threats, NPC goals, Global Flags)?
-                    -   *If NO:* Log "No significant events possible." -> Skip to Tracker Update.
+                    -   *If NO and this is not the mandatory first-turn setup above:* Log "No significant events possible." -> Skip to Tracker Update.
                     -   *If YES:* Proceed. Calculate 'MaxEvents' limit (Rule #30.1).
 
                 2.  **Active Threat Simulation (Rule #30.1.B):**
