@@ -114,11 +114,8 @@ async function removeResponseForCorrelation(correlationId: string): Promise<void
   if (legacy?.correlationId === correlationId) await rm(legacyResponsePath, { force: true });
 }
 
-function arenaGmFilesystemRelay(): Plugin {
-  return {
-    name: 'arena-gm-filesystem-relay',
-    configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
+function registerRelayMiddleware(server: { middlewares: { use: (handler: any) => void } }): void {
+  server.middlewares.use(async (req: any, res: any, next: any) => {
         const url = new URL(req.url || '/', 'http://vite.local');
         if (!url.pathname.startsWith('/__arena_gm/')) return next();
         res.setHeader('Cache-Control', 'no-store');
@@ -163,13 +160,15 @@ function arenaGmFilesystemRelay(): Plugin {
               if (packet.kind === 'arena-gm-image') await mkdir(path.join(relayDirectory, 'images'), { recursive: true });
 
               const active = await readActiveRequest();
-              if (active?.packet.correlationId === packet.correlationId) return { duplicate: true, queued: false };
+              if (active?.packet.correlationId === packet.correlationId) {
+                const sameRequest = JSON.stringify(active.packet) === JSON.stringify(packet);
+                return { duplicate: true, sameRequest, queued: false };
+              }
               const queuePath = path.join(requestQueueDirectory, `${packet.correlationId}.json`);
-              try {
-                await access(queuePath);
-                return { duplicate: true, queued: false };
-              } catch (error: any) {
-                if (error?.code !== 'ENOENT') throw error;
+              const queuedRequest = await readJsonIfPresent<QueuedRelayRequest>(queuePath);
+              if (queuedRequest) {
+                const sameRequest = JSON.stringify(queuedRequest.packet) === JSON.stringify(packet);
+                return { duplicate: true, sameRequest, queued: true };
               }
               const handle = await open(queuePath, 'wx');
               try {
@@ -180,11 +179,16 @@ function arenaGmFilesystemRelay(): Plugin {
               const activeAfterDispatch = await dispatchNextRequest();
               return { duplicate: false, queued: activeAfterDispatch?.packet.correlationId !== packet.correlationId };
             });
-            if (accepted.duplicate) {
-              send(409, { error: 'A relay request with this correlationId is already queued or active.' });
+            if (accepted.duplicate && !accepted.sameRequest) {
+              send(409, { error: 'The correlationId is already assigned to a different relay request.' });
               return;
             }
-            send(202, { accepted: true, queued: accepted.queued, correlationId: packet.correlationId });
+            send(202, {
+              accepted: true,
+              queued: accepted.queued,
+              duplicate: accepted.duplicate,
+              correlationId: packet.correlationId,
+            });
             return;
           }
 
@@ -304,7 +308,17 @@ function arenaGmFilesystemRelay(): Plugin {
         } catch (error: any) {
           send(error?.statusCode || 500, { error: error instanceof Error ? error.message : 'Relay server error.' });
         }
-      });
+  });
+}
+
+function arenaGmFilesystemRelay(): Plugin {
+  return {
+    name: 'arena-gm-filesystem-relay',
+    configureServer(server) {
+      registerRelayMiddleware(server);
+    },
+    configurePreviewServer(server) {
+      registerRelayMiddleware(server);
     },
   };
 }

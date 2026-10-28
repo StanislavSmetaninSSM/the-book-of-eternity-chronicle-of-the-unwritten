@@ -8,10 +8,12 @@ From the repository root in an Arena terminal:
 
 ```sh
 npm ci
-npm run dev -- --host 0.0.0.0
+npm run arena:preview
 ```
 
-Open the Vite preview created by the dev server and keep the process alive. `vite.config.ts` registers the relay middleware that implements `/__arena_gm/turn`, `/__arena_gm/response`, `/__arena_gm/cancel`, `/__arena_gm/image`, and `/__arena_gm/status`. The file relay works with this Vite development server; it is not included in `vite build` output or a static hosting deployment.
+Open the Vite preview created by this command and keep the process alive. `arena:preview` builds the app and serves the built files with `vite preview` (no Vite HMR client / WebSocket auto-reload), while `vite.config.ts` also registers the filesystem relay middleware on the preview server. The relay endpoints are `/__arena_gm/turn`, `/__arena_gm/response`, `/__arena_gm/cancel`, `/__arena_gm/image`, and `/__arena_gm/status`. If you are actively developing code, `npm run dev -- --host 0.0.0.0` remains available, but its HMR WebSocket recovery may reload the page if the connection is lost; use `arena:preview` for a more stable game session.
+
+Keep the preview process running in the same workspace as the `.arena-gm-relay` mailbox. Start the optional mailbox watcher separately with `npm run relay:watch` if desired. After changing code, rerun `npm run arena:preview` to rebuild and serve the updated app.
 
 The Arena relay is the only configured backend. The app sends each game-generation pipeline step separately. The server persists requests in a queue and exposes only one active `pending.json`; turn stages are prioritized over images and each response is isolated by correlation ID. The browser holds a whole-turn lease, serializes image requests, and defers them until all stages for that player action finish. One action may require multiple agent responses.
 
@@ -82,17 +84,18 @@ If you can see the preview but the request stays waiting, confirm the Vite dev s
 ## 4. What is and is not persisted
 
 - `.arena-gm-relay/` contains transient requests, responses, and generated images; `.gitignore` excludes it. Do not commit it.
-- Game save data is managed by the app and browser storage; it is separate from the relay mailbox.
+- Game save data is managed by the app and browser storage; it is separate from the relay mailbox. An in-progress local turn stores its submitted action, pre-turn state, and history in IndexedDB so the start screen can offer **Resume** or **Discard** after a reload.
+- Resume replays the submitted action from the saved pre-turn baseline. It is not an exact continuation of an intermediate generation stage, so already completed stages may be generated again. Recovery is limited to local single-player turns.
 - The browser never receives provider secrets through relay packets. Avoid putting credentials into prompts or response files.
 - A repository clone by itself cannot restore an in-flight mailbox or browser save. Recreate those in the new workspace as needed.
 
 ## 5. Production deployment
 
-The current relay is a Vite **development middleware** backed by local filesystem I/O. `npm run build` creates the front end, not the relay service. To deploy outside the Arena workspace, build an authenticated server-side mailbox adapter that implements the same request/response correlation protocol, stores image files securely, enforces request size and access limits, and is reachable by the browser through same-origin relative URLs. Do not publish `.arena-gm-relay` or add a public file server for the workspace. The agent invocation step will remain manual unless Arena provides an authorized invocation mechanism.
+The current relay is Vite middleware backed by local filesystem I/O. It runs in the repository's dev server and `vite preview` server, but is not included in `vite build` output or available on generic static hosting. To deploy outside the Arena workspace, build an authenticated server-side mailbox adapter that implements the same request/response correlation protocol, stores image files securely, enforces request size and access limits, and is reachable by the browser through same-origin relative URLs. Do not publish `.arena-gm-relay` or add a public file server for the workspace. The agent invocation step will remain manual unless Arena provides an authorized invocation mechanism.
 
 ## 6. Troubleshooting
 
-- **`Failed to fetch` / endpoint 404:** use the Vite dev server from this repository, not a static build preview or generic static host.
+- **`Failed to fetch` / endpoint 404:** run `npm run arena:preview` (or the Vite dev server) from this repository; generic static hosting does not include the filesystem relay middleware.
 - **Request waits indefinitely:** the app cannot invoke the agent. Start/continue an Arena agent interaction and have it process the pending file.
 - **Response ignored:** verify exact `correlationId`, `kind`, `protocolVersion: 1`, valid JSON, and that the response is in `.arena-gm-relay/responses/<correlationId>.json` (or, for a legacy client only, `.arena-gm-relay/response.json`).
 - **Image not displayed:** verify the PNG exists at the correlation-ID path and is readable before writing the image response envelope.

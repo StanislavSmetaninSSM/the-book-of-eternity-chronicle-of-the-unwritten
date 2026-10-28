@@ -74,8 +74,13 @@ after(async () => {
 test('relay queues requests without clobbering, prioritizes turn work, isolates responses, and cancels', async () => {
   const first = await post('turn', makeStep('turn-first'));
   assert.equal(first.status, 202);
-  assert.deepEqual(await first.json(), { accepted: true, queued: false, correlationId: 'turn-first' });
-  assert.equal((await post('turn', makeStep('turn-first'))).status, 409);
+  assert.deepEqual(await first.json(), { accepted: true, queued: false, duplicate: false, correlationId: 'turn-first' });
+  const duplicateFirst = await post('turn', makeStep('turn-first'));
+  assert.equal(duplicateFirst.status, 202);
+  assert.equal((await duplicateFirst.json()).correlationId, 'turn-first');
+  const conflictingDuplicate = await post('turn', { ...makeStep('turn-first'), prompt: 'different packet' });
+  assert.equal(conflictingDuplicate.status, 409);
+  assert.equal((await status()).queuedCount, 0);
 
   const imageQueued = await post('turn', makeImage('image-waiting'));
   assert.equal(imageQueued.status, 202);

@@ -41,6 +41,9 @@ interface StartScreenProps {
     crashRecoveryInfo: CrashRecoveryMetadata | null;
     crashRecoveryMarker: CrashRecoveryMarker | null;
     onLoadCrashRecovery: () => Promise<boolean>;
+    interruptedTurnRecoveryMessage?: string | null;
+    onResumeInterruptedTurn?: () => void | Promise<void>;
+    onDiscardInterruptedTurn?: () => void | Promise<void>;
     onLoadFromSlot: (slotId: number) => Promise<void>;
     dbSaveSlots: DBSaveSlotInfo[];
 }
@@ -737,7 +740,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
 }
 
 
-export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onLoadGame, onLoadAutosave, autosaveTimestamp, crashRecoveryInfo, crashRecoveryMarker, onLoadCrashRecovery, onLoadFromSlot, dbSaveSlots }: StartScreenProps) {
+export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onLoadGame, onLoadAutosave, autosaveTimestamp, crashRecoveryInfo, crashRecoveryMarker, onLoadCrashRecovery, interruptedTurnRecoveryMessage, onResumeInterruptedTurn, onDiscardInterruptedTurn, onLoadFromSlot, dbSaveSlots }: StartScreenProps) {
     const [formData, setFormData] = useState(initialFormData);
     const [customGameData, setCustomGameData] = useState(() => JSON.parse(JSON.stringify(gameData)));
     const [preparedConfigurationFile, setPreparedConfigurationFile] = useState<PreparedSaveFile | null>(null);
@@ -754,7 +757,22 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
     const [newUniverseName, setNewUniverseName] = useState('');
     const [newUniverseDescription, setNewUniverseDescription] = useState('');
     const [isConfigLoading, setIsConfigLoading] = useState(false);
+    const [isRecoveryActionPending, setIsRecoveryActionPending] = useState(false);
     const [joinPlayerName, setJoinPlayerName] = useState('');
+
+    const handleResumeInterruptedTurn = async () => {
+        if (isRecoveryActionPending) return;
+        setIsRecoveryActionPending(true);
+        try { await onResumeInterruptedTurn?.(); }
+        finally { setIsRecoveryActionPending(false); }
+    };
+
+    const handleDiscardInterruptedTurn = async () => {
+        if (isRecoveryActionPending) return;
+        setIsRecoveryActionPending(true);
+        try { await onDiscardInterruptedTurn?.(); }
+        finally { setIsRecoveryActionPending(false); }
+    };
 
     useEffect(() => () => {
         if (preparedConfigurationFile) releasePreparedSaveFile(preparedConfigurationFile);
@@ -1160,6 +1178,18 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                 </div>
                 <h1 className="text-4xl md:text-5xl font-bold text-cyan-400 mb-2 text-center narrative-text drop-shadow-[0_2px_2px_rgba(0,255,255,0.2)]">{t("The Book of Eternity")}</h1>
                 <p className="text-gray-400 mb-6 text-center text-base md:text-lg narrative-text italic">{t("Chronicle of the Unwritten")}</p>
+
+                {interruptedTurnRecoveryMessage && (
+                    <section className="mb-6 rounded-lg border border-amber-500/50 bg-amber-950/40 p-4" role="alert">
+                        <h2 className="font-semibold text-amber-200">{t('An interrupted turn was saved.')}</h2>
+                        <p className="mt-1 text-sm text-gray-200">{t('Submitted action')}: {interruptedTurnRecoveryMessage}</p>
+                        <p className="mt-2 text-sm text-gray-400">{t('Resuming will replay the action from the last saved game state.')}</p>
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                            <button type="button" onClick={handleResumeInterruptedTurn} disabled={isRecoveryActionPending} className="flex-1 rounded-md bg-cyan-600 px-4 py-2 font-semibold text-white hover:bg-cyan-500 disabled:cursor-wait disabled:opacity-60">{t('Resume interrupted turn')}</button>
+                            <button type="button" onClick={handleDiscardInterruptedTurn} disabled={isRecoveryActionPending} className="rounded-md border border-gray-600 px-4 py-2 text-gray-200 hover:bg-gray-700 disabled:cursor-wait disabled:opacity-60">{t('Discard interrupted turn')}</button>
+                        </div>
+                    </section>
+                )}
         
                 <div className="flex justify-center mb-6 border-b border-gray-700">
                     <button

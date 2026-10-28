@@ -1,6 +1,11 @@
 
 export const startScreen = {
   en: {
+    "An interrupted turn was saved.": "An interrupted turn was saved.",
+    "Submitted action": "Submitted action",
+    "Resuming will replay the action from the last saved game state.": "Resuming will replay the action from the last saved game state. This is a replay, not an exact continuation of an intermediate stage.",
+    "Resume interrupted turn": "Resume interrupted turn",
+    "Discard interrupted turn": "Discard interrupted turn",
     // StartScreen specific
     "Starting Time": "Starting Time",
     "Starting Weather": "Starting Weather",
@@ -133,6 +138,11 @@ export const startScreen = {
     "token_warning_p3": "This game is free with the Gemini provider, launched ONLY from Google AI Studio. In any other environment, you will have to pay for it."
   },
   ru: {
+    "An interrupted turn was saved.": "Сохранён прерванный ход.",
+    "Submitted action": "Отправленное действие",
+    "Resuming will replay the action from the last saved game state.": "Возобновление повторно выполнит действие от последнего сохранённого состояния игры. Это повтор действия, а не точное продолжение с промежуточного этапа.",
+    "Resume interrupted turn": "Возобновить прерванный ход",
+    "Discard interrupted turn": "Удалить прерванный ход",
     // StartScreen specific
     "Starting Time": "Начальное время",
     "Starting Weather": "Стартовая погода",

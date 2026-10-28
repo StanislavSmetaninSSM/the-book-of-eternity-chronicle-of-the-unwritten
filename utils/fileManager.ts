@@ -1,6 +1,6 @@
 
 
-import { SaveFile, DBSaveSlotInfo } from "../types";
+import { ChatMessage, GameContext, GameState, SaveFile, DBSaveSlotInfo } from "../types";
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -154,10 +154,12 @@ export function loadConfigurationFromFile(t: TFunction): Promise<any | null> {
 // --- IndexedDB ---
 
 const DB_NAME = 'gemini-rpg-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const AUTOSAVE_STORE_NAME = 'autosaves';
 const SLOTS_STORE_NAME = 'save_slots';
+const INTERRUPTED_TURNS_STORE_NAME = 'interrupted_turns';
 const AUTOSAVE_ID = 'current_autosave';
+const INTERRUPTED_TURN_ID = 'pending-turn';
 const CRASH_RECOVERY_ID = 'last_known_good_save';
 const AUTOSAVE_TIMESTAMP_STORAGE_KEY = 'gemini-rpg-autosave-timestamp';
 const SAVE_SLOT_METADATA_STORAGE_KEY = 'gemini-rpg-save-slot-metadata';
@@ -176,6 +178,14 @@ export interface CrashRecoveryMetadata {
   locationName: string;
   turnNumber: number | null;
   networkRole: string;
+}
+
+export interface InterruptedTurnRecovery {
+  id: 'pending-turn';
+  createdAt: string;
+  context: GameContext;
+  baseState: GameState;
+  history: ChatMessage[];
 }
 
 export interface CrashRecoveryMarker {
@@ -325,6 +335,9 @@ function openDB(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains(SLOTS_STORE_NAME)) {
           db.createObjectStore(SLOTS_STORE_NAME, { keyPath: 'slotId' });
         }
+        if (!db.objectStoreNames.contains(INTERRUPTED_TURNS_STORE_NAME)) {
+          db.createObjectStore(INTERRUPTED_TURNS_STORE_NAME, { keyPath: 'id' });
+        }
       };
 
       request.onsuccess = (event) => {
@@ -384,6 +397,47 @@ export async function loadFromDB(): Promise<SaveFile | null> {
     console.error('Failed to load from IndexedDB:', error);
     return null;
   }
+}
+
+export async function saveInterruptedTurnRecovery(recovery: Omit<InterruptedTurnRecovery, 'id' | 'createdAt'>): Promise<void> {
+  const db = await openDB();
+  const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
+  transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).put({
+    id: INTERRUPTED_TURN_ID,
+    createdAt: new Date().toISOString(),
+    ...recovery,
+  } satisfies InterruptedTurnRecovery);
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('Interrupted-turn checkpoint write was aborted.'));
+  });
+}
+
+export async function loadInterruptedTurnRecovery(): Promise<InterruptedTurnRecovery | null> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readonly');
+    const request = transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).get(INTERRUPTED_TURN_ID);
+    return await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Failed to load interrupted-turn checkpoint:', error);
+    return null;
+  }
+}
+
+export async function clearInterruptedTurnRecovery(): Promise<void> {
+  const db = await openDB();
+  const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
+  transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).delete(INTERRUPTED_TURN_ID);
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('Interrupted-turn checkpoint deletion was aborted.'));
+  });
 }
 
 export async function saveCrashRecoveryPoint(saveData: SaveFile, reason: CrashRecoveryReason = 'stable'): Promise<CrashRecoveryMetadata> {

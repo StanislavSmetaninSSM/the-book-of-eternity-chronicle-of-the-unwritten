@@ -9,6 +9,7 @@ import { DataConnection } from 'peerjs';
 import { deepMergeResponses, processAndApplyResponse } from '../../utils/responseProcessor';
 import { deepStripModerationSymbols } from '../../utils/textUtils';
 import { acquireArenaGmTurnLease } from '../../utils/arenaGmRelay';
+import { clearInterruptedTurnRecovery, saveInterruptedTurnRecovery } from '../../utils/fileManager';
 
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => {
@@ -126,6 +127,17 @@ export const createTurnManager = (
                 return;
             }
             
+            // Save the submitted action and its pre-turn state before the first relay request.
+            // If the browser reloads, the start screen can replay this exact action from the saved baseline.
+            if (baseState.networkRole === 'none') {
+                try {
+                    await saveInterruptedTurnRecovery({ context, baseState, history: fullHistoryForTurn });
+                } catch (recoveryError) {
+                    console.error('Could not persist interrupted-turn recovery checkpoint:', recoveryError);
+                    setError(t('Could not save the interrupted turn checkpoint. The game will continue, but a browser reload may lose this action.'));
+                }
+            }
+
             // Keep automatic/optional image jobs out of the mailbox for the entire staged turn.
             releaseArenaGmTurn = await acquireArenaGmTurnLease();
             const finalResponseRaw = await executeTurn(
@@ -142,6 +154,7 @@ export const createTurnManager = (
                 setError(t("history_manipulation_rejection"));
                 setGameHistory(prev => prev.slice(0, -1)); // Remove the offending player message
                 setIsLoading(false);
+                await clearInterruptedTurnRecovery().catch(error => console.error('Could not clear rejected turn checkpoint:', error));
                 return;
             }
           
@@ -288,6 +301,9 @@ export const createTurnManager = (
                     };
                     broadcastFullSync(newSaveData);
                 }
+            }
+            if (baseState.networkRole === 'none') {
+                await clearInterruptedTurnRecovery().catch(error => console.error('Could not clear completed-turn checkpoint:', error));
             }
           
         } catch (err: any) {
@@ -577,10 +593,25 @@ export const createTurnManager = (
     const cancelRequest = () => {
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
+            void clearInterruptedTurnRecovery().catch(error => console.error('Could not clear cancelled-turn checkpoint:', error));
             setIsLoading(false);
             setError("Request cancelled by user.");
             setSuggestedActions([]);
         }
+    };
+
+    const resumeInterruptedTurn = (recovery: { context: GameContext; baseState: GameState; history: ChatMessage[] }) => {
+        gameContextRef.current = recovery.context;
+        setGameState(recovery.baseState);
+        setGameHistory(recovery.history);
+        setWorldMap(recovery.context.worldMap || {});
+        setVisitedLocations(recovery.context.visitedLocations || []);
+        setWorldState(recovery.context.worldState);
+        setGameSettings(recovery.context.gameSettings);
+        setSuperInstructions(recovery.context.superInstructions || '');
+        setTurnNumber(recovery.context.currentTurnNumber);
+        setLastRequestJson(JSON.stringify(recovery.context, null, 2));
+        return handleTurn(recovery.context, recovery.history, recovery.baseState);
     };
 
     const startGame = (creationData: any) => {
@@ -591,6 +622,7 @@ export const createTurnManager = (
         sendMessage,
         askQuestion,
         cancelRequest,
+        resumeInterruptedTurn,
         startGame,
         initializeAndRunFirstTurn,
     };
