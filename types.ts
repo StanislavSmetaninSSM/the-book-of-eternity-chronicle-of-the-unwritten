@@ -63,6 +63,7 @@ export interface GameSettings {
   doNotUseWorldEvents: boolean;
   showImageSourceInfo?: boolean;
   generateWorldEventImages?: boolean;
+  disableImageGeneration?: boolean;
 }
 
 export interface WorldState {

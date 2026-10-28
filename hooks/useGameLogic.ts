@@ -2341,20 +2341,23 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 frames: result.frames,
             };
 
-            setCinemaGenerationProgress({ current: 0, total: newCinematic.frames.length, message: t('Generating scene images...') });
+            if (gameContextRef.current?.gameSettings?.disableImageGeneration !== true) {
+                setCinemaGenerationProgress({ current: 0, total: newCinematic.frames.length, message: t('Generating scene images...') });
 
-            for (let i = 0; i < newCinematic.frames.length; i++) {
-                if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
-                setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newCinematic.frames.length}` }));
-                
-                const imageUrl = await requestArenaGmImage(
-                    newCinematic.frames[i].imagePrompt,
-                    1024,
-                    1024,
-                    abortControllerRef.current.signal,
-                );
-                if (!abortControllerRef.current.signal.aborted) {
-                    newCinematic.frames[i].imageUrl = imageUrl;
+                for (let i = 0; i < newCinematic.frames.length; i++) {
+                    if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
+                    if (gameContextRef.current?.gameSettings?.disableImageGeneration === true) break;
+                    setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newCinematic.frames.length}` }));
+
+                    const imageUrl = await requestArenaGmImage(
+                        newCinematic.frames[i].imagePrompt,
+                        1024,
+                        1024,
+                        abortControllerRef.current.signal,
+                    );
+                    if (!abortControllerRef.current.signal.aborted) {
+                        newCinematic.frames[i].imageUrl = imageUrl;
+                    }
                 }
             }
             
@@ -2407,17 +2410,20 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             const newFrames: CinemaFrame[] = result.frames;
 
-            setCinemaGenerationProgress({ current: 0, total: newFrames.length, message: t('Generating additional scenes...') });
+            if (gameContextRef.current?.gameSettings?.disableImageGeneration !== true) {
+                setCinemaGenerationProgress({ current: 0, total: newFrames.length, message: t('Generating additional scenes...') });
 
-            for (let i = 0; i < newFrames.length; i++) {
-                 if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
-                setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newFrames.length}` }));
-                newFrames[i].imageUrl = await requestArenaGmImage(
-                    newFrames[i].imagePrompt,
-                    1024,
-                    1024,
-                    abortControllerRef.current.signal,
-                );
+                for (let i = 0; i < newFrames.length; i++) {
+                    if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
+                    if (gameContextRef.current?.gameSettings?.disableImageGeneration === true) break;
+                    setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newFrames.length}` }));
+                    newFrames[i].imageUrl = await requestArenaGmImage(
+                        newFrames[i].imagePrompt,
+                        1024,
+                        1024,
+                        abortControllerRef.current.signal,
+                    );
+                }
             }
 
             setGameState(prev => {
@@ -2528,6 +2534,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [setGameState, setGameLog, t]);
 
     const regenerateCinemaFrame = useCallback(async (cinematicId: string, frameIndex: number, newPrompt: string): Promise<boolean> => {
+        if (gameSettings?.disableImageGeneration || gameContextRef.current?.gameSettings?.disableImageGeneration) return false;
         try {
             const imageUrl = await requestArenaGmImage(newPrompt, 1024, 1024);
             if (imageUrl) {
@@ -2562,7 +2569,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(formatError(e));
             return false;
         }
-    }, [setGameState, setError]);
+    }, [gameSettings, gameContextRef, setGameState, setError]);
 
     const generateCinematicAudio = useCallback(async (cinematicId: string, voice: string) => {
         setIsGeneratingCinema(true);

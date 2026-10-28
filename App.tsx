@@ -246,7 +246,7 @@ export default function App(): React.ReactNode {
         const addPrompt = (value?: string | null) => {
             if (typeof value === 'string' && value.trim()) prompts.add(value.trim());
         };
-        if (!gameState) return [];
+        if (!gameState || gameSettings?.disableImageGeneration === true) return [];
         addPrompt(sceneImagePrompt);
         addPrompt(gameState.playerCharacter?.image_prompt);
         addPrompt(gameState.currentLocationData?.image_prompt);
@@ -263,7 +263,7 @@ export default function App(): React.ReactNode {
             (gameState.worldEventsLog || []).forEach(event => addPrompt(event.image_prompt));
         }
         return Array.from(prompts).filter(prompt => !gameState.imageCache?.[prompt]);
-    }, [gameState, sceneImagePrompt, gameSettings?.generateWorldEventImages]);
+    }, [gameState, sceneImagePrompt, gameSettings?.generateWorldEventImages, gameSettings?.disableImageGeneration]);
 
     useEffect(() => {
         const controlScale = clampUiScale(gameSettings?.uiControlScale);

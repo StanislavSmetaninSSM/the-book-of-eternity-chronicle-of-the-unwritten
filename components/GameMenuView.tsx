@@ -524,6 +524,15 @@ export default function GameMenuView({
                         {t("Autosave")}: {formatTimestamp(autosaveTimestamp, t)}
                     </button>
                 </div>
+                <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50">
+                    <ToggleSwitch
+                        label={t("disable_image_generation")}
+                        description={t("disable_image_generation_desc")}
+                        name="disableImageGeneration"
+                        checked={gameSettings.disableImageGeneration ?? false}
+                        onChange={(e) => updateGameSettings({ disableImageGeneration: e.target.checked })}
+                    />
+                </div>
             </fieldset>
 
             <fieldset disabled={!isGameActive || isLoading} className="space-y-4">

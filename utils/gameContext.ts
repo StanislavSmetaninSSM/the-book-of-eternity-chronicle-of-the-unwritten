@@ -910,6 +910,7 @@ export const createInitialContext = (creationData: any, language: Language): Gam
         doNotUseWorldEvents: creationData.doNotUseWorldEvents,
         showImageSourceInfo: false,
         generateWorldEventImages: creationData.generateWorldEventImages ?? true,
+        disableImageGeneration: creationData.disableImageGeneration ?? false,
     };
 
     const calendar = gameSettings.gameWorldInformation.calendar!;
