@@ -112,6 +112,9 @@ export default function App(): React.ReactNode {
         crashRecoveryInfo,
         crashRecoveryMarker,
         loadCrashRecovery,
+        interruptedTurnRecovery,
+        resumeInterruptedGameTurn,
+        discardInterruptedGameTurn,
         recordCrash,
         suggestedActions,
         visitedLocations,
@@ -654,6 +657,15 @@ export default function App(): React.ReactNode {
         return success;
     };
 
+    const handleResumeInterruptedTurn = async () => {
+        const started = await resumeInterruptedGameTurn();
+        if (started) setHasStarted(true);
+    };
+
+    const handleDiscardInterruptedTurn = () => {
+        void discardInterruptedGameTurn();
+    };
+
     const handleLoadGameFromSlot = async (slotId: number) => {
         const success = await loadGameFromSlot(slotId);
         if (success) {
@@ -887,6 +899,9 @@ export default function App(): React.ReactNode {
                 crashRecoveryInfo={crashRecoveryInfo}
                 crashRecoveryMarker={crashRecoveryMarker}
                 onLoadCrashRecovery={handleLoadCrashRecovery}
+                interruptedTurnRecoveryMessage={interruptedTurnRecovery?.history.slice().reverse().find(message => message.sender === 'player')?.content || null}
+                onResumeInterruptedTurn={handleResumeInterruptedTurn}
+                onDiscardInterruptedTurn={handleDiscardInterruptedTurn}
                 onLoadFromSlot={handleLoadGameFromSlot}
                 dbSaveSlots={dbSaveSlots}
             />

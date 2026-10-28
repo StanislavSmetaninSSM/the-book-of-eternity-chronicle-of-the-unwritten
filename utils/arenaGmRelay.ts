@@ -2,6 +2,7 @@ import type { ChatMessage, GameContext, GameResponse, GameState } from '../types
 
 export const ARENA_GM_PROTOCOL_VERSION = 1 as const;
 const REQUEST_EVENT = 'arena-gm-relay:request';
+const ACTIVE_RELAY_CORRELATION_KEY = 'arena-gm-relay:active-correlation-id';
 
 export interface ArenaGmTurnRequest {
   kind: 'arena-gm-turn';
@@ -263,6 +264,18 @@ function enqueueArenaGmImage(run: () => Promise<string>, signal?: AbortSignal): 
   });
 }
 
+function rememberActiveRelayCorrelation(correlationId: string): void {
+  try { window.sessionStorage.setItem(ACTIVE_RELAY_CORRELATION_KEY, correlationId); } catch { /* Session storage is a recovery aid only. */ }
+}
+
+function clearActiveRelayCorrelation(correlationId: string): void {
+  try {
+    if (window.sessionStorage.getItem(ACTIVE_RELAY_CORRELATION_KEY) === correlationId) {
+      window.sessionStorage.removeItem(ACTIVE_RELAY_CORRELATION_KEY);
+    }
+  } catch { /* Ignore unavailable storage. */ }
+}
+
 async function cancelQueuedRelayRequest(correlationId: string): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
@@ -271,7 +284,34 @@ async function cancelQueuedRelayRequest(correlationId: string): Promise<void> {
       body: JSON.stringify({ correlationId }), keepalive: true,
     });
   } catch { /* Best-effort cancellation; the server still isolates every response by correlationId. */ }
+  clearActiveRelayCorrelation(correlationId);
 }
+
+/** Cancel the previous page's remembered request before replaying an interrupted turn. */
+export async function cancelInterruptedArenaGmRequest(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  let correlationId: string | null = null;
+  try { correlationId = window.sessionStorage.getItem(ACTIVE_RELAY_CORRELATION_KEY); } catch { /* Ignore unavailable storage. */ }
+  if (correlationId) await cancelQueuedRelayRequest(correlationId);
+}
+
+async function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, delayMs);
+    const abort = () => {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
+      reject(new DOMException('Turn cancelled.', 'AbortError'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
+const isRetryableHttpStatus = (status: number): boolean => status === 408 || status === 425 || status === 429 || status >= 500;
 
 async function postAndWaitForRelayResponse<T extends { kind: string; protocolVersion: number; correlationId: string }>(
   request: ArenaGmTurnRequest | ArenaGmStepRequest | ArenaGmImageRequest,
@@ -281,27 +321,77 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
   if (typeof window === 'undefined') throw new Error('Arena GM Relay requires a browser window.');
   if (!isArenaGmRelayEnabled()) throw new Error('Arena GM Relay is disabled.');
   if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
+
   let completed = false;
+  let accepted = false;
+  let retryDelay = 900;
+  rememberActiveRelayCorrelation(request.correlationId);
   try {
-    const accepted = await fetch('/__arena_gm/turn', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal,
-    });
-    if (!accepted.ok) throw new Error(`Relay server returned ${accepted.status}.`);
+    // Reposting the exact packet is safe: the relay treats matching correlation IDs idempotently.
+    while (!accepted) {
+      if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
+      let response: Response;
+      try {
+        response = await fetch('/__arena_gm/turn', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal,
+        });
+      } catch (error) {
+        if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
+        console.warn('Arena GM relay connection interrupted while submitting; retrying the same request.', error);
+        await waitForRetry(retryDelay, signal);
+        retryDelay = Math.min(10_000, Math.round(retryDelay * 1.7));
+        continue;
+      }
+      if (response.ok) {
+        accepted = true;
+        retryDelay = 900;
+        break;
+      }
+      if (isRetryableHttpStatus(response.status)) {
+        console.warn(`Arena GM relay returned ${response.status} while submitting; retrying.`);
+        await waitForRetry(retryDelay, signal);
+        retryDelay = Math.min(10_000, Math.round(retryDelay * 1.7));
+        continue;
+      }
+      throw new Error(`Relay server returned ${response.status}.`);
+    }
+
     while (!signal?.aborted) {
       await waitForNextPoll(signal);
-      const result = await fetch(`/__arena_gm/response?correlationId=${encodeURIComponent(request.correlationId)}`, { cache: 'no-store', signal });
-      if (result.status === 204) continue;
+      let result: Response;
+      try {
+        result = await fetch(`/__arena_gm/response?correlationId=${encodeURIComponent(request.correlationId)}`, { cache: 'no-store', signal });
+      } catch (error) {
+        if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
+        console.warn('Arena GM relay poll interrupted; keeping the request active and retrying.', error);
+        await waitForRetry(retryDelay, signal);
+        retryDelay = Math.min(10_000, Math.round(retryDelay * 1.7));
+        continue;
+      }
+      if (result.status === 204) {
+        retryDelay = 900;
+        continue;
+      }
+      if (isRetryableHttpStatus(result.status)) {
+        console.warn(`Arena GM relay poll returned ${result.status}; retrying without cancelling the request.`);
+        await waitForRetry(retryDelay, signal);
+        retryDelay = Math.min(10_000, Math.round(retryDelay * 1.7));
+        continue;
+      }
       if (!result.ok) throw new Error(`Relay response read failed (${result.status}).`);
       const envelope = await result.json();
+      completed = true;
+      clearActiveRelayCorrelation(request.correlationId);
       if (envelope?.kind !== expectedKind || envelope?.protocolVersion !== ARENA_GM_PROTOCOL_VERSION || envelope?.correlationId !== request.correlationId) {
         throw new Error('The mailbox returned a response for a different request or protocol.');
       }
-      completed = true;
       return envelope as T;
     }
     throw new DOMException('Turn cancelled.', 'AbortError');
   } finally {
-    if (!completed) await cancelQueuedRelayRequest(request.correlationId);
+    // Only an explicit AbortController cancellation may delete an unfinished request.
+    // Transient network errors are retried above; page reloads are recovered from a saved turn checkpoint.
+    if (!completed && signal?.aborted) await cancelQueuedRelayRequest(request.correlationId);
   }
 }
 

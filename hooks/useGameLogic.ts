@@ -27,8 +27,10 @@ import {
     markCrashDetected,
     markCrashRecoveryAttempt,
     saveCrashRecoveryPoint,
+    loadInterruptedTurnRecovery,
+    clearInterruptedTurnRecovery,
 } from '../utils/fileManager';
-import type { CrashRecoveryMarker, CrashRecoveryMetadata, CrashRecoveryReason } from '../utils/fileManager';
+import type { CrashRecoveryMarker, CrashRecoveryMetadata, CrashRecoveryReason, InterruptedTurnRecovery } from '../utils/fileManager';
 import { initializeAndPreviewSound, playNotificationSound } from '../utils/soundManager';
 import { createNewPlayerCharacter } from '../utils/characterManager';
 import { generateFactionColor } from '../utils/colorUtils';
@@ -36,7 +38,7 @@ import { executeCancellableJsonGeneration, RegenerationRequiredError } from '../
 import { deepStripModerationSymbols } from '../utils/textUtils';
 import { gameData } from '../utils/localizationGameData';
 import { translate } from '../utils/localization';
-import { requestArenaGmImage } from '../utils/arenaGmRelay';
+import { cancelInterruptedArenaGmRequest, requestArenaGmImage } from '../utils/arenaGmRelay';
 
 
 interface UseGameLogicProps {
@@ -107,6 +109,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [autosaveTimestamp, setAutosaveTimestamp] = useState<string | null>(null);
     const [crashRecoveryInfo, setCrashRecoveryInfo] = useState<CrashRecoveryMetadata | null>(null);
     const [crashRecoveryMarker, setCrashRecoveryMarker] = useState<CrashRecoveryMarker | null>(null);
+    const [interruptedTurnRecovery, setInterruptedTurnRecovery] = useState<InterruptedTurnRecovery | null>(null);
     const [dbSaveSlots, setDbSaveSlots] = useState<DBSaveSlotInfo[]>([]);
     const [musicPrompt, setMusicPrompt] = useState<string | null>(null);
     const [isMusicLoading, setIsMusicLoading] = useState(false);
@@ -771,6 +774,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setAutosaveTimestamp(ts);
                 setCrashRecoveryInfo(getCrashRecoveryMetadata());
                 setCrashRecoveryMarker(getCrashRecoveryMarker());
+                const interruptedTurn = await loadInterruptedTurnRecovery();
+                if (interruptedTurn) setInterruptedTurnRecovery(interruptedTurn);
             } catch (e) {
                 console.error("Failed to fetch initial save data from DB", e);
             }
@@ -1171,6 +1176,28 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         gameSettings, superInstructions, language, t, restoreFromSaveData, setGameState, setGameHistory, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, setSuperInstructions, setGameSettings, setLanguage, setAutosaveTimestamp, setDbSaveSlots, setMusicPrompt, setIsMusicLoading, setIsMusicPlayerVisible,
         setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, broadcastFullSync
     ]);
+
+    const resumeInterruptedGameTurn = useCallback(async () => {
+        const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
+        if (!recovery) return false;
+        if (recovery.baseState.networkRole !== 'none') {
+            setError(language === 'ru'
+                ? 'Автовозобновление прерванного хода поддерживается только для локальной игры. Для сетевой игры восстановите последнее сохранение вручную.'
+                : 'Automatic interrupted-turn recovery is only supported for local games. For network games, restore the latest save manually.');
+            return false;
+        }
+        await cancelInterruptedArenaGmRequest();
+        setInterruptedTurnRecovery(null);
+        setError(null);
+        void allManagers.resumeInterruptedTurn(recovery);
+        return true;
+    }, [allManagers, interruptedTurnRecovery, language, setError]);
+
+    const discardInterruptedGameTurn = useCallback(async () => {
+        await cancelInterruptedArenaGmRequest();
+        await clearInterruptedTurnRecovery();
+        setInterruptedTurnRecovery(null);
+    }, []);
 
     const clearStashForNewTurn = useCallback(() => {
         setGameState(prev => {
@@ -2634,6 +2661,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         crashRecoveryInfo,
         crashRecoveryMarker,
         loadCrashRecovery,
+        interruptedTurnRecovery,
+        resumeInterruptedGameTurn,
+        discardInterruptedGameTurn,
         recordCrash,
         dbSaveSlots,
         musicPrompt,

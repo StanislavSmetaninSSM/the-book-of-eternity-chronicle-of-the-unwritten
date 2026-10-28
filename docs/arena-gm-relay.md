@@ -14,6 +14,10 @@ The relay is inside the existing game generation pipeline; it does not replace i
 
 The next request has a new correlation ID. Each requested step must be processed separately; do not combine intermediate steps into one `GameResponse`. The prompt in the request is the source of truth for the stage schema.
 
+### Turn-drain rule for the Arena agent
+
+A mailbox response completes one **stage**, not necessarily the player's **turn**. When asked to process/continue/finish a turn, the active Arena agent must keep handling successive requests for that same action until the final stage response is consumed: `Step7_Finalization_TaskGuide` for the staged path, `StepSimpleFullResponse_TaskGuide` for the simple-turn path, or the matching response for a direct `arena-gm-turn`. A missing `pending.json`, an empty status snapshot, or one response disappearing from `responses/` is not by itself proof of completion. After every response, verify consumption and check `pending.json`, `/__arena_gm/status`, and `request-queue`; tolerate brief gaps while the next stage is promoted. If the terminal stage does not appear within the documented idle grace, report the turn as stalled/pending and name the last confirmed stage—do not claim completion or ask the player to resubmit an action already present in the prompt. The watcher is only a notifier; the active Arena agent must remain responsible for draining the turn.
+
 ### Stage request
 
 ```json
