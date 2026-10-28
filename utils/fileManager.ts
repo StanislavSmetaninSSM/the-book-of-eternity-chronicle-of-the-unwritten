@@ -6,26 +6,22 @@ type TFunction = (key: string, replacements?: Record<string, string | number>) =
 
 export async function saveGameToFile(saveData: SaveFile, t: TFunction): Promise<void> {
   try {
-    
-    // Give the UI a moment to render any pending updates (like a spinner)
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    const jsonString = JSON.stringify(saveData);    
+    // Trigger the download synchronously while the user's click activation is
+    // still active. Deferring a.click() with a timeout can be blocked by browsers.
+    const jsonString = JSON.stringify(saveData);
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-
     const a = document.createElement('a');
     a.href = url;
     a.download = `gemini-rpg-save-${new Date().toISOString().slice(0, 10)}.json`;
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    
-    // Cleanup
-    setTimeout(() => {
-        if (document.body.contains(a)) {
-            document.body.removeChild(a);
-        }
-        URL.revokeObjectURL(url);        
+
+    // Keep the object URL alive long enough for the browser to start the download.
+    window.setTimeout(() => {
+      a.remove();
+      URL.revokeObjectURL(url);
     }, 1000);
 
   } catch (err) {

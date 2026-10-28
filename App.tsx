@@ -238,6 +238,33 @@ export default function App(): React.ReactNode {
         clearImageCache,
     } = useGameLogic({ language, setLanguage });
 
+    // Ensure image prompts for the active scene and newly visible game entities are
+    // submitted even when their detail panel/card is not currently open. ImageRenderer
+    // delegates to the relay scheduler, which defers them until the turn lease is free.
+    const imageWarmupPrompts = useMemo(() => {
+        const prompts = new Set<string>();
+        const addPrompt = (value?: string | null) => {
+            if (typeof value === 'string' && value.trim()) prompts.add(value.trim());
+        };
+        if (!gameState || gameSettings?.disableImageGeneration === true) return [];
+        addPrompt(sceneImagePrompt);
+        addPrompt(gameState.playerCharacter?.image_prompt);
+        addPrompt(gameState.currentLocationData?.image_prompt);
+        (gameState.players || []).forEach(player => {
+            addPrompt(player.image_prompt);
+            (player.inventory || []).forEach(item => addPrompt(item.image_prompt));
+        });
+        (gameState.encounteredNPCs || []).forEach(npc => {
+            addPrompt(npc.image_prompt);
+            (npc.inventory || []).forEach(item => addPrompt(item.image_prompt));
+        });
+        (gameState.encounteredFactions || []).forEach(faction => addPrompt(faction.image_prompt));
+        if (gameSettings?.generateWorldEventImages !== false) {
+            (gameState.worldEventsLog || []).forEach(event => addPrompt(event.image_prompt));
+        }
+        return Array.from(prompts).filter(prompt => !gameState.imageCache?.[prompt]);
+    }, [gameState, sceneImagePrompt, gameSettings?.generateWorldEventImages, gameSettings?.disableImageGeneration]);
+
     useEffect(() => {
         const controlScale = clampUiScale(gameSettings?.uiControlScale);
         const fontScale = clampUiScale(gameSettings?.uiFontScale, 0.85, 1.25);
@@ -870,9 +897,26 @@ export default function App(): React.ReactNode {
         );
     }
 
-    return (
+        return (
         <>
             <ArenaGmRelayPanel />
+            {gameState && imageWarmupPrompts.length > 0 && (
+                <div className="hidden" aria-hidden="true">
+                    {imageWarmupPrompts.map(prompt => (
+                        <ImageRenderer
+                            key={prompt}
+                            prompt={prompt}
+                            originalTextPrompt={prompt}
+                            imageCache={gameState.imageCache ?? {}}
+                            onImageGenerated={onImageGenerated}
+                            gameSettings={gameSettings}
+                            gameIsLoading={isLoading}
+                            width={512}
+                            height={512}
+                        />
+                    ))}
+                </div>
+            )}
             <div className="bg-gray-900/50 text-gray-200 min-h-screen flex flex-col md:flex-row font-sans backdrop-blur-sm">
                 <div className="relative flex-1 h-screen min-w-0">
                     {sceneImagePrompt && (

@@ -478,11 +478,12 @@ export default function GameMenuView({
         <div className={`h-full ${activeTab === 'Network' ? 'flex flex-col gap-4' : ''}`}>
             {activeTab === 'System' &&
             <div className="space-y-8">
-            <fieldset disabled={!isGameActive || isLoading} className="space-y-4">
+            <fieldset disabled={!isGameActive} className="space-y-4">
                 <h3 className="text-xl font-bold text-cyan-400 mb-2 narrative-text flex items-center gap-2">
                     <WrenchScrewdriverIcon className="w-6 h-6" /> {t('Game Management')}
                 </h3>
 
+                <fieldset disabled={isLoading} className="space-y-4">
                 <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50">
                     <h4 className="font-semibold text-gray-300 mb-3">{t("Database Saves")}</h4>
                     <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
@@ -504,11 +505,12 @@ export default function GameMenuView({
                     </div>
                     <button onClick={handleSaveToNewSlot} className="w-full mt-3 bg-cyan-600/80 text-white font-bold py-2 px-4 rounded-md hover:bg-cyan-600 transition-all text-sm">{t("Save to New Slot")}</button>
                 </div>
+                </fieldset>
 
                 <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50">
                     <h4 className="font-semibold text-gray-300 mb-3">{t("File & Autosave")}</h4>
                     <div className="flex flex-col sm:flex-row gap-4">
-                        <button onClick={onSave} disabled={!gameState || isLoading} className="flex-1 w-full flex items-center justify-center gap-3 px-4 py-2 text-base font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button onClick={onSave} disabled={!gameState} className="flex-1 w-full flex items-center justify-center gap-3 px-4 py-2 text-base font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
                             <ArrowDownTrayIcon className="w-5 h-5" />
                             {t("Save to File")}
                         </button>
@@ -517,10 +519,19 @@ export default function GameMenuView({
                             {t("Load from File")}
                         </button>
                     </div>
-                    <button onClick={onLoadAutosave} disabled={!autosaveTimestamp} className="w-full mt-3 text-cyan-400/80 hover:text-cyan-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 p-2">
+                    <button onClick={onLoadAutosave} disabled={!autosaveTimestamp || isLoading} className="w-full mt-3 text-cyan-400/80 hover:text-cyan-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 p-2">
                         <ClockIcon className="w-5 h-5" />
                         {t("Autosave")}: {formatTimestamp(autosaveTimestamp, t)}
                     </button>
+                </div>
+                <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50">
+                    <ToggleSwitch
+                        label={t("disable_image_generation")}
+                        description={t("disable_image_generation_desc")}
+                        name="disableImageGeneration"
+                        checked={gameSettings.disableImageGeneration ?? false}
+                        onChange={(e) => updateGameSettings({ disableImageGeneration: e.target.checked })}
+                    />
                 </div>
             </fieldset>
 

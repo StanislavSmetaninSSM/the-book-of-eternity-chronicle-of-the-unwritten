@@ -31,8 +31,9 @@ interface ImageRendererProps {
     onAcceptPending?: () => void;
 }
 
-// Module-level set to track which prompts are currently being converted to base64
-const conversionInProgress = new Set<string>();
+// Share each in-flight request by prompt. Hidden warmup renderers and visible cards
+// then display the same progress instead of silently suppressing the visible spinner.
+const imageRequestsInProgress = new Map<string, Promise<string>>();
 
 interface UploadButtonProps {
     isOverlay: boolean;
@@ -105,8 +106,8 @@ interface RegenerateButtonProps {
     gameIsLoading?: boolean;
 }
 
-const RegenerateButton: React.FC<RegenerateButtonProps> = React.memo(({ onClick, isGenerating, t, gameIsLoading }) => {
-    const isDisabled = isGenerating || gameIsLoading;
+const RegenerateButton: React.FC<RegenerateButtonProps> = React.memo(({ onClick, isGenerating, t }) => {
+    const isDisabled = isGenerating;
 
     return (
         <button
@@ -148,30 +149,45 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
 
     const { t } = useLocalization();
     const [isGenerating, setIsGenerating] = useState(false);
+    const [generationError, setGenerationError] = useState<string | null>(null);
     const [isManuallyCancelled, setIsManuallyCancelled] = useState(false);
     const abortControllerRef = useRef<AbortController | null>(null);
     const manualCancelRef = useRef(false);
+    useEffect(() => () => {
+        // HMR, navigation, or closing the game must not leave an orphaned image
+        // request occupying the single-active relay mailbox.
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+    }, []);
+
     const generateImage = useCallback(async (p: string, _settings: GameSettings | null, _forceRegenerate: boolean = false) => {
-        if (!p || conversionInProgress.has(p)) return;
+        if (!p || _settings?.disableImageGeneration === true) return;
         abortControllerRef.current?.abort();
         const controller = new AbortController();
         abortControllerRef.current = controller;
         const { signal } = controller;
         setIsGenerating(true);
+        setGenerationError(null);
         setIsManuallyCancelled(false);
         manualCancelRef.current = false;
-        conversionInProgress.add(p);
+        let request = imageRequestsInProgress.get(p);
+        if (!request) {
+            request = requestArenaGmImage(p, width, height, signal);
+            imageRequestsInProgress.set(p, request);
+        }
         try {
-            const imageUrl = await requestArenaGmImage(p, width, height, signal);
+            const imageUrl = await request;
             if (!signal.aborted) onImageGenerated(p, imageUrl, 'Arena GM', 'arena-gm-relay');
         } catch (error: any) {
             if (error?.name === 'AbortError') {
                 if (manualCancelRef.current) setIsManuallyCancelled(true);
             } else {
+                const message = error instanceof Error ? error.message : String(error);
+                setGenerationError(message);
                 console.error(`Arena image generation failed for prompt "${p.substring(0, 50)}...":`, error);
             }
         } finally {
-            conversionInProgress.delete(p);
+            if (imageRequestsInProgress.get(p) === request) imageRequestsInProgress.delete(p);
             setIsGenerating(false);
             if (abortControllerRef.current === controller) abortControllerRef.current = null;
         }
@@ -219,20 +235,40 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
         }
         return null;
     }, [prompt, cacheEntry]);
-    
+    const imageGenerationDisabled = gameSettings?.disableImageGeneration === true;
+    const isImageGenerating = isGenerating && !imageGenerationDisabled;
+    const showGenerationSpinner = !imageGenerationDisabled && (
+        isGenerating || (gameIsLoading && !imageUrlToDisplay)
+    );
+
     useEffect(() => {
-        if (prompt && !imageUrlToDisplay && !isGenerating && !isManuallyCancelled) {
+        if (!imageGenerationDisabled) return;
+        manualCancelRef.current = false;
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        setIsGenerating(false);
+        setGenerationError(null);
+        setIsManuallyCancelled(false);
+    }, [imageGenerationDisabled]);
+
+    useEffect(() => {
+        // Always enqueue missing images as soon as their prompts are mounted. The relay
+        // scheduler holds these jobs behind the active turn lease, so they cannot
+        // overwrite a staged game request; gating here can lose prompts while loading.
+        if (!imageGenerationDisabled && prompt && !imageUrlToDisplay && !isGenerating && !isManuallyCancelled) {
             generateImage(prompt, gameSettings);
         }
-    }, [prompt, imageUrlToDisplay, isGenerating, isManuallyCancelled, generateImage, gameSettings]);
+    }, [prompt, imageUrlToDisplay, isGenerating, isManuallyCancelled, generateImage, gameSettings, imageGenerationDisabled]);
 
     const handleRegenerateClick = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
-        if (gameIsLoading || isGenerating) return;
+        if (isGenerating || imageGenerationDisabled) return;
         if (originalTextPrompt) {
+            // Image requests are safe during turns: the relay scheduler defers them
+            // behind the active turn lease and the button can still show progress.
             generateImage(originalTextPrompt, gameSettings, true);
         }
-    }, [gameIsLoading, isGenerating, originalTextPrompt, generateImage, gameSettings]);
+    }, [isGenerating, imageGenerationDisabled, originalTextPrompt, generateImage, gameSettings]);
 
     const handlePinImage = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
@@ -315,19 +351,25 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
                 <div className="flex items-center justify-center h-full w-full bg-gray-900">
                     <XCircleIcon className="w-16 h-16 text-gray-600" />
                 </div>
+            ) : generationError ? (
+                <div role="alert" className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gray-900 p-3 text-center text-red-300">
+                    <XCircleIcon className="h-8 w-8" />
+                    <span className="text-sm font-semibold">{t('image_request_failed')}</span>
+                    <span className="max-w-full break-words text-xs text-red-200/80">{generationError}</span>
+                </div>
             ) : (
                 <div className="flex items-center justify-center h-full w-full">
-                    {/* The main spinner is now inside the isGenerating overlay, which appears immediately */}
+                    {/* The main spinner is now inside the isImageGenerating overlay, which appears immediately */}
                 </div>
             )}
 
-            {(isGenerating || (gameIsLoading && !imageUrlToDisplay)) && (
+            {showGenerationSpinner && (
                 <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10 gap-4">
                     <svg className="w-10 h-10 text-white animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    {showCancelButton && isGenerating && (
+                    {showCancelButton && isImageGenerating && (
                         <button
                             onClick={handleCancelGeneration}
                             className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors flex items-center gap-2"
@@ -339,13 +381,13 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
                 </div>
             )}
 
-            {onClick && imageUrlToDisplay && !isGenerating && (
+            {onClick && imageUrlToDisplay && !isImageGenerating && (
                 <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                     <p className="text-white font-bold text-lg">{t('Enlarge')}</p>
                 </div>
             )}
             
-            {showSourceInfo && gameSettings?.showImageSourceInfo && displaySourceText && !isGenerating && imageUrlToDisplay && (
+            {showSourceInfo && gameSettings?.showImageSourceInfo && displaySourceText && !isImageGenerating && imageUrlToDisplay && (
                 <div 
                     className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full z-10 pointer-events-none"
                     title={`${t('Generated by')}: ${displaySourceText}`}
@@ -366,7 +408,7 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
             )}
 
             <div className="absolute top-2 right-2 flex gap-2 z-20">
-                {showDownloadButton && imageUrlToDisplay && !isGenerating && (
+                {showDownloadButton && imageUrlToDisplay && !isImageGenerating && (
                     <button
                         onClick={handleDownload}
                         className="bg-gray-900/60 text-white p-2 rounded-full hover:bg-black/80 transition-all opacity-50 group-hover:opacity-100 focus:opacity-100"
@@ -375,7 +417,7 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
                         <ArrowDownTrayIcon className="w-5 h-5" />
                     </button>
                 )}
-                {onUploadCustom && !isCustomPortrait && imageUrlToDisplay && !isGenerating && (
+                {onUploadCustom && !isCustomPortrait && imageUrlToDisplay && !isImageGenerating && (
                     <button
                         onClick={handlePinImage}
                         className="bg-gray-900/60 text-white p-2 rounded-full hover:bg-black/80 transition-all opacity-50 group-hover:opacity-100 focus:opacity-100"
@@ -388,14 +430,14 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
                     <UploadButton
                         isOverlay={true}
                         onUploadCustom={onUploadCustom}
-                        isGenerating={isGenerating}
+                        isGenerating={isImageGenerating}
                         gameIsLoading={gameIsLoading}
                     />
                 )}
-                {showRegenerateButton && originalTextPrompt && (
+                {!imageGenerationDisabled && showRegenerateButton && originalTextPrompt && (
                     <RegenerateButton
                         onClick={handleRegenerateClick}
-                        isGenerating={isGenerating}
+                        isGenerating={isImageGenerating}
                         t={t}
                         gameIsLoading={gameIsLoading}
                     />
@@ -413,13 +455,13 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
                          <UploadButton
                             isOverlay={false}
                             onUploadCustom={onUploadCustom}
-                            isGenerating={isGenerating}
+                            isGenerating={isImageGenerating}
                             gameIsLoading={gameIsLoading}
                         />
                         {onClearCustom && (
                              <button
                                 onClick={(e) => { e.stopPropagation(); onClearCustom(); }}
-                                disabled={gameIsLoading || isGenerating}
+                                disabled={gameIsLoading || isImageGenerating}
                                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-yellow-300 bg-yellow-600/20 rounded-md hover:bg-yellow-600/40 transition-colors disabled:opacity-50"
                                 title={t("revert_to_generated")}
                             >
