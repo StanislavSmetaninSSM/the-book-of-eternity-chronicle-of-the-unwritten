@@ -113,7 +113,7 @@ export function createArenaGmTurnRequest(
     createdAt: new Date().toISOString(),
     instructions: [
       'Act as the game master for this role-playing game. Resolve the player action consistently with the supplied world state, game settings, and instructions.',
-      'Return only a JSON object with kind="arena-gm-response", protocolVersion=1, the same correlationId, and a response object.',
+      'Return only a JSON object with kind="arena-gm-response", protocolVersion=1, the same correlationId, and a response object. Write it atomically to .arena-gm-relay/responses/<correlationId>.json.',
       'The response object must follow the game response schema. Include response (narrative) and only state changes that are warranted.',
       'Do not claim to have changed state outside the structured response; the application applies the response.',
     ].join(' '),
@@ -139,6 +139,87 @@ const waitForNextPoll = (signal?: AbortSignal): Promise<void> => new Promise((re
   signal?.addEventListener('abort', abort, { once: true });
 });
 
+interface QueuedImageJob {
+  run: () => Promise<string>;
+  signal?: AbortSignal;
+  resolve: (image: string) => void;
+  reject: (error: Error) => void;
+  started: boolean;
+  abortHandler?: () => void;
+}
+
+const queuedImageJobs: QueuedImageJob[] = [];
+const waitingTurnLeases: Array<(release: () => void) => void> = [];
+let imageJobActive = false;
+let turnLeaseActive = false;
+
+function pumpRelayJobs(): void {
+  if (imageJobActive || turnLeaseActive) return;
+  while (queuedImageJobs.length && queuedImageJobs[0].signal?.aborted) {
+    const cancelled = queuedImageJobs.shift()!;
+    if (cancelled.abortHandler) cancelled.signal?.removeEventListener('abort', cancelled.abortHandler);
+    cancelled.reject(new DOMException('Image request cancelled.', 'AbortError'));
+  }
+  if (waitingTurnLeases.length) {
+    turnLeaseActive = true;
+    let released = false;
+    waitingTurnLeases.shift()!(() => {
+      if (released) return;
+      released = true;
+      turnLeaseActive = false;
+      pumpRelayJobs();
+    });
+    return;
+  }
+  const job = queuedImageJobs.shift();
+  if (!job) return;
+  job.started = true;
+  if (job.abortHandler) job.signal?.removeEventListener('abort', job.abortHandler);
+  if (job.signal?.aborted) {
+    job.reject(new DOMException('Image request cancelled.', 'AbortError'));
+    pumpRelayJobs();
+    return;
+  }
+  imageJobActive = true;
+  job.run().then(job.resolve, error => job.reject(error instanceof Error ? error : new Error(String(error))))
+    .finally(() => { imageJobActive = false; pumpRelayJobs(); });
+}
+
+/** Hold images while the full staged game turn is in progress. */
+export function acquireArenaGmTurnLease(): Promise<() => void> {
+  return new Promise(resolve => {
+    waitingTurnLeases.push(resolve);
+    pumpRelayJobs();
+  });
+}
+
+function enqueueArenaGmImage(run: () => Promise<string>, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) return Promise.reject(new DOMException('Image request cancelled.', 'AbortError'));
+  return new Promise((resolve, reject) => {
+    const job: QueuedImageJob = { run, signal, resolve, reject, started: false };
+    job.abortHandler = () => {
+      if (job.started) return; // The active request observes the same signal and cancels itself.
+      const index = queuedImageJobs.indexOf(job);
+      if (index >= 0) queuedImageJobs.splice(index, 1);
+      reject(new DOMException('Image request cancelled.', 'AbortError'));
+      pumpRelayJobs();
+    };
+    signal?.addEventListener('abort', job.abortHandler, { once: true });
+    queuedImageJobs.push(job);
+    pumpRelayJobs();
+  });
+}
+
+async function cancelQueuedRelayRequest(correlationId: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    await fetch('/__arena_gm/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correlationId }), keepalive: true,
+    });
+  } catch { /* Best-effort cancellation; the server still isolates every response by correlationId. */ }
+}
+
 async function postAndWaitForRelayResponse<T extends { kind: string; protocolVersion: number; correlationId: string }>(
   request: ArenaGmTurnRequest | ArenaGmStepRequest | ArenaGmImageRequest,
   expectedKind: T['kind'],
@@ -147,22 +228,28 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
   if (typeof window === 'undefined') throw new Error('Arena GM Relay requires a browser window.');
   if (!isArenaGmRelayEnabled()) throw new Error('Arena GM Relay is disabled.');
   if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
-  const accepted = await fetch('/__arena_gm/turn', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal,
-  });
-  if (!accepted.ok) throw new Error(`Relay server returned ${accepted.status}.`);
-  while (!signal?.aborted) {
-    await waitForNextPoll(signal);
-    const result = await fetch(`/__arena_gm/response?correlationId=${encodeURIComponent(request.correlationId)}`, { cache: 'no-store', signal });
-    if (result.status === 204) continue;
-    if (!result.ok) throw new Error(`Relay response read failed (${result.status}).`);
-    const envelope = await result.json();
-    if (envelope?.kind !== expectedKind || envelope?.protocolVersion !== ARENA_GM_PROTOCOL_VERSION || envelope?.correlationId !== request.correlationId) {
-      throw new Error('The mailbox returned a response for a different request or protocol.');
+  let completed = false;
+  try {
+    const accepted = await fetch('/__arena_gm/turn', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal,
+    });
+    if (!accepted.ok) throw new Error(`Relay server returned ${accepted.status}.`);
+    while (!signal?.aborted) {
+      await waitForNextPoll(signal);
+      const result = await fetch(`/__arena_gm/response?correlationId=${encodeURIComponent(request.correlationId)}`, { cache: 'no-store', signal });
+      if (result.status === 204) continue;
+      if (!result.ok) throw new Error(`Relay response read failed (${result.status}).`);
+      const envelope = await result.json();
+      if (envelope?.kind !== expectedKind || envelope?.protocolVersion !== ARENA_GM_PROTOCOL_VERSION || envelope?.correlationId !== request.correlationId) {
+        throw new Error('The mailbox returned a response for a different request or protocol.');
+      }
+      completed = true;
+      return envelope as T;
     }
-    return envelope as T;
+    throw new DOMException('Turn cancelled.', 'AbortError');
+  } finally {
+    if (!completed) await cancelQueuedRelayRequest(request.correlationId);
   }
-  throw new DOMException('Turn cancelled.', 'AbortError');
 }
 
 export async function requestArenaGmStep(
@@ -177,7 +264,7 @@ export async function requestArenaGmStep(
     kind: 'arena-gm-step', protocolVersion: ARENA_GM_PROTOCOL_VERSION,
     correlationId: newCorrelationId(), createdAt: new Date().toISOString(),
     stepName, modelName, attempt, systemInstruction,
-    instructions: 'Perform exactly this generation step from the game pipeline. Read and obey the supplied systemInstruction (if present) and prompt, especially the allowed-key/output contract. Return one arena-gm-step-response JSON envelope with this correlationId and output containing only the JSON object for this step. Do not skip or combine steps.',
+    instructions: 'Perform exactly this generation step from the game pipeline. Read and obey the supplied systemInstruction (if present) and prompt, especially the allowed-key/output contract. Return one arena-gm-step-response JSON envelope with this correlationId and output containing only the JSON object for this step. Write it atomically to .arena-gm-relay/responses/<correlationId>.json. Do not skip or combine steps.',
     prompt,
   };
   const envelope = await postAndWaitForRelayResponse<ArenaGmStepResponse>(request, 'arena-gm-step-response', signal);
@@ -187,7 +274,7 @@ export async function requestArenaGmStep(
   return { text: JSON.stringify(envelope.output), thoughtSignature: envelope.thoughtSignature };
 }
 
-export async function requestArenaGmImage(
+async function requestArenaGmImageDirect(
   prompt: string,
   width: number,
   height: number,
@@ -197,7 +284,7 @@ export async function requestArenaGmImage(
     kind: 'arena-gm-image', protocolVersion: ARENA_GM_PROTOCOL_VERSION,
     correlationId: newCorrelationId(), createdAt: new Date().toISOString(),
     prompt, width, height,
-    instructions: 'Generate one image from the prompt and save it at .arena-gm-relay/images/<correlationId>.png. Then write an arena-gm-image-response envelope to .arena-gm-relay/response.json with this exact correlationId. Do not alter the game or invent a text reply.',
+    instructions: 'Generate one image from the prompt and save it at .arena-gm-relay/images/<correlationId>.png. Then write an arena-gm-image-response envelope atomically to .arena-gm-relay/responses/<correlationId>.json. Do not alter the game or invent a text reply.',
   };
   const envelope = await postAndWaitForRelayResponse<ArenaGmImageResponse>(request, 'arena-gm-image-response', signal);
   const imageResponse = await fetch(`/__arena_gm/image?correlationId=${encodeURIComponent(envelope.correlationId)}`, { cache: 'no-store', signal });
@@ -209,6 +296,16 @@ export async function requestArenaGmImage(
     reader.onerror = () => reject(reader.error || new Error('Could not read generated image.'));
     reader.readAsDataURL(blob);
   });
+}
+
+/** Images are serialized and deferred until all active game-turn stages have finished. */
+export function requestArenaGmImage(
+  prompt: string,
+  width: number,
+  height: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  return enqueueArenaGmImage(() => requestArenaGmImageDirect(prompt, width, height, signal), signal);
 }
 
 export async function requestArenaGmTurn(request: ArenaGmTurnRequest, signal?: AbortSignal): Promise<GameResponse> {

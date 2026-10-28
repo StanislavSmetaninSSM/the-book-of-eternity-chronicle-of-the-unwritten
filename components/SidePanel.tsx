@@ -529,7 +529,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
         </div>
       </div>
       <div className="mt-4 pt-4 border-t border-gray-700/60 flex flex-col sm:flex-row gap-2">
-        <button onClick={onSaveGame} disabled={!gameState || isLoading} className="flex-1 flex items-center justify-center gap-3 px-4 py-2 text-sm font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+        <button onClick={onSaveGame} disabled={!gameState} className="flex-1 flex items-center justify-center gap-3 px-4 py-2 text-sm font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
             <ArrowDownTrayIcon className="w-5 h-5" />
             {t("Save to File")}
         </button>

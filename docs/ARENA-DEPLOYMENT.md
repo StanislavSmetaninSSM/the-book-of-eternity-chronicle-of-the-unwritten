@@ -11,9 +11,9 @@ npm ci
 npm run dev -- --host 0.0.0.0
 ```
 
-Open the Vite preview created by the dev server and keep the process alive. `vite.config.ts` registers the relay middleware that implements `/__arena_gm/turn`, `/__arena_gm/response`, `/__arena_gm/image`, and `/__arena_gm/status`. The file relay works with this Vite development server; it is not included in `vite build` output or a static hosting deployment.
+Open the Vite preview created by the dev server and keep the process alive. `vite.config.ts` registers the relay middleware that implements `/__arena_gm/turn`, `/__arena_gm/response`, `/__arena_gm/cancel`, `/__arena_gm/image`, and `/__arena_gm/status`. The file relay works with this Vite development server; it is not included in `vite build` output or a static hosting deployment.
 
-The Arena relay is the only configured backend. The app sends each game-generation pipeline step separately. It waits for the matching response before continuing to the next step, so one player action may require multiple agent responses. The image generation path also makes a separate relay request for each image.
+The Arena relay is the only configured backend. The app sends each game-generation pipeline step separately. The server persists requests in a queue and exposes only one active `pending.json`; turn stages are prioritized over images and each response is isolated by correlation ID. The browser holds a whole-turn lease, serializes image requests, and defers them until all stages for that player action finish. One action may require multiple agent responses.
 
 ## 2. What the agent needs to do
 
@@ -21,8 +21,8 @@ The Arena agent must have access to this same repository workspace. When the gam
 
 1. Read `.arena-gm-relay/pending.json`.
 2. Follow that packet's `instructions` and `prompt` exactly. For `arena-gm-step`, perform only the named step and honor the prompt's output-key contract. Do not combine the entire turn into one response.
-3. Write a response JSON object to `.arena-gm-relay/response.json` with the same `correlationId` and protocol version. The Vite server detects the matching response and resumes the browser pipeline.
-4. Continue checking for the next pending packet until the game finishes that action or the user cancels. A step/correction response may be followed immediately by another step request.
+3. Write the response envelope atomically to `.arena-gm-relay/responses/<correlationId>.json`, using the exact ID from the packet and its required response `kind`. For `arena-gm-step`, include only that stage's output object. The Vite server returns only the matching response and then promotes the next queued request.
+4. Continue checking the active `pending.json` until the game finishes that action or the user cancels. A step/correction response may be followed immediately by another step request; never combine the stages.
 
 You may run the optional watcher in another terminal to see when the mailbox changes:
 
@@ -30,11 +30,11 @@ You may run the optional watcher in another terminal to see when the mailbox cha
 npm run relay:watch
 ```
 
-The watcher is only a notifier. It does not call an agent, write a response, or make the agent autonomous. An active agent turn/user interaction is still required. Do not leave a stale response file in the mailbox; the server clears the previous response when accepting a new request.
+The watcher monitors only the active `pending.json`; it is only a notifier. It does not call an agent, write a response, inspect the private server-side queue, or make the agent autonomous. An active agent turn/user interaction is still required. Responses live under `responses/<correlationId>.json`, so unrelated requests cannot overwrite each other's results. The legacy `.arena-gm-relay/response.json` path remains accepted for compatibility, but new requests should use the correlation-specific path.
 
 ### Stage response envelope
 
-For an `arena-gm-step` packet, write `.arena-gm-relay/response.json` in this form. Copy the actual correlation ID from the request and set `output` to the JSON object for this one stage (not a complete `GameResponse`):
+For an `arena-gm-step` packet, write `.arena-gm-relay/responses/<correlationId>.json` in this form. Copy the actual correlation ID from the request and set `output` to the JSON object for this one stage (not a complete `GameResponse`):
 
 ```json
 {
@@ -57,7 +57,7 @@ An image request has `kind: "arena-gm-image"`, a prompt, and requested dimension
 .arena-gm-relay/images/<REQUEST-CORRELATION-ID>.png
 ```
 
-Then write `.arena-gm-relay/response.json`:
+Then write `.arena-gm-relay/responses/<correlationId>.json`:
 
 ```json
 {
@@ -94,5 +94,5 @@ The current relay is a Vite **development middleware** backed by local filesyste
 
 - **`Failed to fetch` / endpoint 404:** use the Vite dev server from this repository, not a static build preview or generic static host.
 - **Request waits indefinitely:** the app cannot invoke the agent. Start/continue an Arena agent interaction and have it process the pending file.
-- **Response ignored:** verify exact `correlationId`, `kind`, `protocolVersion: 1`, valid JSON, and that `response.json` is in the workspace root's `.arena-gm-relay` directory.
+- **Response ignored:** verify exact `correlationId`, `kind`, `protocolVersion: 1`, valid JSON, and that the response is in `.arena-gm-relay/responses/<correlationId>.json` (or, for a legacy client only, `.arena-gm-relay/response.json`).
 - **Image not displayed:** verify the PNG exists at the correlation-ID path and is readable before writing the image response envelope.

@@ -31,8 +31,9 @@ interface ImageRendererProps {
     onAcceptPending?: () => void;
 }
 
-// Module-level set to track which prompts are currently being converted to base64
-const conversionInProgress = new Set<string>();
+// Share each in-flight request by prompt. Hidden warmup renderers and visible cards
+// then display the same progress instead of silently suppressing the visible spinner.
+const imageRequestsInProgress = new Map<string, Promise<string>>();
 
 interface UploadButtonProps {
     isOverlay: boolean;
@@ -105,8 +106,8 @@ interface RegenerateButtonProps {
     gameIsLoading?: boolean;
 }
 
-const RegenerateButton: React.FC<RegenerateButtonProps> = React.memo(({ onClick, isGenerating, t, gameIsLoading }) => {
-    const isDisabled = isGenerating || gameIsLoading;
+const RegenerateButton: React.FC<RegenerateButtonProps> = React.memo(({ onClick, isGenerating, t }) => {
+    const isDisabled = isGenerating;
 
     return (
         <button
@@ -148,30 +149,45 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
 
     const { t } = useLocalization();
     const [isGenerating, setIsGenerating] = useState(false);
+    const [generationError, setGenerationError] = useState<string | null>(null);
     const [isManuallyCancelled, setIsManuallyCancelled] = useState(false);
     const abortControllerRef = useRef<AbortController | null>(null);
     const manualCancelRef = useRef(false);
+    useEffect(() => () => {
+        // HMR, navigation, or closing the game must not leave an orphaned image
+        // request occupying the single-active relay mailbox.
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+    }, []);
+
     const generateImage = useCallback(async (p: string, _settings: GameSettings | null, _forceRegenerate: boolean = false) => {
-        if (!p || conversionInProgress.has(p)) return;
+        if (!p) return;
         abortControllerRef.current?.abort();
         const controller = new AbortController();
         abortControllerRef.current = controller;
         const { signal } = controller;
         setIsGenerating(true);
+        setGenerationError(null);
         setIsManuallyCancelled(false);
         manualCancelRef.current = false;
-        conversionInProgress.add(p);
+        let request = imageRequestsInProgress.get(p);
+        if (!request) {
+            request = requestArenaGmImage(p, width, height, signal);
+            imageRequestsInProgress.set(p, request);
+        }
         try {
-            const imageUrl = await requestArenaGmImage(p, width, height, signal);
+            const imageUrl = await request;
             if (!signal.aborted) onImageGenerated(p, imageUrl, 'Arena GM', 'arena-gm-relay');
         } catch (error: any) {
             if (error?.name === 'AbortError') {
                 if (manualCancelRef.current) setIsManuallyCancelled(true);
             } else {
+                const message = error instanceof Error ? error.message : String(error);
+                setGenerationError(message);
                 console.error(`Arena image generation failed for prompt "${p.substring(0, 50)}...":`, error);
             }
         } finally {
-            conversionInProgress.delete(p);
+            if (imageRequestsInProgress.get(p) === request) imageRequestsInProgress.delete(p);
             setIsGenerating(false);
             if (abortControllerRef.current === controller) abortControllerRef.current = null;
         }
@@ -221,6 +237,9 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
     }, [prompt, cacheEntry]);
     
     useEffect(() => {
+        // Always enqueue missing images as soon as their prompts are mounted. The relay
+        // scheduler holds these jobs behind the active turn lease, so they cannot
+        // overwrite a staged game request; gating here can lose prompts while loading.
         if (prompt && !imageUrlToDisplay && !isGenerating && !isManuallyCancelled) {
             generateImage(prompt, gameSettings);
         }
@@ -228,11 +247,13 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
 
     const handleRegenerateClick = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
-        if (gameIsLoading || isGenerating) return;
+        if (isGenerating) return;
         if (originalTextPrompt) {
+            // Image requests are safe during turns: the relay scheduler defers them
+            // behind the active turn lease and the button can still show progress.
             generateImage(originalTextPrompt, gameSettings, true);
         }
-    }, [gameIsLoading, isGenerating, originalTextPrompt, generateImage, gameSettings]);
+    }, [isGenerating, originalTextPrompt, generateImage, gameSettings]);
 
     const handlePinImage = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
@@ -314,6 +335,12 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
             ) : isManuallyCancelled ? (
                 <div className="flex items-center justify-center h-full w-full bg-gray-900">
                     <XCircleIcon className="w-16 h-16 text-gray-600" />
+                </div>
+            ) : generationError ? (
+                <div role="alert" className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gray-900 p-3 text-center text-red-300">
+                    <XCircleIcon className="h-8 w-8" />
+                    <span className="text-sm font-semibold">{t('image_request_failed')}</span>
+                    <span className="max-w-full break-words text-xs text-red-200/80">{generationError}</span>
                 </div>
             ) : (
                 <div className="flex items-center justify-center h-full w-full">

@@ -8,6 +8,7 @@ import { playNotificationSound } from '../../utils/soundManager';
 import { DataConnection } from 'peerjs';
 import { deepMergeResponses, processAndApplyResponse } from '../../utils/responseProcessor';
 import { deepStripModerationSymbols } from '../../utils/textUtils';
+import { acquireArenaGmTurnLease } from '../../utils/arenaGmRelay';
 
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => {
@@ -87,6 +88,7 @@ export const createTurnManager = (
         });
     };
 
+    let releaseArenaGmTurn: (() => void) | null = null;
     const handleTurn = async (context: GameContext, fullHistoryForTurn: ChatMessage[], baseStateOverride?: GameState) => {
         setIsLoading(true);
         setError(null);
@@ -124,6 +126,8 @@ export const createTurnManager = (
                 return;
             }
             
+            // Keep automatic/optional image jobs out of the mailbox for the entire staged turn.
+            releaseArenaGmTurn = await acquireArenaGmTurnLease();
             const finalResponseRaw = await executeTurn(
                 context,
                 abortControllerRef.current.signal,
@@ -564,6 +568,9 @@ export const createTurnManager = (
                     turnStartTimeRef.current = null;
                 }
             }
+            const releaseTurnLease = releaseArenaGmTurn;
+            releaseArenaGmTurn = null;
+            releaseTurnLease?.();
         }
     };
     

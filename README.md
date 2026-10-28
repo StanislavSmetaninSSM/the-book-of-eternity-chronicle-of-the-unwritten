@@ -21,7 +21,7 @@ This fork is adapted to use the **Arena conversation agent as the game master** 
    ```
 
 3. Open the Vite preview. Keep the dev server running: the relay's HTTP endpoints are provided by the Vite development middleware and are not part of a static production build.
-4. Keep an Arena agent session available. The application cannot wake or invoke an agent when a request appears. For each pending relay request, the agent must inspect `.arena-gm-relay/pending.json` and write the matching response to `.arena-gm-relay/response.json`. The detailed per-stage, image, and recovery instructions are in [docs/ARENA-DEPLOYMENT.md](docs/ARENA-DEPLOYMENT.md); the persistent agent workflow for processing multiple stages and monitoring the mailbox is in [AGENTS.md](AGENTS.md).
+4. Keep an Arena agent session available. The application cannot wake or invoke an agent when a request appears. For each active relay request, inspect `.arena-gm-relay/pending.json` and write its response atomically to `.arena-gm-relay/responses/<correlationId>.json`. The relay queues concurrent jobs without overwriting the active request and prioritizes game-turn stages over images. Detailed per-stage, image, and recovery instructions are in [docs/ARENA-DEPLOYMENT.md](docs/ARENA-DEPLOYMENT.md); the persistent agent workflow for monitoring sequential stages is in [AGENTS.md](AGENTS.md). The watcher only notifies and cannot process requests or wake an agent.
 
 AI generation is fixed to the Arena GM relay; there is no provider/model selector, external model API key field, or provider-off switch in the game.
 
