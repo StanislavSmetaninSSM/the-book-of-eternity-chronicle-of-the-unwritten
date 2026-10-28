@@ -124,3 +124,23 @@ test('relay queues requests without clobbering, prioritizes turn work, isolates 
   assert.equal((await cancelActive.json()).wasActive, true);
   assert.equal((await status()).activeCorrelationId, null);
 });
+
+test('relay expires an abandoned active request after its browser heartbeat lease lapses', async () => {
+  await post('turn', makeStep('stale-active'));
+  await post('turn', makeStep('after-stale'));
+
+  const activePath = path.join(relayDirectory, 'active-request.json');
+  const active = JSON.parse(await readFile(activePath, 'utf8'));
+  active.lastHeartbeatAt = Date.now() - 6 * 60_000;
+  await writeFile(activePath, JSON.stringify(active));
+  await writeFile(path.join(relayDirectory, 'responses', 'stale-active.json'), JSON.stringify({
+    kind: 'arena-gm-step-response', protocolVersion: 1, correlationId: 'stale-active', output: {},
+  }));
+
+  const recovered = await status();
+  assert.equal(recovered.activeCorrelationId, 'after-stale');
+  assert.equal(recovered.queuedCount, 0);
+  assert.equal(JSON.parse(await readFile(path.join(relayDirectory, 'pending.json'), 'utf8')).correlationId, 'after-stale');
+  await assert.rejects(readFile(path.join(relayDirectory, 'responses', 'stale-active.json')), { code: 'ENOENT' });
+  assert.equal((await consume('stale-active')).status, 410);
+});
