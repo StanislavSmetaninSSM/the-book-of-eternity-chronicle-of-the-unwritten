@@ -9,10 +9,12 @@ const activeRequestPath = path.join(relayDirectory, 'active-request.json');
 const requestQueueDirectory = path.join(relayDirectory, 'request-queue');
 const responseDirectory = path.join(relayDirectory, 'responses');
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
+const ACTIVE_REQUEST_LEASE_MS = Math.max(30_000, Number(process.env.ARENA_GM_RELAY_ACTIVE_LEASE_MS) || 5 * 60_000);
 const CORRELATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 interface QueuedRelayRequest {
   queuedAt: number;
+  lastHeartbeatAt?: number;
   packet: Record<string, any>;
 }
 
@@ -52,13 +54,27 @@ async function readActiveRequest(): Promise<QueuedRelayRequest | null> {
 }
 
 async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
-  const active = await readActiveRequest();
+  let active = await readActiveRequest();
   if (active) {
-    const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
-    if (visiblePending?.correlationId !== active.packet.correlationId) {
-      await writeJsonAtomically(pendingPath, active.packet);
+    const heartbeatAt = active.lastHeartbeatAt ?? active.queuedAt;
+    if (Number.isFinite(heartbeatAt) && Date.now() - heartbeatAt > ACTIVE_REQUEST_LEASE_MS) {
+      const staleId = active.packet.correlationId;
+      console.warn(`Expiring stale Arena GM request ${staleId}: no browser heartbeat for ${Date.now() - heartbeatAt}ms.`);
+      await rm(activeRequestPath, { force: true });
+      const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
+      if (visiblePending?.correlationId === staleId) await rm(pendingPath, { force: true });
+      await removeResponseForCorrelation(staleId);
+      if (active.packet.kind === 'arena-gm-image') {
+        await rm(path.join(relayDirectory, 'images', `${staleId}.png`), { force: true });
+      }
+      active = null;
+    } else {
+      const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
+      if (visiblePending?.correlationId !== active.packet.correlationId) {
+        await writeJsonAtomically(pendingPath, active.packet);
+      }
+      return active;
     }
-    return active;
   }
 
   await mkdir(requestQueueDirectory, { recursive: true });
@@ -211,7 +227,18 @@ function arenaGmFilesystemRelay(): Plugin {
             const result = await serializeRelayOperation(async () => {
               await mkdir(responseDirectory, { recursive: true });
               const active = await dispatchNextRequest();
-              if (active?.packet.correlationId !== correlationId) return null;
+              if (active?.packet.correlationId !== correlationId) {
+                const queuedPath = path.join(requestQueueDirectory, `${correlationId}.json`);
+                const queued = await readJsonIfPresent<QueuedRelayRequest>(queuedPath);
+                if (queued) {
+                  queued.lastHeartbeatAt = Date.now();
+                  await writeJsonAtomically(queuedPath, queued);
+                  return null;
+                }
+                return { relayExpired: true };
+              }
+              active.lastHeartbeatAt = Date.now();
+              await writeJsonAtomically(activeRequestPath, active);
 
               let response = await readJsonIfPresent<Record<string, any>>(path.join(responseDirectory, `${correlationId}.json`));
               let responseSource: 'correlated' | 'legacy' | null = response ? 'correlated' : null;
@@ -232,6 +259,7 @@ function arenaGmFilesystemRelay(): Plugin {
               return response;
             });
             if (result === null) { res.statusCode = 204; res.end(); return; }
+            if ((result as any)?.relayExpired) { send(410, { error: 'Relay request expired or was cancelled before its response was consumed.' }); return; }
             send(200, result);
             return;
           }
@@ -254,21 +282,22 @@ function arenaGmFilesystemRelay(): Plugin {
           }
 
           if (url.pathname === '/__arena_gm/status' && req.method === 'GET') {
-            const [active, queuedNames] = await Promise.all([
-              readJsonIfPresent<QueuedRelayRequest>(activeRequestPath),
-              readdir(requestQueueDirectory).catch(() => [] as string[]),
-            ]);
-            const queuedRequests = await Promise.all(queuedNames
-              .filter(name => name.endsWith('.json'))
-              .map(name => readJsonIfPresent<QueuedRelayRequest>(path.join(requestQueueDirectory, name))));
-            const queuedTurnCount = queuedRequests.filter(request => request?.packet?.kind !== 'arena-gm-image').length;
-            send(200, {
-              enabled: true,
-              activeCorrelationId: active?.packet.correlationId || null,
-              activeKind: active?.packet.kind || null,
-              queuedCount: queuedRequests.filter(Boolean).length,
-              queuedTurnCount,
+            const relayStatus = await serializeRelayOperation(async () => {
+              const active = await dispatchNextRequest();
+              const queuedNames = await readdir(requestQueueDirectory).catch(() => [] as string[]);
+              const queuedRequests = await Promise.all(queuedNames
+                .filter(name => name.endsWith('.json'))
+                .map(name => readJsonIfPresent<QueuedRelayRequest>(path.join(requestQueueDirectory, name))));
+              const queuedTurnCount = queuedRequests.filter(request => request?.packet?.kind !== 'arena-gm-image').length;
+              return {
+                enabled: true,
+                activeCorrelationId: active?.packet.correlationId || null,
+                activeKind: active?.packet.kind || null,
+                queuedCount: queuedRequests.filter(Boolean).length,
+                queuedTurnCount,
+              };
             });
+            send(200, relayStatus);
             return;
           }
           send(404, { error: 'Unknown relay endpoint.' });
