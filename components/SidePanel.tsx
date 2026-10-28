@@ -466,7 +466,6 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
         if (tab.name === 'Characters' && gameSettings?.cooperativeGameType === 'None') return false;
         if (tab.name === 'Stash' && !showStash) return false;
         if (tab.name === 'SceneNPCs' && (!npcsInScene || npcsInScene.length === 0)) return false;
-        if (tab.name === 'CinemaHall' && !gameSettings?.modelName.includes('2.5')) return false;
         return true;
     });
   }, [gameSettings, showStash, npcsInScene]);

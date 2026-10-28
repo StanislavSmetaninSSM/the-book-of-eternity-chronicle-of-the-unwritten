@@ -2,9 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ArenaGmTurnRequest,
   getArenaGmRequestEventName,
-  isArenaGmRelayEnabled,
   parseArenaGmTurnResponse,
-  setArenaGmRelayEnabled,
 } from '../utils/arenaGmRelay';
 
 type RequestDetail = {
@@ -14,14 +12,12 @@ type RequestDetail = {
 };
 
 export default function ArenaGmRelayPanel(): React.ReactNode {
-  const [enabled, setEnabled] = useState(isArenaGmRelayEnabled);
   const [pending, setPending] = useState<RequestDetail | null>(null);
   const [responseText, setResponseText] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const syncSetting = () => setEnabled(isArenaGmRelayEnabled());
     const onRequest = (event: Event) => {
       const detail = (event as CustomEvent<RequestDetail>).detail;
       setPending(detail);
@@ -29,15 +25,12 @@ export default function ArenaGmRelayPanel(): React.ReactNode {
       setError('');
       setCopied(false);
     };
-    window.addEventListener('arena-gm-relay:setting', syncSetting);
     window.addEventListener(getArenaGmRequestEventName(), onRequest);
     return () => {
-      window.removeEventListener('arena-gm-relay:setting', syncSetting);
       window.removeEventListener(getArenaGmRequestEventName(), onRequest);
     };
   }, []);
 
-  const toggle = () => setArenaGmRelayEnabled(!enabled);
   const copyRequest = async () => {
     if (!pending) return;
     const text = JSON.stringify(pending.request, null, 2);
@@ -68,14 +61,13 @@ export default function ArenaGmRelayPanel(): React.ReactNode {
   };
 
   return <>
-    <button
-      type="button"
-      onClick={toggle}
-      className={`fixed top-4 left-4 z-[1200] rounded-lg border px-3 py-2 text-xs font-semibold shadow-lg backdrop-blur ${enabled ? 'border-emerald-400 bg-emerald-950/90 text-emerald-200' : 'border-gray-600 bg-gray-900/90 text-gray-300'}`}
-      title="Use the Arena conversation agent as the GM via manual turn relay"
+    <div
+      className="fixed top-4 left-4 z-[1200] rounded-lg border border-emerald-400 bg-emerald-950/90 px-3 py-2 text-xs font-semibold text-emerald-200 shadow-lg backdrop-blur"
+      title="Text and image generation are routed through the Arena GM relay"
+      role="status"
     >
-      Arena GM Relay: {enabled ? 'ON' : 'OFF'}
-    </button>
+      Arena GM: active
+    </div>
 
     {pending && <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 p-3 md:p-8">
       <section className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-cyan-700 bg-gray-950 text-gray-100 shadow-2xl">

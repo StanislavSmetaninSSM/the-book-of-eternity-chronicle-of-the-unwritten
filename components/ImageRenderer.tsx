@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { ArrowPathIcon, ArrowUpTrayIcon, XCircleIcon, ArrowDownTrayIcon, SparklesIcon, MapPinIcon } from '@heroicons/react/24/solid';
 import { ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
-import { GoogleGenAI, Modality } from "@google/genai";
 import { GameSettings, ImageCacheEntry } from '../types';
 import { requestArenaGmImage } from '../utils/arenaGmRelay';
 
@@ -152,167 +151,31 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
     const [isManuallyCancelled, setIsManuallyCancelled] = useState(false);
     const abortControllerRef = useRef<AbortController | null>(null);
     const manualCancelRef = useRef(false);
-    const retryCountRef = useRef(0);
-    const lastAttemptedPromptRef = useRef<string | null | undefined>(null);
-
-    useEffect(() => {
-        if (prompt !== lastAttemptedPromptRef.current) {
-            retryCountRef.current = 0;
-            lastAttemptedPromptRef.current = prompt;
-        }
-    }, [prompt]);
-
-    const generateWithNanoBanana = useCallback(async (p: string, signal: AbortSignal, configuredApiKey?: string) => {
-        const apiKey = configuredApiKey || (typeof process !== 'undefined' ? process.env?.API_KEY : undefined);
-        if (!apiKey) throw new Error('Gemini API key is not configured.');
-        const ai = new GoogleGenAI({ apiKey });
-        const modelConfig: any = {
-            model: 'gemini-2.5-flash-image',
-            contents: { parts: [{ text: p }] },
-            config: { responseModalities: [Modality.IMAGE] },
-            signal,
-        };
-        const imageResponse = await ai.models.generateContent(modelConfig);
-        
-        if (signal.aborted) return;
-
-        for (const part of imageResponse.candidates[0].content.parts) {
-            if (part.inlineData) {
-                const base64ImageBytes: string = part.inlineData.data;
-                const imageUrl = `data:image/png;base64,${base64ImageBytes}`;
-                if (signal.aborted) return;
-                onImageGenerated(p, imageUrl, 'Nano Banana', 'gemini-2.5-flash-image');
-                return;
-            }
-        }
-        throw new Error("Nano Banana (Gemini) response did not contain image data.");
-    }, [onImageGenerated]);
-    
-    const generateWithImagen = useCallback(async (p: string, model: 'normal' | 'ultra' | 'fast', signal: AbortSignal, configuredApiKey?: string) => {
-        let modelName = 'imagen-4.0-generate-001';
-        if (model === 'ultra') modelName = 'imagen-4.0-ultra-generate-001';
-        if (model === 'fast') modelName = 'imagen-4.0-fast-generate-001';
-        
-        const apiKey = configuredApiKey || (typeof process !== 'undefined' ? process.env?.API_KEY : undefined);
-        if (!apiKey) throw new Error('Gemini API key is not configured.');
-        const ai = new GoogleGenAI({ apiKey });
-        const modelConfig: any = {
-            model: modelName,
-            prompt: p,
-            config: {
-              numberOfImages: 1,
-              outputMimeType: 'image/jpeg',
-            },
-            signal,
-        };
-        const response = await ai.models.generateImages(modelConfig);
-    
-        if (signal.aborted) return;
-
-        if (response.generatedImages && response.generatedImages[0].image.imageBytes) {
-            const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
-            const imageUrl = `data:image/jpeg;base64,${base64ImageBytes}`;
-            if (signal.aborted) return;
-            onImageGenerated(p, imageUrl, 'Imagen', modelName);
-        } else {
-            throw new Error("Imagen response did not contain image data.");
-        }
-    }, [onImageGenerated]);
-
-    const generateImage = useCallback(async (p: string, settings: GameSettings | null, forceRegenerate: boolean = false) => {
-        if (!p || (!forceRegenerate && conversionInProgress.has(p))) return;
-    
-        if (forceRegenerate) {
-            retryCountRef.current = 0;
-        }
-    
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-        }
-        abortControllerRef.current = new AbortController();
-        const signal = abortControllerRef.current.signal;
-    
+    const generateImage = useCallback(async (p: string, _settings: GameSettings | null, _forceRegenerate: boolean = false) => {
+        if (!p || conversionInProgress.has(p)) return;
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        const { signal } = controller;
         setIsGenerating(true);
         setIsManuallyCancelled(false);
         manualCancelRef.current = false;
         conversionInProgress.add(p);
-    
-        const configuredPipeline = settings?.imageGenerationModelPipeline?.length ? settings.imageGenerationModelPipeline : [
-            { provider: 'nanobanana' } as const,
-            { provider: 'imagen', model: 'normal' } as const,
-            { provider: 'imagen', model: 'ultra' } as const,
-            { provider: 'imagen', model: 'fast' } as const,
-        ];
-        const pipeline = [
-            { provider: 'arena-gm' } as const,
-            ...configuredPipeline.filter(source => source.provider !== 'arena-gm'),
-        ];
-    
         try {
-            const MAX_TOTAL_ATTEMPTS = 10;
-            let success = false;
-    
-            while (retryCountRef.current < MAX_TOTAL_ATTEMPTS && !signal.aborted) {
-                retryCountRef.current += 1;
-                console.log(`Image generation attempt ${retryCountRef.current}/${MAX_TOTAL_ATTEMPTS} for prompt "${p.substring(0, 50)}..."`);
-    
-                for (const source of pipeline) {
-                    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-                    try {
-                        const sourceInfo = source.provider + (source.provider === 'imagen' ? ` (${source.model})` : '');
-                        console.log(`Attempting with provider: ${sourceInfo}`);
-    
-                        if (source.provider === 'arena-gm') {
-                            const imageUrl = await requestArenaGmImage(p, width, height, signal);
-                            if (!signal.aborted) onImageGenerated(p, imageUrl, 'Arena GM', 'arena-gm-relay');
-                        } else if (source.provider === 'nanobanana') {
-                            await generateWithNanoBanana(p, signal, settings?.geminiApiKey);
-                        } else if (source.provider === 'imagen') {
-                            await generateWithImagen(p, source.model, signal, settings?.geminiApiKey);
-                        }
-    
-                        console.log(`Successfully generated image with ${sourceInfo}`);
-                        success = true;
-                        break;
-                    } catch (error: any) {
-                        if (error.name === 'AbortError') throw error;
-                        const sourceInfo = source.provider + (source.provider === 'imagen' ? ` (${source.model})` : '');
-                        console.error(`Image generation with ${sourceInfo} failed for prompt "${p.substring(0, 50)}...":`, error);
-                    }
-                }
-    
-                if (success) {
-                    break;
-                } else if (!signal.aborted) {
-                    console.warn(`All providers failed on attempt ${retryCountRef.current}. Retrying pipeline after delay...`);
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                }
-            }
-    
-            if (!success && !signal.aborted) {
-                console.error(`Image generation failed after ${MAX_TOTAL_ATTEMPTS} attempts. Stopping.`);
-                throw new Error(t('image_generation_failed_all_attempts'));
-            }
-    
+            const imageUrl = await requestArenaGmImage(p, width, height, signal);
+            if (!signal.aborted) onImageGenerated(p, imageUrl, 'Arena GM', 'arena-gm-relay');
         } catch (error: any) {
-            if (error.name === 'AbortError') {
-                console.log("Image generation cancelled.");
-                if (manualCancelRef.current) {
-                    console.log("Cancellation was manual.");
-                    retryCountRef.current = 0; // Reset on manual cancel
-                    setIsManuallyCancelled(true);
-                }
+            if (error?.name === 'AbortError') {
+                if (manualCancelRef.current) setIsManuallyCancelled(true);
             } else {
-                console.error("An unexpected error occurred during image generation pipeline:", error);
+                console.error(`Arena image generation failed for prompt "${p.substring(0, 50)}...":`, error);
             }
         } finally {
             conversionInProgress.delete(p);
             setIsGenerating(false);
-            if (abortControllerRef.current?.signal === signal) {
-                abortControllerRef.current = null;
-            }
+            if (abortControllerRef.current === controller) abortControllerRef.current = null;
         }
-    }, [generateWithNanoBanana, generateWithImagen, onImageGenerated, t]);
+    }, [onImageGenerated, width, height]);
     
     const { cacheEntry, sourceProvider, sourceModel } = useMemo(() => {
         // Try prompt first, then fall back to originalTextPrompt

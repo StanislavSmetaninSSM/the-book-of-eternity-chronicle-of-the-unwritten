@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { PlusIcon, MinusIcon, CheckIcon } from '@heroicons/react/24/solid';
+import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
 import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import Modal from './Modal';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP, saveConfigurationToFile, loadConfigurationFromFile } from '../utils/fileManager';
@@ -25,7 +25,6 @@ import { initializeAndPreviewSound } from '../utils/soundManager';
 import { UniverseCustomizer } from './UniverseCustomizer';
 import { weather as weatherTranslations } from '../utils/translations/ui/weather';
 import { PlayerCharacter } from '../types';
-import GeminiModelSelect from './GeminiModelSelect';
 import type { CrashRecoveryMarker, CrashRecoveryMetadata } from '../utils/fileManager';
 
 
@@ -75,19 +74,8 @@ const initialFormData = {
     startingYear: 1024,
     startingMonth: 'fantasy_month_1_name',
     startingDay: 1,
-    aiProvider: 'gemini' as 'gemini' | 'openrouter',
-    modelName: 'gemini-2.5-pro',
-    correctionModelName: '',
-    isCustomModel: false,
-    customModelName: '',
-    openRouterModelName: 'google/gemini-flash-1.5',
-    geminiThinkingBudget: 128,
-    geminiThinkingLevel: 'high' as 'low' | 'high',
-    useDynamicThinkingBudget: true,
     nonMagicMode: false,
     adultMode: false,
-    geminiApiKey: '',
-    openRouterApiKey: '',
     youtubeApiKey: '',
     allowHistoryManipulation: false,
     currencyName: 'Gold',
@@ -136,7 +124,6 @@ const initialFormData = {
     oldMagicDescription: oldMagicDescEn,
     useDivineFavorSystem: false,
     divineFavorDescription: divineFavorDescEn,
-    useGoogleSearch: false,
 };
 
 const formatTimestamp = (timestamp: string | null, t: (key: string) => string): string => {
@@ -197,15 +184,11 @@ interface CreationFormProps {
     formData: typeof initialFormData;
     handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
     handleCheckboxChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    handleProviderChange: (provider: 'gemini' | 'openrouter') => void;
-    handleModelChange: (modelValue: string) => void;
     handleAdultModeClick: () => void;
     handleNonMagicModeClick: () => void;
     handleDifficultyChange: (difficulty: 'normal' | 'hard' | 'impossible') => void;
-    handleBudgetToggle: () => void;
     handleCoopTypeChange: (type: 'None' | 'MultiplePersonalities' | 'FullParty') => void;
     handleMultiplePersonalitiesSettingChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    advancedBudget: boolean;
     onSubmit: (e: React.FormEvent) => void;
     onLoadGame: () => void;
     submitButtonText: string;
@@ -219,15 +202,11 @@ const CreationForm: React.FC<CreationFormProps> = ({
     formData,
     handleInputChange,
     handleCheckboxChange,
-    handleProviderChange,
-    handleModelChange,
     handleAdultModeClick,
     handleNonMagicModeClick,
     handleDifficultyChange,
-    handleBudgetToggle,
     handleCoopTypeChange,
     handleMultiplePersonalitiesSettingChange,
-    advancedBudget,
     onSubmit,
     onLoadGame,
     submitButtonText,
@@ -237,7 +216,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
     setFormData
 }) => {
     const { t } = useLocalization();
-    const { universe, race, charClass, isCustomModel, aiProvider, cooperativeGameType, multiplePersonalitiesSettings, hardMode, impossibleMode, startingMonth, startingDay, geminiThinkingLevel } = formData;
+    const { universe, race, charClass, cooperativeGameType, multiplePersonalitiesSettings, hardMode, impossibleMode, startingMonth, startingDay } = formData;
     const isHostMode = submitButtonText === t('Create Game (Host)');
     const isSubmitDisabled = (submitButtonText === t('Begin Your Adventure') || submitButtonText === t('Create Game (Host)')) && formData.universe === 'custom' && !formData.selectedEra;
 
@@ -264,13 +243,6 @@ const CreationForm: React.FC<CreationFormProps> = ({
     const nonMagicChecked = formData.universe === 'history' ? true : formData.nonMagicMode;
 
     const currentDifficulty = impossibleMode ? 'impossible' : (hardMode ? 'hard' : 'normal');
-
-    const minBudget = 0;
-    const maxBudget = 2048;
-    const budget = formData.geminiThinkingBudget ?? 128;
-    const progress = maxBudget > minBudget ? ((budget - minBudget) / (maxBudget - minBudget)) * 100 : 0;
-    
-    const isGemini3 = formData.modelName.includes('gemini-3');
 
     const daysInSelectedMonth = useMemo(() => {
         const monthData = currentWorld.calendar?.months.find((m: any) => m.name === startingMonth);
@@ -735,7 +707,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
             </div>
 
             <div className="p-4 bg-slate-900/30 rounded-lg border border-slate-700 space-y-4">
-                <h3 className="text-lg font-semibold text-cyan-400">{t('AI Settings')}</h3>
+                <h3 className="text-lg font-semibold text-cyan-400">{t('Narrative Settings')}</h3>
                 <div className="flex items-center justify-between p-3 bg-gray-900/30 rounded-lg">
                     <div>
                         <label className="font-medium text-yellow-300">{t("Adult Mode (21+)")}</label>
@@ -746,123 +718,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                         <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-focus-within:ring-2 peer-focus-within:ring-yellow-500 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-600"></div>
                     </div>
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">{t("AI Provider")}</label>
-                    <div className="flex gap-2 p-1 bg-gray-900/50 rounded-lg">
-                        <button type="button" onClick={() => handleProviderChange('gemini')} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${aiProvider === 'gemini' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('Google Gemini')}</button>
-                        <button type="button" onClick={() => handleProviderChange('openrouter')} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${aiProvider === 'openrouter' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('OpenRouter')}</button>
-                    </div>
-                </div>
-                <div className="p-4 mt-2 bg-red-900/30 border-2 border-red-500/50 rounded-lg text-center">
-                    <h4 className="text-lg font-bold text-red-300 uppercase flex items-center justify-center gap-2">
-                        <ExclamationTriangleIcon className="w-5 h-5" />
-                        {t('token_warning_title')}
-                    </h4>
-                    <p className="text-sm text-red-200 mt-2">{t('token_warning_p1')}</p>
-                    <p className="text-sm text-red-200 mt-1">{t('token_warning_p2')}</p>
-                    <p className="text-sm font-bold text-yellow-300 mt-2">{t('token_warning_p3')}</p>
-                </div>
-                {aiProvider === 'gemini' && (
-                    <div className="space-y-3 animate-fade-in-down">
-                        <ToggleSwitch label={t("use_google_search")} description={t("use_google_search_desc")} name="useGoogleSearch" checked={!!formData.useGoogleSearch} onChange={handleCheckboxChange} />
-                        <div>
-                            <label htmlFor="modelName" className="block text-sm font-medium text-gray-300 mb-2">{t("AI Model")}</label>
-                            <GeminiModelSelect
-                                id="modelName"
-                                name="modelName"
-                                value={formData.modelName}
-                                isCustomModel={isCustomModel}
-                                customModelName={formData.customModelName || ''}
-                                onModelChange={handleModelChange}
-                                onCustomModelChange={(modelValue) => setFormData(prev => ({ ...prev, customModelName: modelValue, modelName: modelValue }))}
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="correctionModelName" className="block text-sm font-medium text-gray-300 mb-2">
-                                {t("Correction Model (Optional)")}
-                                <InformationCircleIcon className="w-4 h-4 inline-block text-gray-400 ml-1" title={t("Correction Model Tooltip")} />
-                            </label>
-                            <input id="correctionModelName" name="correctionModelName" type="text" onChange={handleInputChange} value={formData.correctionModelName || ''} className="w-full bg-gray-800 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t("e.g., google/gemini-pro-1.5")} />
-                        </div>
-                        <div>
-                            <h4 className="text-sm font-medium text-gray-300 mb-2">
-                                {isGemini3 ? t("Gemini Thinking Level") : t("Gemini Thinking Budget")}
-                            </h4>
-                            {!isGemini3 && (
-                                <div className="flex items-center justify-between">
-                                    <label htmlFor="useDynamicThinkingBudget" className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                                        <input 
-                                            type="checkbox" 
-                                            id="useDynamicThinkingBudget" 
-                                            name="useDynamicThinkingBudget" 
-                                            checked={formData.useDynamicThinkingBudget} 
-                                            onChange={handleCheckboxChange}
-                                            className="sr-only peer"
-                                        />
-                                        <span className="w-5 h-5 rounded-sm border-2 border-gray-500 bg-gray-800 flex items-center justify-center transition-colors peer-checked:bg-cyan-500 peer-checked:border-cyan-400">
-                                            <CheckIcon className={`w-3 h-3 text-white transition-opacity ${formData.useDynamicThinkingBudget ? 'opacity-100' : 'opacity-0'}`} />
-                                        </span>
-                                        <span className="text-xs text-gray-400">{t("Use dynamic thinking budget")}</span>
-                                    </label>
-                                    {!formData.useDynamicThinkingBudget && (
-                                        <button type="button" onClick={handleBudgetToggle} className="text-sm text-cyan-400 hover:underline">{advancedBudget ? t("Simple") : t("Advanced")}</button>
-                                    )}
-                                </div>
-                            )}
-                            
-                            {isGemini3 ? (
-                                <div className="mt-3">
-                                    <div className="flex gap-2 p-1 bg-gray-900/50 rounded-lg">
-                                        <button type="button" onClick={() => setFormData({...formData, geminiThinkingLevel: 'low'})} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${geminiThinkingLevel === 'low' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('Low')}</button>
-                                        <button type="button" onClick={() => setFormData({...formData, geminiThinkingLevel: 'high'})} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${geminiThinkingLevel === 'high' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('High')}</button>
-                                    </div>
-                                </div>
-                            ) : (
-                                !formData.useDynamicThinkingBudget && (
-                                    <div className="mt-3">
-                                    {advancedBudget ? (
-                                        <input type="number" name="geminiThinkingBudget" value={budget} onChange={handleInputChange} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-2 text-gray-200" />
-                                    ) : (
-                                        <div className="flex items-center gap-4">
-                                            <input 
-                                                type="range" 
-                                                name="geminiThinkingBudget" 
-                                                min={minBudget} 
-                                                max={maxBudget} 
-                                                step="16" 
-                                                value={budget} 
-                                                onChange={handleInputChange} 
-                                                className="w-full styled-slider"
-                                                style={{ '--range-progress': `${progress}%` } as React.CSSProperties}
-                                            />
-                                            <span className="font-mono text-cyan-300 w-12 text-right">{budget}</span>
-                                        </div>
-                                    )}
-                                    </div>
-                                )
-                            )}
-                        </div>
-                    </div>
-                )}
-                {aiProvider === 'openrouter' && (
-                    <div className="animate-fade-in-down space-y-4">
-                        <div>
-                            <label htmlFor="openRouterModelName" className="block text-sm font-medium text-gray-300 mb-2">{t('OpenRouter Model')}</label>
-                            <input id="openRouterModelName" name="openRouterModelName" type="text" onChange={handleInputChange} value={formData.openRouterModelName} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t('e.g., google/gemini-flash-1.5')} required />
-                        </div>
-                        <div>
-                            <label htmlFor="openRouterApiKey" className="block text-sm font-medium text-gray-300 mb-2">{t("OpenRouter API Key (Optional)")}</label>
-                            <input id="openRouterApiKey" name="openRouterApiKey" type="password" onChange={handleInputChange} value={formData.openRouterApiKey} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t('Leave blank to use pre-configured key')} />
-                        </div>
-                        <div>
-                            <label htmlFor="correctionModelName-start" className="block text-sm font-medium text-gray-300 mb-2">
-                                {t("Correction Model (Optional)")}
-                                <InformationCircleIcon className="w-4 h-4 inline-block text-gray-400 ml-1" title={t("Correction Model Tooltip")} />
-                            </label>
-                            <input id="correctionModelName-start" name="correctionModelName" type="text" onChange={handleInputChange} value={formData.correctionModelName || ''} className="w-full bg-gray-800 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t("e.g., google/gemini-pro-1.5")} />
-                        </div>
-                    </div>
-                )}                 
+
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 mt-8">
@@ -887,7 +743,6 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
     const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
     const [isAdultConfirmOpen, setIsAdultConfirmOpen] = useState(false);
     const [isNonMagicConfirmOpen, setIsNonMagicConfirmOpen] = useState(false);
-    const [advancedBudget, setAdvancedBudget] = useState(false);
     const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
     const { language, setLanguage, t } = useLocalization();
     const [activeTab, setActiveTab] = useState<'local' | 'network'>('local');
@@ -942,7 +797,13 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
     };
 
     const handleSaveConfiguration = () => {
-        saveConfigurationToFile({ formData, customGameData }, t);
+        const cleanFormData = { ...formData } as typeof formData & Record<string, unknown>;
+        [
+            'aiProvider', 'modelName', 'correctionModelName', 'isCustomModel', 'customModelName',
+            'openRouterModelName', 'geminiThinkingBudget', 'geminiThinkingLevel', 'useDynamicThinkingBudget',
+            'geminiApiKey', 'openRouterApiKey', 'useGoogleSearch', 'imageGenerationModelPipeline',
+        ].forEach(key => delete cleanFormData[key]);
+        saveConfigurationToFile({ formData: cleanFormData, customGameData }, t);
     };
 
     const handleLoadConfiguration = async () => {
@@ -985,14 +846,16 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
             addDefaultCalendarRecursively(newGameData, defaultCalendar);
         
             setCustomGameData(newGameData);
-            setFormData({ ...initialFormData, ...loadedData.formData });
+            const loadedFormData = { ...loadedData.formData } as typeof initialFormData & Record<string, unknown>;
+            [
+                'aiProvider', 'modelName', 'correctionModelName', 'isCustomModel', 'customModelName',
+                'openRouterModelName', 'geminiThinkingBudget', 'geminiThinkingLevel', 'useDynamicThinkingBudget',
+                'geminiApiKey', 'openRouterApiKey', 'useGoogleSearch', 'imageGenerationModelPipeline',
+            ].forEach(key => delete loadedFormData[key]);
+            setFormData({ ...initialFormData, ...loadedFormData });
         }
         // Use a timeout to ensure state updates propagate before the loading guard is lifted.
         setTimeout(() => setIsConfigLoading(false), 0);
-    };
-
-    const handleBudgetToggle = () => {
-        setAdvancedBudget(prev => !prev);
     };
 
     const currentWorld: WorldData = useMemo(() => {
@@ -1157,22 +1020,6 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
         setFormData(prev => ({ ...prev, multiplePersonalitiesSettings: { ...prev.multiplePersonalitiesSettings, [name]: checked } }));
     };
 
-    const handleProviderChange = (provider: 'gemini' | 'openrouter') => {
-        setFormData(prev => ({
-            ...prev,
-            aiProvider: provider,
-            modelName: provider === 'gemini' ? 'gemini-2.5-flash' : prev.openRouterModelName,
-            isCustomModel: provider === 'gemini' ? prev.isCustomModel : false,
-        }));
-    };
-
-    const handleModelChange = (modelValue: string) => {
-        setFormData(prev => {
-            if (modelValue === 'CUSTOM') return { ...prev, isCustomModel: true, modelName: prev.customModelName };
-            return { ...prev, isCustomModel: false, modelName: modelValue };
-        });
-    };
-
     const handleAdultModeClick = () => {
         if (formData.adultMode) setFormData(prev => ({ ...prev, adultMode: false }));
         else setIsAdultConfirmOpen(true);
@@ -1204,8 +1051,12 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
             alert(t("Please fill in all required fields."));
             return null;
         }
-        let finalData = { ...formData, customGameData: customGameData };
-    
+        const finalData = { ...formData, customGameData } as typeof formData & Record<string, unknown>;
+        [
+            'aiProvider', 'modelName', 'correctionModelName', 'isCustomModel', 'customModelName',
+            'openRouterModelName', 'geminiThinkingBudget', 'geminiThinkingLevel', 'useDynamicThinkingBudget',
+            'geminiApiKey', 'openRouterApiKey', 'useGoogleSearch', 'imageGenerationModelPipeline',
+        ].forEach(key => delete finalData[key]);
         return finalData;
     };
   
@@ -1320,15 +1171,11 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                                 formData={formData}
                                 handleInputChange={handleInputChange}
                                 handleCheckboxChange={handleCheckboxChange}
-                                handleProviderChange={handleProviderChange}
-                                handleModelChange={handleModelChange}
                                 handleAdultModeClick={handleAdultModeClick}
                                 handleNonMagicModeClick={handleNonMagicModeClick}
                                 handleDifficultyChange={handleDifficultyChange}
-                                handleBudgetToggle={handleBudgetToggle}
                                 handleCoopTypeChange={handleCoopTypeChange}
                                 handleMultiplePersonalitiesSettingChange={handleMultiplePersonalitiesSettingChange}
-                                advancedBudget={advancedBudget}
                                 onSubmit={handleLocalSubmit}
                                 onLoadGame={onLoadGame}
                                 submitButtonText={t('Begin Your Adventure')}
@@ -1353,16 +1200,12 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                                     formData={formData}
                                     handleInputChange={handleInputChange}
                                     handleCheckboxChange={handleCheckboxChange}
-                                    handleProviderChange={handleProviderChange}
-                                    handleModelChange={handleModelChange}
-                                    handleAdultModeClick={handleAdultModeClick}
+                                            handleAdultModeClick={handleAdultModeClick}
                                     handleNonMagicModeClick={handleNonMagicModeClick}
                                     handleDifficultyChange={handleDifficultyChange}
-                                    handleBudgetToggle={handleBudgetToggle}
-                                    handleCoopTypeChange={handleCoopTypeChange}
+                                        handleCoopTypeChange={handleCoopTypeChange}
                                     handleMultiplePersonalitiesSettingChange={handleMultiplePersonalitiesSettingChange}
-                                    advancedBudget={advancedBudget}
-                                    onSubmit={handleHostSubmit}
+                                        onSubmit={handleHostSubmit}
                                     onLoadGame={onLoadGame}
                                     submitButtonText={t('Create Game (Host)')}
                                     currentWorld={currentWorld}

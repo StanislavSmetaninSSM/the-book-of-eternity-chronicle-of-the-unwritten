@@ -1,7 +1,6 @@
 import type { ChatMessage, GameContext, GameResponse, GameState } from '../types';
 
 export const ARENA_GM_PROTOCOL_VERSION = 1 as const;
-const STORAGE_KEY = 'arena-gm-relay-enabled-v2';
 const REQUEST_EVENT = 'arena-gm-relay:request';
 
 export interface ArenaGmTurnRequest {
@@ -79,14 +78,8 @@ const newCorrelationId = (): string => {
 };
 
 export function isArenaGmRelayEnabled(): boolean {
-  // Default to the Arena mailbox so a fresh Arena preview never falls through to
-  // browser-side Gemini/OpenRouter calls. Users may explicitly switch it off.
-  try { return localStorage.getItem(STORAGE_KEY) !== 'false'; } catch { return true; }
-}
-
-export function setArenaGmRelayEnabled(enabled: boolean): void {
-  try { localStorage.setItem(STORAGE_KEY, String(enabled)); } catch { /* storage may be unavailable */ }
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event('arena-gm-relay:setting'));
+  // AI generation is intentionally fixed to the Arena relay.
+  return true;
 }
 
 export function createArenaGmTurnRequest(
@@ -97,7 +90,7 @@ export function createArenaGmTurnRequest(
   const { image: _image, message, responseHistory: _responseHistory, partiallyGeneratedResponse: _partial, ...restContext } = context;
   const gameContext = {
     ...restContext,
-    gameSettings: { ...restContext.gameSettings, openRouterApiKey: '' },
+    gameSettings: { ...restContext.gameSettings },
   };
   const authoritativeState = {
     players: state.players,

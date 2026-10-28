@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // FIX: Imported missing types to resolve multiple "Cannot find name" errors.
-import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Quest, Wound, CustomState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item, CompletedActivity, AdjacencyMapEntry, Project, CompletedProject, StructuredBonus, ActiveThreat, Cinematic, FactionRank, NetworkChatMessage, CinemaFrame, SkillMastery, ImageGenerationSource, ImageCacheEntry, DayInfo, Month, NetworkRole, NetworkMessage, PeerInfo, CollectiveActionState, SimultaneousActionState } from '../types';
+import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Quest, Wound, CustomState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item, CompletedActivity, AdjacencyMapEntry, Project, CompletedProject, StructuredBonus, ActiveThreat, Cinematic, FactionRank, NetworkChatMessage, CinemaFrame, SkillMastery, ImageCacheEntry, DayInfo, Month, NetworkRole, NetworkMessage, PeerInfo, CollectiveActionState, SimultaneousActionState } from '../types';
 import Peer, { DataConnection } from 'peerjs';
 import { useLocalization } from '../context/LocalizationContext';
-import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold, Modality } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { getCinemaPrompt, getContinueCinemaPrompt } from '../prompts/cinemaPrompt';
 import narrativeStyleGuide from '../prompts/narrativeStyleGuide.js';
 
@@ -452,22 +452,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             loadedSettings.gameWorldInformation.calendar = gameData.fantasy.calendar;
         }
         
-        // --- IMAGE GENERATION PIPELINE MIGRATION ---
-        if (!loadedSettings.imageGenerationModelPipeline || loadedSettings.imageGenerationModelPipeline.length === 0) {
-            console.log("Migrating old image generation settings to new pipeline. Setting a new default.");
-            loadedSettings.imageGenerationModelPipeline = [
-                { provider: 'nanobanana' },
-                { provider: 'imagen', model: 'normal' },
-                { provider: 'imagen', model: 'ultra' }
-            ];
-        }
-        if (loadedSettings.showImageSourceInfo === undefined) {
-            loadedSettings.showImageSourceInfo = true;
-        }
-        delete (loadedSettings as any).pollinationsImageModel;
-        delete (loadedSettings as any).useNanoBananaFallback;
-        delete (loadedSettings as any).useNanoBananaPrimary;
-        // --- END MIGRATION ---
+        // Strip provider, model, search, and image-pipeline settings from legacy saves.
+        const legacyAISettings = loadedSettings as GameSettings & Record<string, unknown>;
+        [
+            'modelName', 'correctionModelName', 'aiProvider', 'isCustomModel', 'customModelName',
+            'openRouterModelName', 'openRouterApiKey', 'geminiThinkingBudget', 'geminiThinkingLevel',
+            'useDynamicThinkingBudget', 'geminiApiKey', 'useGoogleSearch', 'imageGenerationModelPipeline',
+            'pollinationsImageModel', 'useNanoBananaFallback', 'useNanoBananaPrimary',
+        ].forEach(key => delete legacyAISettings[key]);
+        loadedSettings.showImageSourceInfo = false;
 
         gameContextRef.current = data.gameContext;
         const loadedGameState = data.gameState;
@@ -715,9 +708,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
         if (loadedSettings.doNotUseWorldEvents === undefined) {
             loadedSettings.doNotUseWorldEvents = false;
-        }
-        if (loadedSettings.useGoogleSearch === undefined) {
-            loadedSettings.useGoogleSearch = false;
         }
        
         console.log(`🔄 RESTORE DEBUG: About to restore game state`);
@@ -2422,23 +2412,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             for (let i = 0; i < newFrames.length; i++) {
                  if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
                 setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newFrames.length}` }));
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                const imageResponse = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash-image',
-                    contents: { parts: [{ text: newFrames[i].imagePrompt }] },
-                    config: { responseModalities: [Modality.IMAGE] },
-                });
-                
-                let imageUrl = '';
-                for (const part of imageResponse.candidates[0].content.parts) {
-                    if (part.inlineData) {
-                        const base64ImageBytes: string = part.inlineData.data;
-                        imageUrl = `data:image/png;base64,${base64ImageBytes}`;
-                    }
-                }
-                if(imageUrl) {
-                    newFrames[i].imageUrl = imageUrl;
-                }
+                newFrames[i].imageUrl = await requestArenaGmImage(
+                    newFrames[i].imagePrompt,
+                    1024,
+                    1024,
+                    abortControllerRef.current.signal,
+                );
             }
 
             setGameState(prev => {
@@ -2550,21 +2529,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const regenerateCinemaFrame = useCallback(async (cinematicId: string, frameIndex: number, newPrompt: string): Promise<boolean> => {
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const imageResponse = await ai.models.generateContent({
-                model: 'gemini-2.5-flash-image',
-                contents: { parts: [{ text: newPrompt }] },
-                config: { responseModalities: [Modality.IMAGE] },
-            });
-
-            let imageUrl = '';
-            for (const part of imageResponse.candidates[0].content.parts) {
-                if (part.inlineData) {
-                    const base64ImageBytes: string = part.inlineData.data;
-                    imageUrl = `data:image/png;base64,${base64ImageBytes}`;
-                }
-            }
-            
+            const imageUrl = await requestArenaGmImage(newPrompt, 1024, 1024);
             if (imageUrl) {
                 setGameState(prev => {
                     if (!prev) return null;

@@ -4,8 +4,8 @@
 
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ArrowDownTrayIcon, ArrowUpTrayIcon, ClockIcon, CpuChipIcon, WrenchScrewdriverIcon, InformationCircleIcon, TrashIcon, CloudArrowDownIcon, ExclamationTriangleIcon, BookOpenIcon, UserGroupIcon, WifiIcon, CheckIcon, ClipboardDocumentIcon, ArrowPathIcon, PaintBrushIcon, ArrowUpIcon, ArrowDownIcon } from '@heroicons/react/24/outline';
-import { GameSettings, DBSaveSlotInfo, GameState, PeerInfo, NetworkRole, NetworkChatMessage, ImageGenerationSource } from '../types';
+import { ArrowDownTrayIcon, ArrowUpTrayIcon, ClockIcon, WrenchScrewdriverIcon, InformationCircleIcon, TrashIcon, CloudArrowDownIcon, ExclamationTriangleIcon, BookOpenIcon, UserGroupIcon, WifiIcon, CheckIcon, ClipboardDocumentIcon, ArrowPathIcon, PaintBrushIcon } from '@heroicons/react/24/outline';
+import { GameSettings, DBSaveSlotInfo, GameState, PeerInfo, NetworkRole, NetworkChatMessage } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import ConfirmationModal from './ConfirmationModal';
 import AboutContent from './AboutContent';
@@ -15,7 +15,6 @@ import { gameData as defaultGameData } from '../utils/localizationGameData';
 import { initializeAndPreviewSound } from '../utils/soundManager';
 import { weather as weatherTranslations } from '../utils/translations/ui/weather';
 import MarkdownRenderer from './MarkdownRenderer';
-import GeminiModelSelect from './GeminiModelSelect';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP } from '../utils/fileManager';
 
 
@@ -166,84 +165,6 @@ const NetworkChatView: React.FC<{
     );
 };
 
-const ImagePipelineManager: React.FC<{
-    pipeline: ImageGenerationSource[];
-    onPipelineChange: (newPipeline: ImageGenerationSource[]) => void;
-    t: TFunction;
-}> = ({ pipeline, onPipelineChange, t }) => {
-    const ALL_PROVIDERS: ImageGenerationSource[] = [
-        { provider: 'nanobanana' },
-        { provider: 'imagen', model: 'normal' },
-        { provider: 'imagen', model: 'ultra' },
-        { provider: 'imagen', model: 'fast' },
-    ];
-
-    const availableToAdd = useMemo(() => {
-        const currentProviders = new Set(pipeline.map(p => p.provider + (p as any).model));
-        return ALL_PROVIDERS.filter(p => !currentProviders.has(p.provider + (p as any).model));
-    }, [pipeline]);
-
-    const move = (index: number, direction: 'up' | 'down') => {
-        const newPipeline = [...pipeline];
-        const targetIndex = direction === 'up' ? index - 1 : index + 1;
-        if (targetIndex < 0 || targetIndex >= newPipeline.length) return;
-        [newPipeline[index], newPipeline[targetIndex]] = [newPipeline[targetIndex], newPipeline[index]];
-        onPipelineChange(newPipeline);
-    };
-
-    const remove = (index: number) => {
-        onPipelineChange(pipeline.filter((_, i) => i !== index));
-    };
-
-    const add = (source: ImageGenerationSource) => {
-        onPipelineChange([...pipeline, source]);
-    };
-
-    const getDisplayName = (source: ImageGenerationSource) => {
-        switch(source.provider) {
-            case 'nanobanana': return 'Nano Banana (Gemini)';
-            case 'imagen': 
-                if (source.model === 'ultra') return 'Imagen (Ultra)';
-                if (source.model === 'fast') return 'Imagen (Fast)';
-                return 'Imagen (Normal)';
-            default: return 'Unknown';
-        }
-    };
-
-    return (
-        <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50 space-y-4">
-            <h4 className="font-semibold text-gray-300">{t("Image Generation Pipeline")}</h4>
-            <p className="text-xs text-gray-400">{t("image_pipeline_desc")}</p>
-            <div className="space-y-2">
-                {pipeline.map((source, index) => (
-                    <div key={index} className="flex items-center gap-2 p-2 bg-gray-800/50 rounded-md">
-                        <span className="font-mono text-cyan-400 mr-2">{index + 1}.</span>
-                        <span className="flex-1 text-gray-200">{getDisplayName(source)}</span>
-                        <div className="flex items-center gap-1">
-                            <button onClick={() => move(index, 'up')} disabled={index === 0} className="p-1 rounded-full text-gray-400 hover:bg-gray-700 disabled:opacity-50"><ArrowUpIcon className="w-4 h-4" /></button>
-                            <button onClick={() => move(index, 'down')} disabled={index === pipeline.length - 1} className="p-1 rounded-full text-gray-400 hover:bg-gray-700 disabled:opacity-50"><ArrowDownIcon className="w-4 h-4" /></button>
-                            <button onClick={() => remove(index)} className="p-1 rounded-full text-red-400 hover:bg-red-900/50"><TrashIcon className="w-4 h-4" /></button>
-                        </div>
-                    </div>
-                ))}
-            </div>
-            {availableToAdd.length > 0 && (
-                <div className="pt-2 border-t border-gray-700/50">
-                    <h5 className="text-sm font-semibold text-gray-400 mb-2">{t('Add to Pipeline')}</h5>
-                    <div className="flex gap-2">
-                        {availableToAdd.map(source => (
-                            <button key={source.provider + (source as any).model} onClick={() => add(source)} className="px-3 py-1.5 text-xs font-semibold text-green-300 bg-green-500/10 rounded-md hover:bg-green-500/20 transition-colors">
-                                + {getDisplayName(source)}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-
 export default function GameMenuView({ 
     onSave, 
     onLoad, 
@@ -279,7 +200,6 @@ export default function GameMenuView({
     const [isClearJournalConfirmOpen, setIsClearJournalConfirmOpen] = useState(false);
     const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
     const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
-    const [advancedBudget, setAdvancedBudget] = useState(false);
     const { t } = useLocalization();
 
     useEffect(() => {
@@ -427,7 +347,7 @@ export default function GameMenuView({
         )
     }
 
-    const { adultMode, allowHistoryManipulation, keepLatestNpcJournals, latestNpcJournalsCount, cooperativeGameType, multiplePersonalitiesSettings, autoPassTurnInCoop, showPartyStatusPanel, aiProvider, modelName, isCustomModel, geminiThinkingBudget, geminiThinkingLevel, useDynamicThinkingBudget, doNotUseWorldEvents, useGoogleSearch, hardMode, impossibleMode } = gameSettings;
+    const { adultMode, allowHistoryManipulation, keepLatestNpcJournals, latestNpcJournalsCount, cooperativeGameType, multiplePersonalitiesSettings, autoPassTurnInCoop, showPartyStatusPanel, doNotUseWorldEvents, hardMode, impossibleMode } = gameSettings;
     
     const handleDifficultyChange = (difficulty: 'normal' | 'hard' | 'impossible') => {
         updateGameSettings({
@@ -438,12 +358,6 @@ export default function GameMenuView({
     const currentDifficulty = impossibleMode ? 'impossible' : (hardMode ? 'hard' : 'normal');
     const uiControlScale = clampScale(gameSettings.uiControlScale, UI_CONTROL_SCALE_MIN, UI_CONTROL_SCALE_MAX);
     const uiFontScale = clampScale(gameSettings.uiFontScale, UI_FONT_SCALE_MIN, UI_FONT_SCALE_MAX);
-
-    const minBudget = 0;
-    const maxBudget = 2048;
-    const budget = geminiThinkingBudget ?? 128;
-    const progress = maxBudget > minBudget ? ((budget - minBudget) / (maxBudget - minBudget)) * 100 : 0;
-    const isGemini3 = modelName?.startsWith('gemini-3') ?? false;
 
     const handleAdultModeClick = () => {
         if (isLoading) return;
@@ -458,32 +372,6 @@ export default function GameMenuView({
     const confirmAdultMode = () => {
       updateGameSettings({ adultMode: true });
       setIsAdultConfirmOpen(false);
-    };
-    
-    const handleModelChange = (modelValue: string) => {
-        if (modelValue === 'CUSTOM') {
-            updateGameSettings({ isCustomModel: true, modelName: gameSettings.customModelName || '' });
-        } else {
-            updateGameSettings({ isCustomModel: false, modelName: modelValue });
-        }
-    };
-    
-    const handleBudgetToggle = () => {
-      setAdvancedBudget(prev => {
-          const isSwitchingToSimple = prev;
-          if (isSwitchingToSimple && (gameSettings.geminiThinkingBudget ?? 0) > 1000) {
-              updateGameSettings({ geminiThinkingBudget: 1000 });
-          }
-          return !prev;
-      });
-    };
-
-    const handleProviderChange = (provider: 'gemini' | 'openrouter') => {
-        updateGameSettings({
-            aiProvider: provider,
-            modelName: provider === 'gemini' ? 'gemini-2.5-flash' : gameSettings.openRouterModelName,
-            isCustomModel: provider === 'gemini' ? gameSettings.isCustomModel : false,
-        });
     };
     
     const NetworkStatusView: React.FC<{ gameState: GameState | null, forceSyncAll: () => void, gameSettings: GameSettings | null, startHostingFromLocalGame: () => void, disconnect: () => void, isMyTurn: boolean, requestSyncFromHost: () => void }> = ({ gameState, forceSyncAll, gameSettings, startHostingFromLocalGame, disconnect, isMyTurn, requestSyncFromHost }) => {
@@ -852,141 +740,9 @@ export default function GameMenuView({
             </fieldset>
             
             <fieldset disabled={!isGameActive || isLoading} className="space-y-4">
-                 <h3 className="text-xl font-bold text-cyan-400 mb-2 narrative-text flex items-center gap-2"><CpuChipIcon className="w-6 h-6" />{t("AI Settings")}</h3>
-                 <div className="p-4 bg-gray-900/30 rounded-lg border border-cyan-500/20 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">{t("AI Provider")}</label>
-                  <div className="grid grid-cols-2 gap-2">
-                      <button
-                          type="button"
-                          onClick={() => handleProviderChange('gemini')}
-                          className={`p-3 rounded-md text-center transition-all border ${aiProvider === 'gemini' ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}
-                      >
-                          {t('Google Gemini')}
-                      </button>
-                      <button
-                          type="button"
-                          onClick={() => handleProviderChange('openrouter')}
-                          className={`p-3 rounded-md text-center transition-all border ${aiProvider === 'openrouter' ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}
-                      >
-                          {t('OpenRouter')}
-                      </button>
-                  </div>
-                </div>
-                {aiProvider === 'gemini' && (
-                    <div className="p-3 bg-gray-800/30 rounded-md space-y-3 animate-fade-in-down">
-                        <ToggleSwitch label={t("use_google_search")} description={t("use_google_search_desc")} name="useGoogleSearch" checked={!!useGoogleSearch} onChange={(e) => updateGameSettings({ useGoogleSearch: e.target.checked })} />
-                        <div>
-                            <label htmlFor="modelName-ingame" className="block text-sm font-medium text-gray-300 mb-2">{t("AI Model")}</label>
-                            <GeminiModelSelect
-                                id="modelName-ingame"
-                                value={modelName}
-                                isCustomModel={isCustomModel}
-                                customModelName={gameSettings.customModelName || ''}
-                                onModelChange={handleModelChange}
-                                onCustomModelChange={(modelValue) => updateGameSettings({ customModelName: modelValue, modelName: modelValue })}
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="correctionModelName-ingame" className="block text-sm font-medium text-gray-300 mb-2">
-                                {t("Correction Model (Optional)")}
-                                <span className="text-gray-400 hover:text-white cursor-pointer ml-1" title={t("Correction Model Tooltip")}>
-                                    <InformationCircleIcon className="w-4 h-4 inline-block" />
-                                </span>
-                            </label>
-                            <input id="correctionModelName-ingame" name="correctionModelName" type="text" onChange={(e) => updateGameSettings({ correctionModelName: e.target.value })} value={gameSettings.correctionModelName || ''} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t("e.g., google/gemini-pro-1.5")} />
-                        </div>
-                        <div>
-                            <h4 className="text-sm font-medium text-gray-300 mb-2">{isGemini3 ? t("Gemini Thinking Level") : t("Gemini Thinking Budget")}</h4>
-                            {!isGemini3 && (
-                                <div className="flex items-center justify-between">
-                                    <label htmlFor="useDynamicThinkingBudget-ingame" className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                                        <input 
-                                            type="checkbox" 
-                                            id="useDynamicThinkingBudget-ingame" 
-                                            name="useDynamicThinkingBudget" 
-                                            checked={!!useDynamicThinkingBudget} 
-                                            onChange={(e) => updateGameSettings({ useDynamicThinkingBudget: e.target.checked })}
-                                            className="sr-only peer"
-                                        />
-                                        <span className="w-5 h-5 rounded-sm border-2 border-gray-500 bg-gray-800 flex items-center justify-center transition-colors peer-checked:bg-cyan-500 peer-checked:border-cyan-400">
-                                            <CheckIcon className={`w-3 h-3 text-white transition-opacity ${useDynamicThinkingBudget ? 'opacity-100' : 'opacity-0'}`} />
-                                        </span>
-                                        <span className="text-xs text-gray-400">{t("Use dynamic thinking budget")}</span>
-                                    </label>
-                                    {!useDynamicThinkingBudget && (
-                                        <button type="button" onClick={handleBudgetToggle} className="text-xs text-cyan-400 hover:underline">{advancedBudget ? t("Simple") : t("Advanced")}</button>
-                                    )}
-                                </div>
-                            )}
-                            
-                            {isGemini3 ? (
-                                <div className="mt-3">
-                                    <div className="flex gap-2 p-1 bg-gray-900/50 rounded-lg">
-                                        <button type="button" onClick={() => updateGameSettings({ geminiThinkingLevel: 'low' })} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${geminiThinkingLevel === 'low' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('Low')}</button>
-                                        <button type="button" onClick={() => updateGameSettings({ geminiThinkingLevel: 'high' })} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${!geminiThinkingLevel || geminiThinkingLevel === 'high' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('High')}</button>
-                                    </div>
-                                </div>
-                            ) : (
-                                !useDynamicThinkingBudget && (
-                                    <div className="mt-3">
-                                    {advancedBudget ? (
-                                        <input type="number" name="geminiThinkingBudget" value={budget} onChange={(e) => updateGameSettings({ geminiThinkingBudget: parseInt(e.target.value, 10)})} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-2 text-gray-200" />
-                                    ) : (
-                                        <div className="flex items-center gap-4">
-                                            <input 
-                                                type="range" 
-                                                name="geminiThinkingBudget" 
-                                                min={minBudget} 
-                                                max={maxBudget} 
-                                                step="16" 
-                                                value={budget} 
-                                                onChange={(e) => updateGameSettings({ geminiThinkingBudget: parseInt(e.target.value, 10)})} 
-                                                className="w-full styled-slider"
-                                                style={{ '--range-progress': `${progress}%` } as React.CSSProperties}
-                                            />
-                                            <span className="font-mono text-cyan-300 w-12 text-right">{budget}</span>
-                                        </div>
-                                    )}
-                                    </div>
-                                )
-                            )}
-                        </div>
-                    </div>
-                )}
-                {aiProvider === 'openrouter' && (
-                    <div className="animate-fade-in-down space-y-4">
-                        <div>
-                            <label htmlFor="openRouterModelName-ingame" className="block text-sm font-medium text-gray-300 mb-2">{t('OpenRouter Model')}</label>
-                            <input id="openRouterModelName-ingame" name="openRouterModelName" type="text" onChange={(e) => updateGameSettings({ openRouterModelName: e.target.value, modelName: e.target.value })} value={gameSettings.openRouterModelName || ''} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t('e.g., google/gemini-flash-1.5')} required />
-                        </div>
-                        <div>
-                            <label htmlFor="openRouterApiKey-ingame" className="block text-sm font-medium text-gray-300 mb-2">{t("OpenRouter API Key (Optional)")}</label>
-                            <input id="openRouterApiKey-ingame" name="openRouterApiKey" type="password" onChange={(e) => updateGameSettings({ openRouterApiKey: e.target.value })} value={gameSettings.openRouterApiKey || ''} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t('Leave blank to use pre-configured key')} />
-                        </div>
-                        <div>
-                            <label htmlFor="correctionModelName-ingame-or" className="block text-sm font-medium text-gray-300 mb-2">
-                                {t("Correction Model (Optional)")}
-                                <span className="text-gray-400 hover:text-white cursor-pointer ml-1" title={t("Correction Model Tooltip")}>
-                                    <InformationCircleIcon className="w-4 h-4 inline-block" />
-                                </span>
-                            </label>
-                            <input id="correctionModelName-ingame-or" name="correctionModelName" type="text" onChange={(e) => updateGameSettings({ correctionModelName: e.target.value })} value={gameSettings.correctionModelName || ''} className="w-full bg-gray-800 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t("e.g., google/gemini-pro-1.5")} />
-                        </div>
-                    </div>
-                )}
-                <ImagePipelineManager 
-                    pipeline={gameSettings.imageGenerationModelPipeline || []}
-                    onPipelineChange={(newPipeline) => updateGameSettings({ imageGenerationModelPipeline: newPipeline })}
-                    t={t}
-                />
-                <ToggleSwitch
-                    label={t("show_image_source_info_label")}
-                    description={t("show_image_source_info_desc")}
-                    name="showImageSourceInfo"
-                    checked={!!gameSettings.showImageSourceInfo}
-                    onChange={(e) => updateGameSettings({ showImageSourceInfo: e.target.checked })}
-                />
+                <h3 className="text-xl font-bold text-cyan-400 mb-2 narrative-text flex items-center gap-2">{t("Arena GM")}</h3>
+                <div className="p-4 bg-gray-900/30 rounded-lg border border-cyan-500/20 text-sm text-gray-300">
+                    {t("The Arena agent handles all text and image generation. Model, provider, search, and generation-parameter controls are not used.")}
                 </div>
             </fieldset>
             

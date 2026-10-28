@@ -13,7 +13,7 @@ npm run dev -- --host 0.0.0.0
 
 Open the Vite preview created by the dev server and keep the process alive. `vite.config.ts` registers the relay middleware that implements `/__arena_gm/turn`, `/__arena_gm/response`, `/__arena_gm/image`, and `/__arena_gm/status`. The file relay works with this Vite development server; it is not included in `vite build` output or a static hosting deployment.
 
-The relay is enabled by default in browser storage. The app sends each game-generation pipeline step separately. It waits for the matching response before continuing to the next step, so one player action may require multiple agent responses. The image generation path also makes a separate relay request for each image.
+The Arena relay is the only configured backend. The app sends each game-generation pipeline step separately. It waits for the matching response before continuing to the next step, so one player action may require multiple agent responses. The image generation path also makes a separate relay request for each image.
 
 ## 2. What the agent needs to do
 
@@ -96,4 +96,3 @@ The current relay is a Vite **development middleware** backed by local filesyste
 - **Request waits indefinitely:** the app cannot invoke the agent. Start/continue an Arena agent interaction and have it process the pending file.
 - **Response ignored:** verify exact `correlationId`, `kind`, `protocolVersion: 1`, valid JSON, and that `response.json` is in the workspace root's `.arena-gm-relay` directory.
 - **Image not displayed:** verify the PNG exists at the correlation-ID path and is readable before writing the image response envelope.
-- **Legacy Gemini/Imagen provider error:** those optional providers require their configured API key. The default game-master and image paths use the Arena relay; toggling it off can select provider-based behavior.

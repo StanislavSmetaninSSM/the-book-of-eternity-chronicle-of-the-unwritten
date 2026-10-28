@@ -1,4 +1,4 @@
-import { GameState, GameResponse, PlayerCharacter, Characteristics, Location, Faction, Language, LootTemplate, UnlockedMemory, Recipe, Item, WorldStateFlag, SkillMastery, GameSettings, WorldState, NPC, Effect, WorldEvent, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Project, CompletedProject, AdjacencyMapEntry, Calendar, CompleteThreatActivity, Month, NPCInventoryAdd, ImageGenerationSource, DayInfo, GameContext, ChatMessage } from '../types';
+import { GameState, GameResponse, PlayerCharacter, Characteristics, Location, Faction, Language, LootTemplate, UnlockedMemory, Recipe, Item, WorldStateFlag, SkillMastery, GameSettings, WorldState, NPC, Effect, WorldEvent, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Project, CompletedProject, AdjacencyMapEntry, Calendar, CompleteThreatActivity, Month, NPCInventoryAdd, DayInfo, GameContext, ChatMessage } from '../types';
 import { gameData } from './localizationGameData';
 import { generateLootTemplates } from './lootGenerator';
 import { translate } from './localization';
@@ -892,18 +892,8 @@ export const createInitialContext = (creationData: any, language: Language): Gam
             currencyName: creationData.currencyName || currentWorld.currencyName || 'Gold',
             calendar: localizedCalendar
         },
-        modelName: creationData.modelName,
-        correctionModelName: creationData.correctionModelName,
-        aiProvider: creationData.aiProvider,
-        isCustomModel: creationData.isCustomModel,
-        customModelName: creationData.customModelName,
-        openRouterModelName: creationData.openRouterModelName,
-        geminiThinkingBudget: creationData.geminiThinkingBudget,
-        useDynamicThinkingBudget: creationData.useDynamicThinkingBudget,
         nonMagicMode: creationData.nonMagicMode,
         adultMode: creationData.adultMode,
-        geminiApiKey: creationData.geminiApiKey,
-        openRouterApiKey: creationData.openRouterApiKey,
         youtubeApiKey: creationData.youtubeApiKey,
         allowHistoryManipulation: creationData.allowHistoryManipulation,
         hardMode: creationData.hardMode,
@@ -918,15 +908,8 @@ export const createInitialContext = (creationData: any, language: Language): Gam
         uiFontScale: creationData.uiFontScale ?? 1,
         multiplePersonalitiesSettings: creationData.multiplePersonalitiesSettings,
         doNotUseWorldEvents: creationData.doNotUseWorldEvents,
-        useGoogleSearch: creationData.useGoogleSearch,
-        showImageSourceInfo: true,
+        showImageSourceInfo: false,
         generateWorldEventImages: creationData.generateWorldEventImages ?? true,
-        imageGenerationModelPipeline: [
-            { provider: 'nanobanana' },
-            { provider: 'imagen', model: 'normal' },
-            { provider: 'imagen', model: 'ultra' },
-            { provider: 'imagen', model: 'fast' }
-        ],
     };
 
     const calendar = gameSettings.gameWorldInformation.calendar!;

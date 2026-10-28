@@ -1,5 +1,4 @@
 
-import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold, Modality } from "@google/genai";
 import { GameContext, GameResponse } from '../types';
 // @ts-ignore
 import * as mainPromptModule from '../prompts/mainPromptModule.js';
@@ -14,13 +13,9 @@ import narrativeStyleGuide from '../prompts/narrativeStyleGuide.js';
 // @ts-ignore
 import worldLogicGuide from '../prompts/worldLogicGuide.js';
 import { deepMergeResponses } from "./responseProcessor";
-import { deepStripModerationSymbols } from "./textUtils";
-import { isArenaGmRelayEnabled, requestArenaGmStep } from './arenaGmRelay';
+import { requestArenaGmStep } from './arenaGmRelay';
 
 const MAX_REGENERATION_RETRIES = 10;
-
-const getEnvironmentApiKey = (): string | undefined =>
-    typeof process !== 'undefined' ? process.env?.API_KEY : undefined;
 
 // The custom error class for signaling a need for response regeneration.
 export class RegenerationRequiredError extends Error {
@@ -33,25 +28,6 @@ export class RegenerationRequiredError extends Error {
         this.rawText = rawText;
     }
 }
-
-const disabledSafetySettings = [
-  {
-    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-    threshold: HarmBlockThreshold.BLOCK_NONE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-    threshold: HarmBlockThreshold.BLOCK_NONE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-    threshold: HarmBlockThreshold.BLOCK_NONE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-    threshold: HarmBlockThreshold.BLOCK_NONE,
-  },
-];
 
 const cleanJsonString = (jsonString: string): string => {
     if (!jsonString || typeof jsonString !== 'string') return '';
@@ -105,374 +81,60 @@ async function callGenerativeApiRaw(
     prompt: string,
     context: GameContext,
     abortSignal: AbortSignal,
-    modelName: string,
-    aiProvider: string,
-    apiKey: string,
 ): Promise<string> {
-    const defaultModel = 'gemini-2.5-flash';
-    const finalModelName = modelName || defaultModel;
-    const isGemini3 = finalModelName.includes('gemini-3');
-    
-    let responseText: string;
-
-    if (isArenaGmRelayEnabled()) {
-        const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
-        const result = await requestArenaGmStep(
-            prompt,
-            context.currentStepFocus || 'StandaloneGeneration',
-            finalModelName,
-            relayContext.isRegenerationAttempt ? 2 : 1,
-            abortSignal,
-            context.gameSettings.adultMode ? getAdultPrompt() : undefined,
-        );
-        return result.text;
-    }
-
-    if (aiProvider === 'gemini') {
-        const effectiveApiKey = getEnvironmentApiKey();
-        if (!effectiveApiKey) {
-            throw new Error("Gemini API Key not found in process.env.API_KEY.");
-        }
-        
-        const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
-
-        const modelConfig: any = {
-            model: finalModelName,
-            signal: abortSignal,
-        };
-
-        if (context.image && context.image.data) {
-            const base64Data = context.image.data;
-            modelConfig.contents = {
-                parts: [
-                    { text: prompt },
-                    { inlineData: { mimeType: context.image.mimeType, data: base64Data } }
-                ]
-            };
-        } else {
-            modelConfig.contents = prompt;
-        }
-
-        modelConfig.config = {}; // Initialize config object
-        if (context.gameSettings.adultMode) {
-            modelConfig.config.systemInstruction = getAdultPrompt();
-        }
-        if (context.gameSettings.useGoogleSearch) {
-            modelConfig.config.tools = [{googleSearch: {}}];
-        } else {
-            modelConfig.config.responseMimeType = "application/json";
-        }
-        
-        if (!finalModelName.includes('image')) {
-            modelConfig.config.safetySettings = disabledSafetySettings;
-        }
-
-        if (isGemini3) {
-             const level = context.gameSettings.geminiThinkingLevel === 'low' ? 'LOW' : 'HIGH';
-             modelConfig.config.thinkingConfig = {
-                includeThoughts: true,
-                thinkingLevel: level 
-             } as any;
-             // Pass previous thought signature if available to maintain reasoning context
-             if (context.previousThoughtSignature) {
-                 (modelConfig.config.thinkingConfig as any).thoughtSignature = context.previousThoughtSignature;
-             }
-        } else {
-             const budget = context.gameSettings.useDynamicThinkingBudget ? undefined : context.gameSettings.geminiThinkingBudget;
-             if (budget !== undefined) {
-                modelConfig.config.thinkingConfig = { thinkingBudget: budget };
-             }
-        }
-        
-        const response = await ai.models.generateContent(modelConfig);
-        responseText = response.text || '';
-    } else { // openrouter
-        const effectiveApiKey = apiKey || context.gameSettings.openRouterApiKey;
-        if (!effectiveApiKey) {
-            throw new Error("OpenRouter API Key not found.");
-        }
-
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${effectiveApiKey}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                "model": finalModelName,
-                "messages": [
-                    { "role": "user", "content": prompt }
-                ]
-            }),
-            signal: abortSignal,
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            throw new Error(`OpenRouter API error: ${response.status} ${response.statusText} - ${errorBody}`);
-        }
-        const data = await response.json();
-        responseText = data.choices[0].message.content;
-    }
-    
-    if (abortSignal.aborted) {
-        throw new Error('Aborted');
-    }
-
-    return responseText;
+    const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
+    const result = await requestArenaGmStep(
+        prompt,
+        context.currentStepFocus || 'StandaloneGeneration',
+        'Arena GM',
+        relayContext.isRegenerationAttempt ? 2 : 1,
+        abortSignal,
+        context.gameSettings.adultMode ? getAdultPrompt() : undefined,
+    );
+    return result.text;
 }
 
-/**
- * Calls the generative API and returns the parsed JSON response AND any captured thought signature.
- */
+/** Requests and parses one JSON stage response from the Arena agent. */
 export async function callGenerativeApi(
     prompt: string,
     context: GameContext,
     abortSignal: AbortSignal,
-    onStreamingChunk: (text: string) => void,
-    modelName: string,
-    aiProvider: string,
-    apiKey: string
+    onStreamingChunk: (text: string) => void
 ): Promise<{ data: any, signature?: string }> {
-    const defaultModel = 'gemini-2.5-flash';
-    const finalModelName = modelName || defaultModel;
-    const isGemini3 = finalModelName.includes('gemini-3');
-    let fullResponseText = '';
-    let capturedSignature: string | undefined = undefined;
-
-    if (isArenaGmRelayEnabled()) {
-        const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
-        const relayResult = await requestArenaGmStep(
-            prompt,
-            context.currentStepFocus || 'StandaloneGeneration',
-            finalModelName,
-            relayContext.isRegenerationAttempt ? 2 : 1,
-            abortSignal,
-            context.gameSettings.adultMode ? getAdultPrompt() : undefined,
-        );
-        fullResponseText = relayResult.text;
-        capturedSignature = relayResult.thoughtSignature;
-        onStreamingChunk(fullResponseText);
-        try {
-            const parsed = JSON.parse(cleanJsonString(fullResponseText));
-            return { data: parsed, signature: capturedSignature };
-        } catch (error: any) {
-            throw new RegenerationRequiredError(error.message, `Invalid JSON returned by Arena GM for ${context.currentStepFocus || 'step'}.`, fullResponseText);
-        }
-    }
-
-    if (aiProvider === 'gemini') {
-        const effectiveApiKey = getEnvironmentApiKey();
-        if (!effectiveApiKey) {
-            throw new Error("Gemini API Key not found in process.env.API_KEY.");
-        }
-        
-        const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
-
-        const modelConfig: any = {
-            model: finalModelName,
-            signal: abortSignal,
-        };
-        
-        if (context.image && context.image.data) {
-            const base64Data = context.image.data;
-            modelConfig.contents = {
-                parts: [
-                    { text: prompt },
-                    { inlineData: { mimeType: context.image.mimeType, data: base64Data } }
-                ]
-            };
-        } else {
-            modelConfig.contents = prompt;
-        }
-
-        modelConfig.config = {}; // Initialize config object
-        if (context.gameSettings.adultMode) {
-            modelConfig.config.systemInstruction = getAdultPrompt();
-        }
-        if (context.gameSettings.useGoogleSearch) {
-            modelConfig.config.tools = [{googleSearch: {}}];
-        } else {
-            modelConfig.config.responseMimeType = "application/json";
-        }
-        
-        if (!finalModelName.includes('image')) {
-            modelConfig.config.safetySettings = disabledSafetySettings;
-        }
-
-        if (isGemini3) {
-             const level = context.gameSettings.geminiThinkingLevel === 'low' ? 'LOW' : 'HIGH';
-             modelConfig.config.thinkingConfig = {
-                includeThoughts: true,
-                thinkingLevel: level
-             } as any;
-             // Pass previous thought signature if available to maintain reasoning context
-             if (context.previousThoughtSignature) {
-                 // Note: Verify property name based on SDK version. Assuming 'thoughtSignature' within thinkingConfig or similar.
-                 (modelConfig.config.thinkingConfig as any).thoughtSignature = context.previousThoughtSignature;
-             }
-        } else {
-             const budget = context.gameSettings.useDynamicThinkingBudget ? undefined : context.gameSettings.geminiThinkingBudget;
-             if (budget !== undefined) {
-                modelConfig.config.thinkingConfig = { thinkingBudget: budget };
-             }
-        }
-        
-        const stream = await ai.models.generateContentStream(modelConfig);
-
-        for await (const chunk of stream) {
-            if (abortSignal.aborted) {
-                throw new Error('Aborted');
-            }
-            const chunkText = chunk.text;
-            if (chunkText) {
-                fullResponseText += chunkText;
-                onStreamingChunk(fullResponseText);
-            }
-            
-            // Capture the thought signature from chunks if available (for Gemini 3 models)
-            if (isGemini3) {
-                const chunkAny = chunk as any;
-                if (chunkAny.thoughtSignature) {
-                     capturedSignature = chunkAny.thoughtSignature;
-                } else if (chunkAny.candidates?.[0]?.thoughtSignature) {
-                     capturedSignature = chunkAny.candidates[0].thoughtSignature;
-                }
-            }
-        }
-        
-        // Note: stream.response is not available on AsyncGenerator in newer SDK versions.
-        // Metadata is extracted from chunks during iteration.
-        
-    } else { // openrouter
-        const effectiveApiKey = apiKey || context.gameSettings.openRouterApiKey;
-        if (!effectiveApiKey) {
-            throw new Error("OpenRouter API Key not found.");
-        }
-
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${effectiveApiKey}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                "model": finalModelName,
-                "messages": [
-                    { "role": "user", "content": prompt }
-                ],
-                "stream": true
-            }),
-            signal: abortSignal,
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            throw new Error(`OpenRouter API error: ${response.status} ${response.statusText} - ${errorBody}`);
-        }
-
-        if (!response.body) {
-            throw new Error("OpenRouter stream response has no body.");
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (abortSignal.aborted) {
-                reader.cancel();
-                throw new Error('Aborted');
-            }
-            
-            buffer += decoder.decode(value, { stream: true });
-            
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep the last, potentially incomplete line
-
-            for (const line of lines) {
-                if (line.trim() === '' || !line.startsWith('data: ')) continue;
-                
-                const data = line.substring(6).trim();
-                if (data === '[DONE]') {
-                    break;
-                }
-                
-                try {
-                    const json = JSON.parse(data);
-                    const content = json.choices[0]?.delta?.content;
-                    if (content) {
-                        fullResponseText += content;
-                        onStreamingChunk(fullResponseText);
-                    }
-                } catch (e) {
-                    console.error('Error parsing stream chunk:', data, e);
-                }
-            }
-        }
-    }
-
-    if (abortSignal.aborted) {
-        throw new Error('Aborted');
-    }
-    
+    const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
+    const relayResult = await requestArenaGmStep(
+        prompt,
+        context.currentStepFocus || 'StandaloneGeneration',
+        'Arena GM',
+        relayContext.isRegenerationAttempt ? 2 : 1,
+        abortSignal,
+        context.gameSettings.adultMode ? getAdultPrompt() : undefined,
+    );
+    onStreamingChunk(relayResult.text);
     try {
-        const cleanedJson = cleanJsonString(fullResponseText);
-        onStreamingChunk(cleanedJson);
-        const parsed = JSON.parse(cleanedJson);
-        return { data: parsed, signature: capturedSignature };
-    } catch (e: any) {
-        console.error("Final JSON parse failed. Raw response:", fullResponseText);
-        throw new RegenerationRequiredError(e.message, `Failed to parse response from LLM. Raw text: ${fullResponseText}`, fullResponseText);
+        return { data: JSON.parse(cleanJsonString(relayResult.text)), signature: relayResult.thoughtSignature };
+    } catch (error: any) {
+        throw new RegenerationRequiredError(error.message, `Invalid JSON returned by Arena GM for ${context.currentStepFocus || 'step'}.`, relayResult.text);
     }
 }
 
 async function attemptCorrection(
-    invalidJson: string, 
-    context: GameContext, 
+    invalidJson: string,
+    context: GameContext,
     error: Error,
-    originalModelName: string,
-    aiProvider: string,
-    apiKey: string
 ): Promise<any> {
-    console.log("Attempting self-correction...");
-    const correctionPrompt = getCorrectionPrompt(invalidJson, context, error);
-    
-    const correctionModel = context.gameSettings.correctionModelName || 'gemini-2.5-flash';
-    const correctionProvider = context.gameSettings.correctionModelName ? 'gemini' : aiProvider;
-
-    const correctionContext = { 
-        ...context, 
+    const correctionContext = {
+        ...context,
         image: null,
         currentStepFocus: `${context.currentStepFocus || 'Step'}_Correction`,
         isRegenerationAttempt: true,
-        gameSettings: {
-            ...context.gameSettings,
-            useGoogleSearch: false // Always disable search for correction
-        }
-    };
-    
-    const correctionResponseText = await callGenerativeApiRaw(
-        correctionPrompt, 
-        correctionContext, 
-        new AbortController().signal, 
-        correctionModel, 
-        correctionProvider,
-        apiKey
+    } as GameContext & { isRegenerationAttempt: boolean };
+    const correctionText = await callGenerativeApiRaw(
+        getCorrectionPrompt(invalidJson, context, error),
+        correctionContext,
+        new AbortController().signal,
     );
-
-    const cleanedForCorrection = cleanJsonString(correctionResponseText);
-    const parsedCorrection = JSON.parse(cleanedForCorrection); // This might throw, to be caught by the loop
-
-    if (parsedCorrection.regenerationRequired) {
-        console.log("Correction AI indicated regeneration is required.", parsedCorrection.reason);
-        return { regenerationRequired: true, reason: parsedCorrection.reason };
-    }
-    
-    console.log("Correction successful!");
-    return parsedCorrection;
+    return JSON.parse(cleanJsonString(correctionText));
 }
 
 /**
@@ -538,10 +200,7 @@ export async function executeStepWithCorrection(
                 fullPrompt, 
                 stepContext, 
                 abortSignal, 
-                onStreamingChunk, 
-                model, 
-                context.gameSettings.aiProvider, 
-                context.gameSettings.geminiApiKey || context.gameSettings.openRouterApiKey || ''
+                onStreamingChunk,
             );
             
             const newPartialResponse = deepMergeResponses(partiallyGeneratedResponse, stepResponse);
@@ -565,10 +224,7 @@ export async function executeStepWithCorrection(
                         const correctionResult = await attemptCorrection(
                             err.rawText, 
                             stepContext, 
-                            err, 
-                            model, 
-                            context.gameSettings.aiProvider, 
-                            context.gameSettings.geminiApiKey || context.gameSettings.openRouterApiKey || ''
+                            err,
                         );
 
                         if (correctionResult.regenerationRequired) {
@@ -607,21 +263,7 @@ export async function executeStepWithCorrection(
     throw new Error(`Failed to execute step '${stepName}' after ${MAX_REGENERATION_RETRIES} attempts. Last error: ${lastError?.message}`);
 }
 
-export const getModelForStep = (stepName: string, context: GameContext): string => {
-    const { isCustomModel, customModelName, modelName, correctionModelName, aiProvider, openRouterModelName } = context.gameSettings;
-    if (aiProvider === 'openrouter') {
-        return openRouterModelName || 'google/gemini-flash-1.5';
-    }
-
-    if (isCustomModel) {
-        return customModelName || 'gemini-2.5-flash';
-    }
-    
-    if (stepName === 'Step0_5_Verification_TaskGuide' && correctionModelName) {
-        return correctionModelName;
-    }
-    return modelName || 'gemini-2.5-flash';
-};
+export const getModelForStep = (_stepName: string, _context: GameContext): string => 'Arena GM';
 
 export async function executeTurn(
     context: GameContext,
@@ -766,7 +408,6 @@ export async function getMusicSuggestionFromAi(
     context: GameContext,
     previousQueries: string[]
 ): Promise<{ prompt: string; reasoning: string; } | null> {
-    
     const summarizedContext = {
         last_messages: context.responseHistory.slice(-6).map(m => `${m.sender}: ${m.content}`).join('\n'),
         location_description: context.currentLocation.description,
@@ -776,259 +417,66 @@ export async function getMusicSuggestionFromAi(
         previous_queries: previousQueries,
         user_language: context.gameSettings.language,
     };
-    
-    let prompt = getMusicPrompt(summarizedContext);
-    if (context.gameSettings.adultMode) {
-        prompt += getAdultPrompt();
+    const prompt = getMusicPrompt(summarizedContext) + (context.gameSettings.adultMode ? getAdultPrompt() : '');
+    const result = await requestArenaGmStep(
+        `${prompt}\nReturn a JSON object with exactly two string fields: prompt and reasoning.`,
+        'MusicSuggestion', 'Arena GM', 1, undefined,
+        context.gameSettings.adultMode ? getAdultPrompt() : undefined,
+    );
+    const parsed = JSON.parse(cleanJsonString(result.text));
+    if (typeof parsed?.prompt !== 'string' || typeof parsed?.reasoning !== 'string') {
+        throw new Error('Arena GM music suggestion must include prompt and reasoning strings.');
     }
-
-    let lastError: any = null;
-    const MAX_RETRIES = 3;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            const apiKey = getEnvironmentApiKey();
-            if (!apiKey) {
-                throw new Error("Gemini API Key not found in process.env.API_KEY.");
-            }
-            const ai = new GoogleGenAI({ apiKey });
-            
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: {
-                    responseMimeType: "application/json",
-                    safetySettings: disabledSafetySettings,
-                }
-            });
-            
-            let textResponse = response.text || '';
-            
-            if (context.gameSettings.adultMode) {
-                textResponse = deepStripModerationSymbols(textResponse);
-            }
-
-            const jsonStr = cleanJsonString(textResponse);
-            
-            const parsed = JSON.parse(jsonStr);
-            
-            if (parsed && parsed.prompt && parsed.reasoning) {
-                console.log(`Music suggestion succeeded on attempt ${attempt}`);
-                return {
-                    prompt: parsed.prompt,
-                    reasoning: parsed.reasoning,
-                };
-            } else {
-                throw new Error(`AI music suggestion response was not in the expected format: ${textResponse}`);
-            }
-
-        } catch (err: any) {
-            lastError = err;
-            console.warn(`Music suggestion attempt ${attempt} failed:`, err);
-            if (attempt === MAX_RETRIES) {
-                console.error("Error getting music suggestion from AI after all retries:", err);
-                throw new Error(`The AI failed to generate a music suggestion after ${MAX_RETRIES} attempts. Last error: ${err.message}`);
-            }
-            // Wait a little before retrying
-            await new Promise(resolve => setTimeout(resolve, 500)); 
-        }
-    }
-
-    // This part should not be reached if the loop is correct, but as a fallback:
-    if (lastError) {
-        throw lastError;
-    }
-    
-    return null; // Fallback
+    return { prompt: parsed.prompt, reasoning: parsed.reasoning };
 }
 
 export async function generateSurpriseMusicPrompt(): Promise<string> {
-    try {
-        const ai = new GoogleGenAI({ apiKey: getEnvironmentApiKey() });
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: "Generate a creative and descriptive prompt for an AI music generator. The prompt should be evocative and detailed, suitable for creating instrumental music for a fantasy RPG. Don't use quotes or labels. Just provide the prompt text itself."
-        });
-        return response.text ? response.text.trim() : '';
-    } catch (e) {
-        console.error("Error generating surprise prompt:", e);
-        throw e;
-    }
+    const result = await requestArenaGmStep(
+        'Create a vivid, evocative instrumental music-generation prompt for a fantasy role-playing game. Return a JSON object with exactly one string field named prompt.',
+        'SurpriseMusicPrompt', 'Arena GM', 1,
+    );
+    const parsed = JSON.parse(cleanJsonString(result.text));
+    if (typeof parsed?.prompt !== 'string') throw new Error('Arena GM did not return a music prompt.');
+    return parsed.prompt;
 }
 
-export async function translateToEnglish(text: string, context: GameContext): Promise<string> {
-    if (!text || !text.trim()) {
-        return "";
-    }
-    
-    if (/^[a-zA-Z0-9\s.,!?'"-]+$/.test(text)) {
-        return text;
-    }
-
+export async function translateToEnglish(text: string, _context: GameContext): Promise<string> {
+    if (!text || !text.trim()) return '';
+    if (/^[a-zA-Z0-9\s.,!?'\"-]+$/.test(text)) return text;
     try {
-        const apiKey = getEnvironmentApiKey();
-        if (!apiKey) {
-            console.warn("Gemini API Key not found for translation.");
-            return text;
-        }
-        const ai = new GoogleGenAI({ apiKey });
-        
-        const prompt = `Translate the following text to English. Respond with only the translated text, without any additional explanations or formatting. If the text is already in English, return it unchanged.\n\nText to translate:\n"""\n${text}\n"""`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                safetySettings: disabledSafetySettings
-            }
-        });
-
-        const translatedText = response.text ? response.text.trim() : '';
-        return translatedText;
-
-    } catch (err) {
-        console.error("Error translating text to English:", err);
+        const result = await requestArenaGmStep(
+            `Translate the text below to English. Preserve its meaning and return a JSON object with exactly one string field named translation.\n\nText:\n${JSON.stringify(text)}`,
+            'TranslateImagePrompt', 'Arena GM', 1,
+        );
+        const parsed = JSON.parse(cleanJsonString(result.text));
+        return typeof parsed?.translation === 'string' ? parsed.translation : text;
+    } catch (error) {
+        console.error('Error translating text through Arena GM:', error);
         return text;
     }
 }
 
 export async function executeCancellableJsonGeneration(
-    prompt: string,
+    input: string | { promptContent: string; systemInstruction?: string },
     context: GameContext,
     abortSignal: AbortSignal,
     onStreamingChunk: (text: string) => void,
     systemInstruction?: string
 ): Promise<any> {
-    const { modelName, aiProvider, geminiApiKey, openRouterApiKey, useDynamicThinkingBudget, geminiThinkingBudget } = context.gameSettings;
-    const isGemini3 = modelName.includes('gemini-3');
-
-    if (aiProvider !== 'gemini') {
-        throw new Error("Only Gemini provider is supported for this cinematic generation feature.");
+    const prompt = typeof input === 'string' ? input : input.promptContent;
+    const effectiveSystemInstruction = systemInstruction || (typeof input === 'string' ? undefined : input.systemInstruction);
+    const result = await requestArenaGmStep(
+        prompt, context.currentStepFocus || 'CinematicGeneration', 'Arena GM', 1,
+        abortSignal, effectiveSystemInstruction,
+    );
+    onStreamingChunk(result.text);
+    try {
+        return JSON.parse(cleanJsonString(result.text));
+    } catch (error: any) {
+        throw new RegenerationRequiredError(
+            error.message,
+            'Arena GM returned invalid JSON for cinematic generation.',
+            result.text,
+        );
     }
-    
-    const effectiveApiKey = getEnvironmentApiKey();
-    if (!effectiveApiKey) {
-        throw new Error("Gemini API Key not found in process.env.API_KEY.");
-    }
-
-    const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
-
-    const modelConfig: any = {
-        model: modelName,
-        contents: prompt,
-        signal: abortSignal,
-    };
-    
-    modelConfig.config = {
-        responseMimeType: "application/json",
-    };
-
-    if (systemInstruction) {
-        modelConfig.config.systemInstruction = systemInstruction;
-    }
-
-    if (!modelName.includes('image')) {
-        modelConfig.config.safetySettings = disabledSafetySettings;
-    }
-
-    if (isGemini3) {
-         const level = context.gameSettings.geminiThinkingLevel === 'low' ? 'LOW' : 'HIGH';
-         modelConfig.config.thinkingConfig = {
-            includeThoughts: true,
-            thinkingLevel: level
-         } as any;
-    } else {
-         const budget = useDynamicThinkingBudget ? undefined : geminiThinkingBudget;
-         if (budget !== undefined) {
-            modelConfig.config.thinkingConfig = { thinkingBudget: budget };
-         }
-    }
-    
-    let lastError: any = null;
-
-    for (let attempt = 1; attempt <= MAX_REGENERATION_RETRIES; attempt++) {
-        let fullResponseText = '';
-        try {
-            const stream = await ai.models.generateContentStream(modelConfig);
-            for await (const chunk of stream) {
-                if (abortSignal.aborted) {
-                    throw new DOMException('Aborted by user.', 'AbortError');
-                }
-                const chunkText = chunk.text;
-                if (chunkText) {
-                    fullResponseText += chunkText;
-                }
-                onStreamingChunk(fullResponseText);
-            }
-        
-            if (abortSignal.aborted) {
-                throw new DOMException('Aborted by user.', 'AbortError');
-            }
-
-            if (!fullResponseText.trim()) {
-                throw new Error("Received empty response from the model.");
-            }
-
-            const cleanedJson = cleanJsonString(fullResponseText);
-            onStreamingChunk(cleanedJson);
-            const parsed = JSON.parse(cleanedJson);
-            return parsed; // Success!
-
-        } catch (e: any) {
-            lastError = e;
-            if (abortSignal.aborted || (e instanceof DOMException && e.name === 'AbortError')) {
-                throw e;
-            }
-
-            console.warn(`Cancellable JSON generation failed on attempt ${attempt}. Reason: ${e.message}`);
-            
-            if (!fullResponseText.trim()) {
-                console.log("Response was empty, retrying generation.");
-                continue;
-            }
-
-            const MAX_CORRECTION_RETRIES = 10;
-            let correctionSuccessful = false;
-            let correctedResponse = null;
-
-            for (let correctionAttempt = 1; correctionAttempt <= MAX_CORRECTION_RETRIES; correctionAttempt++) {
-                 console.log(`Attempting self-correction for cancellable generation, attempt ${correctionAttempt}/${MAX_CORRECTION_RETRIES}...`);
-                try {
-                    const correctionResult = await attemptCorrection(
-                        fullResponseText, 
-                        context, 
-                        e, 
-                        modelName, 
-                        aiProvider, 
-                        effectiveApiKey
-                    );
-
-                    if (correctionResult.regenerationRequired) {
-                        console.log("Correction AI indicated regeneration is required.", correctionResult.reason);
-                        lastError = { ...lastError, reason: correctionResult.reason };
-                        break; // Break correction loop to trigger regeneration
-                    }
-                    
-                    console.log("Correction attempt produced valid JSON.");
-                    correctedResponse = correctionResult;
-                    correctionSuccessful = true;
-                    break; // Success, break correction loop
-
-                } catch (correctionError: any) {
-                    console.warn(`Correction attempt ${correctionAttempt} failed. Error: ${correctionError.message}`);
-                    lastError = correctionError;
-                }
-            }
-
-            if (correctionSuccessful && correctedResponse) {
-                console.log("Correction succeeded.");
-                return correctedResponse;
-            } else {
-                console.log("Correction failed or regeneration was requested. Proceeding to next regeneration attempt...");
-                continue; // to next regeneration attempt
-            }
-        }
-    }
-    
-    throw new Error(`Failed to generate a valid JSON response for the cinematic after ${MAX_REGENERATION_RETRIES} attempts. Last error: ${lastError?.message}`);
 }

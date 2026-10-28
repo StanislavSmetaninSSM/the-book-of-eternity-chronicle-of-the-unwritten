@@ -362,8 +362,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-            {gameSettings?.aiProvider === 'gemini' && (
-                <button
+            <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isDisabled}
@@ -371,8 +370,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
                     title={t('Upload Image')}
                 >
                     <PaperClipIcon className="h-5 w-5" />
-                </button>
-            )}
+            </button>
             <button
                 type="button"
                 onClick={() => setIsQuestionMode(prev => !prev)}
