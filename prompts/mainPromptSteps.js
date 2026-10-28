@@ -327,8 +327,10 @@ export const getStep0 = () => {
                 13. Custom State threshold crossed.
                 14. Stealth state changed.
 
-            -   **isSimpleTurn:** Set to 'true' **ONLY** if 'needsSelfCorrection' is 'false'.
-                *Criteria for Simple Turn:* 
+            -   **isSimpleTurn (CRITICAL FIRST-TURN OVERRIDE):**
+                - If 'currentTurnNumber' is 1, you MUST set 'isSimpleTurn' to 'false', even when the player's immediate action is mundane and 'needsSelfCorrection' is false. The first message is a narrative premise, not an ordinary simple turn. Route it through the full staged setup so the starting state, location, quest, chronicle, inventory, image prompt, and relevant world/faction initialization are handled in their dedicated steps.
+                - For turn 2+, set 'isSimpleTurn' to 'true' ONLY if 'needsSelfCorrection' is 'false' and the turn meets the simple-turn criteria below.
+                *Criteria for Simple Turn (turn 2+ only):*
                 - Simple movement to known location.
                 - Casual conversation (no dice roll, no rep change).
                 - Eating food (simple resource update).
@@ -750,6 +752,7 @@ export const getStep2 = () => {
                     -   If Safe: Set to 'null'.
 
                 6.  **Quests ('questUpdates'):**
+                    -   **CRITICAL TURN 1 DIRECTIVE:** If 'currentTurnNumber' is 1 and 'activeQuests' is empty, you MUST create a starting quest, as required by Rule #18. Use the player's accepted first-turn premise and the initial character chronicle/plot outline as its source. The quest must be a plausible, player-agency-preserving next step; do not invent a crisis unrelated to the premise.
                     -   *Scenario A: New Quest.* Send FULL object with 'questId: null' (**Rule #18.2**). Ensure 'detailsLog' has the first entry.
                     -   *Scenario B: Existing Quest Update.* Send PARTIAL object with 'questId: "guid"'.
                         -   **CRITICAL:** Do NOT re-send 'detailsLog'. Use 'newDetailsLogEntry' to append the narrative progress (**Rule #18.4**).
@@ -2535,6 +2538,11 @@ export const getStepFactionProgression = () => {
                 </CRITICAL RULE ADHERENCE MANDATE>
 
                 **SIMULATION CHECKLIST (Follow Sequentially):**
+
+                0.  **Mandatory First-Turn Faction Initialization:**
+                    - If 'currentTurnNumber' is 1 and 'encounteredFactions' is empty, establish a compact baseline of at least two factions that logically belong to the setting and starting premise. Derive their roles and names from the campaign information, character background, and starting location (for example, local civic authority/trade and an underworld group for a rogue beginning in a tavern); do not create unrelated world-spanning powers.
+                    - Create full faction records and the required rank structures using 'factionDataChanges' and 'factionRankChanges'. Initialize the player's standing as neutral/non-member unless the premise establishes otherwise. Log why each faction belongs in this starting region.
+                    - This is world setup, not an event caused by the player's action. Do not invent wars, completed projects, or resource gains; normal economy still uses the elapsed-time calculation below.
 
                 1.  **Time Calculation:**
                     -   Calculate 'Time_Elapsed' since 'lastFactionProgressionTimeInMinutes'.

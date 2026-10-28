@@ -6,6 +6,7 @@ When the user asks to process, continue processing, or monitor the Arena GM mail
 
 - The game master must be the active Arena agent. Do **not** use a separate model/API, invoke an external provider, or claim the application can wake an agent.
 - The relay is sequential. The game may publish a new `pending.json` only after the current matching response has been consumed. Process each stage separately; never collapse the stage pipeline into one `GameResponse`.
+- On turn 1, treat the player's first message as the campaign premise, not merely as a mundane action. Do not classify the initial turn as a simple turn; complete the staged setup, including a starting location, a premise-based quest, chronicle, starting gear, visual prompts, and context-relevant initial factions. Do not invent unrelated crises or grant faction membership without cause.
 - Do not stop after replying to one stage or after one momentary empty-mailbox check. If the user asked for a monitoring duration, keep the current agent turn active and monitor until that duration expires, handling each request that appears. The user should not need to repeat “continue” between stages.
 - A watcher can detect and announce requests; it cannot generate a GM answer or wake an agent by itself. The active Arena agent must read, reason about, and answer each request.
 
