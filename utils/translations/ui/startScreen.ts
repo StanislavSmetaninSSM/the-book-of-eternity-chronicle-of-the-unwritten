@@ -61,6 +61,11 @@ export const startScreen = {
     "Save Configuration": "Save Configuration",
     "Load Configuration": "Load Configuration",
     "Could not save the configuration file.": "Could not save the configuration file.",
+    "Configuration file is ready": "Configuration file is ready",
+    "Choose how to save your configuration file.": "Choose how to save your configuration file.",
+    "Download configuration file": "Download configuration file",
+    "Open configuration file in new tab": "Open configuration file in new tab",
+    "If the download is blocked, open the configuration in a new tab and use your browser’s Save command.": "If the download is blocked, open the configuration in a new tab and use your browser’s Save command.",
     "Invalid configuration file format.": "Invalid configuration file format.",
     "Could not read or parse the configuration file.": "Could not read or parse the configuration file.",
     // New/Missing
@@ -188,6 +193,11 @@ export const startScreen = {
     "Save Configuration": "Сохранить конфигурацию",
     "Load Configuration": "Загрузить конфигурацию",
     "Could not save the configuration file.": "Не удалось сохранить файл конфигурации.",
+    "Configuration file is ready": "Файл конфигурации готов",
+    "Choose how to save your configuration file.": "Выберите способ сохранения файла конфигурации.",
+    "Download configuration file": "Скачать файл конфигурации",
+    "Open configuration file in new tab": "Открыть файл конфигурации в новой вкладке",
+    "If the download is blocked, open the configuration in a new tab and use your browser’s Save command.": "Если загрузка заблокирована, откройте конфигурацию в новой вкладке и используйте команду сохранения браузера.",
     "Invalid configuration file format.": "Неверный формат файла конфигурации.",
     "Could not read or parse the configuration file.": "Не удалось прочитать или разобрать файл конфигурации.",
     // New/Missing

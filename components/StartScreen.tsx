@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
 import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import Modal from './Modal';
-import { UNKNOWN_AUTOSAVE_TIMESTAMP, saveConfigurationToFile, loadConfigurationFromFile } from '../utils/fileManager';
+import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, type PreparedSaveFile } from '../utils/fileManager';
 import ConfirmationModal from './ConfirmationModal';
 import { useLocalization } from '../context/LocalizationContext';
 import { gameData } from '../utils/localizationGameData';
@@ -740,6 +740,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
 export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onLoadGame, onLoadAutosave, autosaveTimestamp, crashRecoveryInfo, crashRecoveryMarker, onLoadCrashRecovery, onLoadFromSlot, dbSaveSlots }: StartScreenProps) {
     const [formData, setFormData] = useState(initialFormData);
     const [customGameData, setCustomGameData] = useState(() => JSON.parse(JSON.stringify(gameData)));
+    const [preparedConfigurationFile, setPreparedConfigurationFile] = useState<PreparedSaveFile | null>(null);
     const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
     const [isAdultConfirmOpen, setIsAdultConfirmOpen] = useState(false);
     const [isNonMagicConfirmOpen, setIsNonMagicConfirmOpen] = useState(false);
@@ -754,6 +755,10 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
     const [newUniverseDescription, setNewUniverseDescription] = useState('');
     const [isConfigLoading, setIsConfigLoading] = useState(false);
     const [joinPlayerName, setJoinPlayerName] = useState('');
+
+    useEffect(() => () => {
+        if (preparedConfigurationFile) releasePreparedSaveFile(preparedConfigurationFile);
+    }, [preparedConfigurationFile]);
 
     useEffect(() => {
         if (activeTab === 'network' && networkTab === 'host') {
@@ -803,8 +808,15 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
             'openRouterModelName', 'geminiThinkingBudget', 'geminiThinkingLevel', 'useDynamicThinkingBudget',
             'geminiApiKey', 'openRouterApiKey', 'useGoogleSearch', 'imageGenerationModelPipeline',
         ].forEach(key => delete cleanFormData[key]);
-        saveConfigurationToFile({ formData: cleanFormData, customGameData }, t);
+        try {
+            setPreparedConfigurationFile(prepareConfigurationFile({ formData: cleanFormData, customGameData }));
+        } catch (err) {
+            console.error('Error preparing configuration file:', err);
+            alert(t('Could not save the configuration file.'));
+        }
     };
+
+    const closeConfigurationDownload = () => setPreparedConfigurationFile(null);
 
     const handleLoadConfiguration = async () => {
         setIsConfigLoading(true);
@@ -1283,6 +1295,29 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                         <button type="button" onClick={handleSaveConfiguration} className="flex-1 bg-gray-700/60 text-gray-300 font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-colors">{t("Save Configuration")}</button>
                         <button type="button" onClick={handleLoadConfiguration} className="flex-1 bg-gray-700/60 text-gray-300 font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-colors">{t("Load Configuration")}</button>
                     </div>
+                    <Modal isOpen={!!preparedConfigurationFile} onClose={closeConfigurationDownload} title={t('Configuration file is ready')}>
+                        {preparedConfigurationFile && (
+                            <div className="space-y-4 text-gray-200">
+                                <p>{t('Choose how to save your configuration file.')}</p>
+                                <a
+                                    href={preparedConfigurationFile.url}
+                                    download={preparedConfigurationFile.filename}
+                                    className="flex w-full items-center justify-center rounded-md bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500"
+                                >
+                                    {t('Download configuration file')} ({preparedConfigurationFile.filename})
+                                </a>
+                                <a
+                                    href={preparedConfigurationFile.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex w-full items-center justify-center rounded-md border border-gray-600 px-4 py-3 font-semibold text-cyan-200 hover:bg-gray-700"
+                                >
+                                    {t('Open configuration file in new tab')}
+                                </a>
+                                <p className="text-sm text-gray-400">{t('If the download is blocked, open the configuration in a new tab and use your browser’s Save command.')}</p>
+                            </div>
+                        )}
+                    </Modal>
                     <button 
                         type="button" 
                         onClick={() => setIsCustomizerOpen(true)} 
