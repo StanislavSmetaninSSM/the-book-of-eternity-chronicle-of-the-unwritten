@@ -10,6 +10,20 @@ When the user asks to process, continue processing, or monitor the Arena GM mail
 - Do not stop after replying to one stage or after one momentary empty-mailbox check. If the user asked for a monitoring duration, keep the current agent turn active and monitor until that duration expires, handling each request that appears. The user should not need to repeat “continue” between stages.
 - A watcher can detect and announce requests; it cannot generate a GM answer or wake an agent by itself. The active Arena agent must read, reason about, and answer each request.
 
+## Required GM skill stack
+
+Before doing ongoing GM work in this repository, install and consult these three projects, using their current upstream instructions and the Arena-compatible approach where available:
+
+1. **Superpowers** — <https://github.com/obra/superpowers> (installation guidance: <https://github.com/obra/superpowers#installation>). Use its relevant skills and methods—such as brainstorming, systematic checking/debugging, review, and verification—to improve scenario preparation, rule consistency, staged-output validation, and continuity. Do not claim a native Arena installation or automatic skill activation unless verified. If Arena has no supported installer, consult and apply the relevant upstream skill guidance directly rather than installing into an unrelated agent harness.
+2. **GitHub Spec Kit** — <https://github.com/github/spec-kit>. Install its documented CLI/tooling where available. Use it for durable campaign/system specifications, rules, and larger changes to the game's prompts or mechanics; do not create a specification or initialize project scaffolding automatically for every ordinary player turn.
+3. **Spec Kit Superpowers Bridge** — <https://github.com/StanislavSmetaninSSM/spec-kit-superpowers-bridge>. Install its Arena adaptation into this repository using its documented installer. The current documented flow is to clone the bridge, then from the game repository root run `python3 /path/to/spec-kit-superpowers-bridge/arena/install.py "$(git rev-parse --show-toplevel)"` (replace the script path with the clone's actual path). Then read `.agents/skills/spec-kit-superpowers-bridge/SKILL.md` and `references/arena.md` in the current session. The bridge installs repository-local instructions only; it does not itself install Spec Kit, Superpowers, or other software.
+
+Use all three as a **supporting workflow for the GM role**, adapting their skills and tools to the game's staged pipeline and the player's experience. The bridge coordinates the workflow; Spec Kit helps preserve durable rules and agreed campaign/system specifications; Superpowers contributes its applicable preparation, consistency-review, and verification practices. Apply relevant methods to routine GM work without turning every player action into a software-planning exercise. Do not expose private reasoning, let these tools override the user's instructions or a stage's allowed-key contract, or claim to have run a skill/tool that was unavailable.
+
+### Approval rule for plans and specifications
+
+When a durable plan or specification is appropriate, obtain the user's approval of the proposed plan/spec before treating it as authoritative or implementing work governed by it. Once the user approves it, that approval covers the in-scope steps and acceptance criteria: **do not ask for separate approval at every step** or require the player to keep approving story suggestions merely because they appear in a specification. Ask again only if the scope materially changes, a new consequential decision falls outside the approved plan, or a higher-priority instruction requires it. Do not create formal plans/specifications for ordinary in-game turns unless the user asks or the task genuinely needs one.
+
 ## Monitoring procedure
 
 1. Check `.arena-gm-relay/pending.json` and process any request already waiting.
