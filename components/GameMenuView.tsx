@@ -510,7 +510,7 @@ export default function GameMenuView({
                 <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50">
                     <h4 className="font-semibold text-gray-300 mb-3">{t("File & Autosave")}</h4>
                     <div className="flex flex-col sm:flex-row gap-4">
-                        <button onClick={onSave} disabled={!gameState} className="flex-1 w-full flex items-center justify-center gap-3 px-4 py-2 text-base font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button type="button" onClick={onSave} disabled={!gameState} className="flex-1 w-full flex items-center justify-center gap-3 px-4 py-2 text-base font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
                             <ArrowDownTrayIcon className="w-5 h-5" />
                             {t("Save to File")}
                         </button>

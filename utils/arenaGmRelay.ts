@@ -152,9 +152,55 @@ const queuedImageJobs: QueuedImageJob[] = [];
 const waitingTurnLeases: Array<(release: () => void) => void> = [];
 let imageJobActive = false;
 let turnLeaseActive = false;
+let turnLeaseStartedAt = 0;
+let activeTurnLeaseRelease: (() => void) | null = null;
+let turnLeaseWatchdog: number | null = null;
+const TURN_LEASE_STALE_GRACE_MS = 30_000;
+const TURN_LEASE_WATCH_INTERVAL_MS = 10_000;
+
+function clearTurnLeaseWatchdog(): void {
+  if (turnLeaseWatchdog !== null && typeof window !== 'undefined') {
+    window.clearTimeout(turnLeaseWatchdog);
+  }
+  turnLeaseWatchdog = null;
+}
+
+function scheduleTurnLeaseWatchdog(): void {
+  if (!turnLeaseActive || queuedImageJobs.length === 0 || turnLeaseWatchdog !== null || typeof window === 'undefined') return;
+  const remainingGrace = Math.max(0, TURN_LEASE_STALE_GRACE_MS - (Date.now() - turnLeaseStartedAt));
+  turnLeaseWatchdog = window.setTimeout(async () => {
+    turnLeaseWatchdog = null;
+    if (!turnLeaseActive || queuedImageJobs.length === 0) return;
+    try {
+      const response = await fetch('/__arena_gm/status', { cache: 'no-store' });
+      if (response.ok) {
+        const status = await response.json();
+        const activeTurn = status.activeKind === 'arena-gm-turn' || status.activeKind === 'arena-gm-step';
+        const queuedTurnCount = Number(status.queuedTurnCount ?? status.queuedCount ?? 0);
+        if (!activeTurn && queuedTurnCount === 0 && Date.now() - turnLeaseStartedAt >= TURN_LEASE_STALE_GRACE_MS) {
+          console.warn('Releasing stale Arena GM turn lease: relay has no active or queued game-turn request.');
+          activeTurnLeaseRelease?.();
+          return;
+        }
+      }
+    } catch (error) {
+      console.warn('Could not verify whether the Arena GM turn lease is stale; keeping image jobs queued.', error);
+    }
+    if (turnLeaseActive && queuedImageJobs.length > 0) {
+      turnLeaseWatchdog = window.setTimeout(() => {
+        turnLeaseWatchdog = null;
+        scheduleTurnLeaseWatchdog();
+      }, TURN_LEASE_WATCH_INTERVAL_MS);
+    }
+  }, remainingGrace);
+}
 
 function pumpRelayJobs(): void {
-  if (imageJobActive || turnLeaseActive) return;
+  if (imageJobActive || turnLeaseActive) {
+    scheduleTurnLeaseWatchdog();
+    return;
+  }
+  clearTurnLeaseWatchdog();
   while (queuedImageJobs.length && queuedImageJobs[0].signal?.aborted) {
     const cancelled = queuedImageJobs.shift()!;
     if (cancelled.abortHandler) cancelled.signal?.removeEventListener('abort', cancelled.abortHandler);
@@ -162,13 +208,20 @@ function pumpRelayJobs(): void {
   }
   if (waitingTurnLeases.length) {
     turnLeaseActive = true;
+    turnLeaseStartedAt = Date.now();
     let released = false;
-    waitingTurnLeases.shift()!(() => {
+    const release = () => {
       if (released) return;
       released = true;
       turnLeaseActive = false;
+      turnLeaseStartedAt = 0;
+      activeTurnLeaseRelease = null;
+      clearTurnLeaseWatchdog();
       pumpRelayJobs();
-    });
+    };
+    activeTurnLeaseRelease = release;
+    waitingTurnLeases.shift()!(release);
+    scheduleTurnLeaseWatchdog();
     return;
   }
   const job = queuedImageJobs.shift();

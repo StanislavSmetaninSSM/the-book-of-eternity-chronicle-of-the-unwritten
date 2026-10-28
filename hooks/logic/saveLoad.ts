@@ -2,7 +2,7 @@
 import React from 'react';
 // FIX: Imported all necessary types from the newly defined types.ts to resolve multiple import errors.
 import { GameState, GameContext, ChatMessage, SaveFile, DBSaveSlotInfo, Item, Location, NPC, PlayerCharacter, Faction, WorldEvent, Cinematic, Combatant } from '../../types';
-import { saveGameToFile, loadGameFromFile, saveToDB, loadFromDB, getAutosaveTimestampFromDB, saveToDBSlot, loadFromDBSlot, listDBSlots, deleteDBSlot } from '../../utils/fileManager';
+import { prepareSaveGameFile, loadGameFromFile, saveToDB, loadFromDB, getAutosaveTimestampFromDB, saveToDBSlot, loadFromDBSlot, listDBSlots, deleteDBSlot } from '../../utils/fileManager';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -215,14 +215,19 @@ export const createSaveLoadManager = (
     const saveGame = async () => {
         setIsSaving(true);
         try {
-            // Manual save - Perform GC (true)
-            const saveData = packageSaveData(gameStateRef.current!, true);
-            if (saveData) {
-                await saveGameToFile(saveData, t);
-            }
+            const currentGameState = gameStateRef.current;
+            if (!currentGameState) throw new Error('The current game state is not available.');
+
+            // Manual save - Perform GC (true).
+            const saveData = packageSaveData(currentGameState, true);
+            if (!saveData) throw new Error('The game context is not ready to save.');
+            // Do not call showSaveFilePicker here: Arena runs this UI in a
+            // cross-origin iframe. Return a Blob URL for a real clickable link.
+            return prepareSaveGameFile(saveData);
         } catch (e) {
-            console.error("Save game to file failed", e);
-            alert(t('Failed to save game.'));
+            console.error("Save game file preparation failed", e);
+            alert(t('Failed to save game.') + ` ${e instanceof Error ? e.message : e}`);
+            return null;
         } finally {
             setIsSaving(false);
         }
