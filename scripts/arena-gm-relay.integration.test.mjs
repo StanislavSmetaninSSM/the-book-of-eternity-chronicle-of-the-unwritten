@@ -447,6 +447,20 @@ test('a cold-start portrait already in flight yields to the first game turn and 
   }
 });
 
+test('turn manager releases the lease in handleTurn and does not release it from askQuestion', async () => {
+  const source = await readFile(path.resolve('hooks/logic/turn.ts'), 'utf8');
+  const handleStart = source.indexOf('const handleTurn = async');
+  const askStart = source.indexOf('const askQuestion = async', handleStart);
+  const sendStart = source.indexOf('const sendMessage =', handleStart);
+  const cancelStart = source.indexOf('const cancelRequest =', askStart);
+  assert.ok(handleStart >= 0 && sendStart > handleStart && askStart > sendStart && cancelStart > askStart);
+
+  const handleTurn = source.slice(handleStart, sendStart);
+  const askQuestion = source.slice(askStart, cancelStart);
+  assert.match(handleTurn, /finally\s*\{[\s\S]*?releaseTurnLease = releaseArenaGmTurn[\s\S]*?releaseTurnLease\?\.\(\);/);
+  assert.doesNotMatch(askQuestion, /releaseArenaGmTurn|releaseTurnLease/);
+});
+
 test('relay expires an abandoned active request after its browser heartbeat lease lapses', async () => {
   await post('turn', makeStep('stale-active'));
   await post('turn', makeStep('after-stale'));
