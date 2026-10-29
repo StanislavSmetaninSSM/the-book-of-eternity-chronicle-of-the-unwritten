@@ -9,6 +9,40 @@ let server;
 let baseUrl;
 let relayDirectory;
 
+class FakeClock {
+  now = 1_000;
+  nextId = 1;
+  timers = new Map();
+
+  setTimeout = (callback, delay = 0) => {
+    const id = this.nextId++;
+    this.timers.set(id, { callback, at: this.now + Number(delay) });
+    return id;
+  };
+
+  clearTimeout = id => { this.timers.delete(id); };
+
+  async advance(milliseconds) {
+    const target = this.now + milliseconds;
+    while (true) {
+      const due = [...this.timers.entries()]
+        .filter(([, timer]) => timer.at <= target)
+        .sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) break;
+      const [id, timer] = due;
+      this.timers.delete(id);
+      this.now = timer.at;
+      await timer.callback();
+      await Promise.resolve();
+    }
+    this.now = target;
+  }
+}
+
+const flushMicrotasks = async () => {
+  for (let i = 0; i < 8; i += 1) await new Promise(resolve => setImmediate(resolve));
+};
+
 const makeStep = correlationId => ({
   kind: 'arena-gm-step',
   protocolVersion: 1,
@@ -44,6 +78,14 @@ async function writeStepResponse(correlationId) {
     protocolVersion: 1,
     correlationId,
     output: { step: correlationId },
+  }));
+}
+
+async function writeImageResponse(correlationId) {
+  await writeFile(path.join(relayDirectory, 'responses', `${correlationId}.json`), JSON.stringify({
+    kind: 'arena-gm-image-response',
+    protocolVersion: 1,
+    correlationId,
   }));
 }
 
@@ -128,6 +170,156 @@ test('relay queues requests without clobbering, prioritizes turn work, isolates 
   const cancelActive = await post('cancel', { correlationId: 'cancel-active' });
   assert.equal((await cancelActive.json()).wasActive, true);
   assert.equal((await status()).activeCorrelationId, null);
+});
+
+test('an active image yields to a new turn without losing its request or response', async () => {
+  const image = await post('turn', makeImage('portrait-active'));
+  assert.equal(image.status, 202);
+  assert.equal((await status()).activeCorrelationId, 'portrait-active');
+  await writeImageResponse('portrait-active');
+
+  const turn = await post('turn', makeStep('turn-overtakes-portrait'));
+  assert.equal(turn.status, 202);
+  assert.deepEqual(await status(), {
+    enabled: true,
+    activeCorrelationId: 'turn-overtakes-portrait',
+    activeKind: 'arena-gm-step',
+    queuedCount: 1,
+    queuedTurnCount: 0,
+  });
+  assert.equal(JSON.parse(await readFile(path.join(relayDirectory, 'pending.json'), 'utf8')).correlationId, 'turn-overtakes-portrait');
+  assert.equal(JSON.parse(await readFile(path.join(relayDirectory, 'responses', 'portrait-active.json'), 'utf8')).correlationId, 'portrait-active');
+
+  const unrelatedCancel = await post('cancel', { correlationId: 'another-users-request' });
+  assert.equal((await unrelatedCancel.json()).cancelled, false);
+  assert.equal((await status()).activeCorrelationId, 'turn-overtakes-portrait', 'an unrelated cancellation cannot remove a foreign active request');
+
+  await writeStepResponse('turn-overtakes-portrait');
+  assert.equal((await consume('turn-overtakes-portrait')).status, 200);
+  assert.equal(JSON.parse(await readFile(path.join(relayDirectory, 'pending.json'), 'utf8')).correlationId, 'portrait-active');
+  assert.equal((await consume('portrait-active')).status, 200);
+  assert.equal((await status()).activeCorrelationId, null);
+});
+
+test('a temporary empty server queue does not release an active browser turn lease', async () => {
+  const previousWindow = globalThis.window;
+  const previousFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  const calls = [];
+  const session = new Map();
+  globalThis.window = {
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    sessionStorage: {
+      setItem: (key, value) => session.set(key, value),
+      getItem: key => session.get(key) ?? null,
+      removeItem: key => session.delete(key),
+    },
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    calls.push({ url, method: init.method || 'GET' });
+    if (url.endsWith('/__arena_gm/status')) return Response.json({ enabled: true, activeCorrelationId: null, activeKind: null, queuedCount: 0, queuedTurnCount: 0 });
+    if (url.endsWith('/__arena_gm/turn')) return Response.json({ accepted: true, queued: false, duplicate: false }, { status: 202 });
+    if (url.endsWith('/__arena_gm/cancel')) return Response.json({ cancelled: true });
+    if (url.includes('/__arena_gm/response?')) return new Response(null, { status: 204 });
+    throw new Error(`Unexpected test fetch: ${url}`);
+  };
+
+  try {
+    const relay = await server.ssrLoadModule('/utils/arenaGmRelay.ts');
+    const releaseTurn = await relay.acquireArenaGmTurnLease();
+    const imageController = new AbortController();
+    const imageResult = relay.requestArenaGmImage('cold-start portrait', 32, 32, imageController.signal)
+      .then(() => 'resolved', error => error.name);
+
+    await clock.advance(45_000);
+    await flushMicrotasks();
+    assert.equal(calls.some(call => call.url.endsWith('/__arena_gm/status')), false, 'the lease must not poll an empty relay queue as an ownership signal');
+    assert.equal(calls.some(call => call.url.endsWith('/__arena_gm/turn') && call.method === 'POST'), false, 'queued image must remain held while the owner retains the lease');
+
+    releaseTurn();
+    await flushMicrotasks();
+    assert.equal(calls.filter(call => call.url.endsWith('/__arena_gm/turn') && call.method === 'POST').length, 1);
+    imageController.abort();
+    assert.equal(await imageResult, 'AbortError');
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
+test('a cold-start portrait already in flight yields to the first game turn and retries afterward', async () => {
+  const previousWindow = globalThis.window;
+  const previousFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  const calls = [];
+  const postedPackets = [];
+  const session = new Map();
+  globalThis.window = {
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    sessionStorage: {
+      setItem: (key, value) => session.set(key, value),
+      getItem: key => session.get(key) ?? null,
+      removeItem: key => session.delete(key),
+    },
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    calls.push({ url, method: init.method || 'GET', body: init.body });
+    if (url.endsWith('/__arena_gm/turn')) {
+      postedPackets.push(JSON.parse(init.body));
+      return Response.json({ accepted: true, queued: false, duplicate: false }, { status: 202 });
+    }
+    if (url.endsWith('/__arena_gm/cancel')) return Response.json({ cancelled: true });
+    if (url.includes('/__arena_gm/response?')) {
+      const correlationId = new URL(url, 'http://test.local').searchParams.get('correlationId');
+      const packet = postedPackets.find(candidate => candidate.correlationId === correlationId);
+      if (packet?.kind === 'arena-gm-step') {
+        return Response.json({ kind: 'arena-gm-step-response', protocolVersion: 1, correlationId, output: { accepted: true } });
+      }
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected test fetch: ${url}`);
+  };
+
+  let imageController;
+  let releaseTurn;
+  try {
+    const relay = await server.ssrLoadModule('/utils/arenaGmRelay.ts');
+    imageController = new AbortController();
+    const imageResult = relay.requestArenaGmImage('new player portrait', 32, 32, imageController.signal)
+      .then(() => 'resolved', error => error.name);
+    await flushMicrotasks();
+    assert.deepEqual(postedPackets.map(packet => packet.kind), ['arena-gm-image'], 'portrait request starts before the first turn lease');
+
+    const leasePromise = relay.acquireArenaGmTurnLease();
+    await flushMicrotasks();
+    releaseTurn = await leasePromise;
+    assert.equal(calls.filter(call => call.url.endsWith('/__arena_gm/cancel')).length, 1, 'only the in-flight portrait attempt is cancelled to yield the slot');
+    assert.deepEqual(postedPackets.map(packet => packet.kind), ['arena-gm-image'], 'no portrait retry starts while the turn lease is active');
+
+    const turnStage = relay.requestArenaGmStep('first turn stage', 'Step0_AnalysisAndPlanning_TaskGuide', 'Arena GM', 1);
+    await flushMicrotasks();
+    assert.deepEqual(postedPackets.map(packet => packet.kind), ['arena-gm-image', 'arena-gm-step'], 'the first game stage enters the relay before the portrait retry');
+    await clock.advance(900);
+    assert.deepEqual(await turnStage, { text: JSON.stringify({ accepted: true }), thoughtSignature: undefined });
+
+    releaseTurn();
+    releaseTurn = null;
+    await flushMicrotasks();
+    assert.deepEqual(postedPackets.map(packet => packet.kind), ['arena-gm-image', 'arena-gm-step', 'arena-gm-image'], 'portrait retries after the turn lease is explicitly released');
+    imageController.abort();
+    assert.equal(await imageResult, 'AbortError');
+  } finally {
+    imageController?.abort();
+    releaseTurn?.();
+    globalThis.fetch = previousFetch;
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
 });
 
 test('relay expires an abandoned active request after its browser heartbeat lease lapses', async () => {

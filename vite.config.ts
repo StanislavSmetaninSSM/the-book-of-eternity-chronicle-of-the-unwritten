@@ -176,6 +176,22 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
               } finally {
                 await handle.close();
               }
+              // A running image job is lower priority than every game-turn stage. Yield
+              // its active slot without cancelling or deleting it so its owner can keep
+              // heartbeating and consume its response after the turn has drained.
+              if (packet.kind !== 'arena-gm-image' && active?.packet?.kind === 'arena-gm-image') {
+                const imageId = active.packet.correlationId;
+                const imageQueuePath = path.join(requestQueueDirectory, `${imageId}.json`);
+                const alreadyQueuedImage = await readJsonIfPresent<QueuedRelayRequest>(imageQueuePath);
+                if (alreadyQueuedImage && JSON.stringify(alreadyQueuedImage.packet) !== JSON.stringify(active.packet)) {
+                  throw new Error('Cannot yield active image: its correlation ID is already assigned to a different queued packet.');
+                }
+                if (alreadyQueuedImage) await rm(activeRequestPath, { force: true });
+                else await rename(activeRequestPath, imageQueuePath);
+                const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
+                if (visiblePending?.correlationId === imageId) await rm(pendingPath, { force: true });
+              }
+
               const activeAfterDispatch = await dispatchNextRequest();
               return { duplicate: false, queued: activeAfterDispatch?.packet.correlationId !== packet.correlationId };
             });

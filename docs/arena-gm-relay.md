@@ -48,7 +48,7 @@ A mailbox response completes one **stage**, not necessarily the player's **turn*
 
 ## Image flow
 
-Images are separate, lower-priority relay jobs. The browser serializes image jobs and defers them while a full staged game turn holds the relay lease; the server also prioritizes queued turn stages over image requests. For `arena-gm-image`, create one PNG at `.arena-gm-relay/images/<correlationId>.png`, then write its response envelope atomically to `.arena-gm-relay/responses/<correlationId>.json`:
+Images are separate, lower-priority relay jobs. The browser serializes image jobs and defers them while a game turn holds its explicit lease. A turn lease is released only by its owner; an empty server queue is normal between stages and is never proof the turn ended. If a turn begins while an image is already generating (including a startup portrait), the browser cancels that attempt and retries it after the turn. The server also yields an active image slot to a newly arriving turn by re-queuing the same image packet without deleting its request or response, so the original owner can continue polling and consume it after the turn. For `arena-gm-image`, create one PNG at `.arena-gm-relay/images/<correlationId>.png`, then write its response envelope atomically to `.arena-gm-relay/responses/<correlationId>.json`:
 
 ```json
 {
@@ -66,5 +66,5 @@ The Vite middleware serves the matching image through `/__arena_gm/image`. A res
 - Vite development middleware owns mailbox I/O and enforces a request body size limit. The correlation ID is checked before returning a response or image.
 - `.arena-gm-relay/` is transient and ignored by Git. It can contain game prompts and generated art; treat it as private workspace data and do not publish it.
 - The default game relay does not pass provider API keys. Avoid adding credentials to request/response envelopes.
-- The active mailbox is sequential. Queued turn stages are promoted before image jobs; the browser additionally serializes images and holds them until the full game-turn lease is released. The relay has no autonomous agent invocation mechanism. The optional watcher monitors only the active `pending.json` and reports it; it cannot process requests or wake an agent.
+- The active mailbox is sequential. Queued turn stages are promoted before image jobs, and a newly arriving turn can yield an already-active image back to the queue without deleting it. Browser-side image serialization holds or retries background work until the turn owner explicitly releases its lease. The relay has no autonomous agent invocation mechanism. The optional watcher monitors only the active `pending.json` and reports it; it cannot process requests or wake an agent.
 - Static builds do not contain the middleware. Production needs an authenticated server-side adapter and secure mailbox storage.
