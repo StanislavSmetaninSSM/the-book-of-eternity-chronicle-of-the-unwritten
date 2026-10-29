@@ -89,7 +89,6 @@ export const createTurnManager = (
         });
     };
 
-    let releaseArenaGmTurn: (() => void) | null = null;
     const handleTurn = async (context: GameContext, fullHistoryForTurn: ChatMessage[], baseStateOverride?: GameState) => {
         setIsLoading(true);
         setError(null);
@@ -101,6 +100,8 @@ export const createTurnManager = (
         setLastJsonResponse('');
         setSuggestedActions([]);
         abortControllerRef.current = new AbortController();
+        // Each turn owns its lease; never share it with the separate Ask GM flow.
+        let releaseArenaGmTurn: (() => void) | null = null;
 
         try {
             const onPartialResponse = (response: any, stepName: string, modelName: string) => {
@@ -323,6 +324,9 @@ export const createTurnManager = (
                     turnStartTimeRef.current = null;
                 }
             }
+            const releaseTurnLease = releaseArenaGmTurn;
+            releaseArenaGmTurn = null;
+            releaseTurnLease?.();
         }
     };
     
@@ -584,9 +588,6 @@ export const createTurnManager = (
                     turnStartTimeRef.current = null;
                 }
             }
-            const releaseTurnLease = releaseArenaGmTurn;
-            releaseArenaGmTurn = null;
-            releaseTurnLease?.();
         }
     };
     
