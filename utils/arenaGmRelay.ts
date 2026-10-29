@@ -141,67 +141,25 @@ const waitForNextPoll = (signal?: AbortSignal): Promise<void> => new Promise((re
 });
 
 interface QueuedImageJob {
-  run: () => Promise<string>;
+  run: (signal: AbortSignal) => Promise<string>;
   signal?: AbortSignal;
   resolve: (image: string) => void;
   reject: (error: Error) => void;
   started: boolean;
+  preempted: boolean;
+  attemptController?: AbortController;
   abortHandler?: () => void;
 }
 
 const queuedImageJobs: QueuedImageJob[] = [];
 const waitingTurnLeases: Array<(release: () => void) => void> = [];
 let imageJobActive = false;
+let activeImageJob: QueuedImageJob | null = null;
 let turnLeaseActive = false;
-let turnLeaseStartedAt = 0;
-let activeTurnLeaseRelease: (() => void) | null = null;
-let turnLeaseWatchdog: number | null = null;
-const TURN_LEASE_STALE_GRACE_MS = 30_000;
-const TURN_LEASE_WATCH_INTERVAL_MS = 10_000;
 
-function clearTurnLeaseWatchdog(): void {
-  if (turnLeaseWatchdog !== null && typeof window !== 'undefined') {
-    window.clearTimeout(turnLeaseWatchdog);
-  }
-  turnLeaseWatchdog = null;
-}
-
-function scheduleTurnLeaseWatchdog(): void {
-  if (!turnLeaseActive || queuedImageJobs.length === 0 || turnLeaseWatchdog !== null || typeof window === 'undefined') return;
-  const remainingGrace = Math.max(0, TURN_LEASE_STALE_GRACE_MS - (Date.now() - turnLeaseStartedAt));
-  turnLeaseWatchdog = window.setTimeout(async () => {
-    turnLeaseWatchdog = null;
-    if (!turnLeaseActive || queuedImageJobs.length === 0) return;
-    try {
-      const response = await fetch('/__arena_gm/status', { cache: 'no-store' });
-      if (response.ok) {
-        const status = await response.json();
-        const activeTurn = status.activeKind === 'arena-gm-turn' || status.activeKind === 'arena-gm-step';
-        const queuedTurnCount = Number(status.queuedTurnCount ?? status.queuedCount ?? 0);
-        if (!activeTurn && queuedTurnCount === 0 && Date.now() - turnLeaseStartedAt >= TURN_LEASE_STALE_GRACE_MS) {
-          console.warn('Releasing stale Arena GM turn lease: relay has no active or queued game-turn request.');
-          activeTurnLeaseRelease?.();
-          return;
-        }
-      }
-    } catch (error) {
-      console.warn('Could not verify whether the Arena GM turn lease is stale; keeping image jobs queued.', error);
-    }
-    if (turnLeaseActive && queuedImageJobs.length > 0) {
-      turnLeaseWatchdog = window.setTimeout(() => {
-        turnLeaseWatchdog = null;
-        scheduleTurnLeaseWatchdog();
-      }, TURN_LEASE_WATCH_INTERVAL_MS);
-    }
-  }, remainingGrace);
-}
-
+/** A game turn must not infer ownership completion from an empty interval in the relay queue. */
 function pumpRelayJobs(): void {
-  if (imageJobActive || turnLeaseActive) {
-    scheduleTurnLeaseWatchdog();
-    return;
-  }
-  clearTurnLeaseWatchdog();
+  if (imageJobActive || turnLeaseActive) return;
   while (queuedImageJobs.length && queuedImageJobs[0].signal?.aborted) {
     const cancelled = queuedImageJobs.shift()!;
     if (cancelled.abortHandler) cancelled.signal?.removeEventListener('abort', cancelled.abortHandler);
@@ -209,52 +167,82 @@ function pumpRelayJobs(): void {
   }
   if (waitingTurnLeases.length) {
     turnLeaseActive = true;
-    turnLeaseStartedAt = Date.now();
     let released = false;
     const release = () => {
       if (released) return;
       released = true;
       turnLeaseActive = false;
-      turnLeaseStartedAt = 0;
-      activeTurnLeaseRelease = null;
-      clearTurnLeaseWatchdog();
       pumpRelayJobs();
     };
-    activeTurnLeaseRelease = release;
     waitingTurnLeases.shift()!(release);
-    scheduleTurnLeaseWatchdog();
     return;
   }
   const job = queuedImageJobs.shift();
   if (!job) return;
-  job.started = true;
-  if (job.abortHandler) job.signal?.removeEventListener('abort', job.abortHandler);
   if (job.signal?.aborted) {
+    job.signal?.removeEventListener('abort', job.abortHandler!);
     job.reject(new DOMException('Image request cancelled.', 'AbortError'));
     pumpRelayJobs();
     return;
   }
+
+  job.started = true;
+  job.preempted = false;
   imageJobActive = true;
-  job.run().then(job.resolve, error => job.reject(error instanceof Error ? error : new Error(String(error))))
-    .finally(() => { imageJobActive = false; pumpRelayJobs(); });
+  activeImageJob = job;
+  const attemptController = new AbortController();
+  job.attemptController = attemptController;
+  const abortAttempt = () => attemptController.abort();
+  job.signal?.addEventListener('abort', abortAttempt, { once: true });
+
+  job.run(attemptController.signal).then(image => {
+    job.resolve(image);
+    job.signal?.removeEventListener('abort', job.abortHandler!);
+  }, error => {
+    if (job.preempted && !job.signal?.aborted) {
+      // Abort this correlation ID cleanly, then retry the image after the waiting turn.
+      job.started = false;
+      job.preempted = false;
+      queuedImageJobs.unshift(job);
+    } else {
+      job.signal?.removeEventListener('abort', job.abortHandler!);
+      job.reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  }).finally(() => {
+    job.signal?.removeEventListener('abort', abortAttempt);
+    job.attemptController = undefined;
+    if (activeImageJob === job) activeImageJob = null;
+    imageJobActive = false;
+    pumpRelayJobs();
+  });
 }
 
 /** Hold images while the full staged game turn is in progress. */
 export function acquireArenaGmTurnLease(): Promise<() => void> {
   return new Promise(resolve => {
     waitingTurnLeases.push(resolve);
+    // A portrait may already be generating during cold start. Cancel only that image
+    // attempt, retain its job, and retry it after every waiting turn lease is released.
+    if (activeImageJob && !activeImageJob.signal?.aborted) {
+      activeImageJob.preempted = true;
+      activeImageJob.attemptController?.abort();
+    }
     pumpRelayJobs();
   });
 }
 
-function enqueueArenaGmImage(run: () => Promise<string>, signal?: AbortSignal): Promise<string> {
+function enqueueArenaGmImage(run: (signal: AbortSignal) => Promise<string>, signal?: AbortSignal): Promise<string> {
   if (signal?.aborted) return Promise.reject(new DOMException('Image request cancelled.', 'AbortError'));
   return new Promise((resolve, reject) => {
-    const job: QueuedImageJob = { run, signal, resolve, reject, started: false };
+    const job: QueuedImageJob = { run, signal, resolve, reject, started: false, preempted: false };
     job.abortHandler = () => {
-      if (job.started) return; // The active request observes the same signal and cancels itself.
+      if (job.started) {
+        job.attemptController?.abort();
+        return;
+      }
       const index = queuedImageJobs.indexOf(job);
       if (index >= 0) queuedImageJobs.splice(index, 1);
+      signal?.removeEventListener('abort', job.abortHandler!);
       reject(new DOMException('Image request cancelled.', 'AbortError'));
       pumpRelayJobs();
     };
@@ -328,7 +316,8 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
   rememberActiveRelayCorrelation(request.correlationId);
   try {
     // Reposting the exact packet is safe: the relay treats matching correlation IDs idempotently.
-    while (!accepted) {
+    while (true) {
+      while (!accepted) {
       if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
       let response: Response;
       try {
@@ -378,6 +367,15 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
         retryDelay = Math.min(10_000, Math.round(retryDelay * 1.7));
         continue;
       }
+      if (result.status === 410 && request.kind === 'arena-gm-image') {
+        // The image lease may expire while its browser owner is disconnected. If this
+        // owner is still polling (and hasn't explicitly aborted), safely requeue the
+        // same correlation ID instead of failing a recoverable image request.
+        console.warn('Arena GM image request expired without a heartbeat; resubmitting the same image request.');
+        accepted = false;
+        retryDelay = 900;
+        break;
+      }
       if (!result.ok) throw new Error(`Relay response read failed (${result.status}).`);
       const envelope = await result.json();
       completed = true;
@@ -386,8 +384,11 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
         throw new Error('The mailbox returned a response for a different request or protocol.');
       }
       return envelope as T;
+      }
+      if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
+      if (!accepted && request.kind === 'arena-gm-image') continue;
+      throw new DOMException('Turn cancelled.', 'AbortError');
     }
-    throw new DOMException('Turn cancelled.', 'AbortError');
   } finally {
     // Only an explicit AbortController cancellation may delete an unfinished request.
     // Transient network errors are retried above; page reloads are recovered from a saved turn checkpoint.
@@ -448,7 +449,7 @@ export function requestArenaGmImage(
   height: number,
   signal?: AbortSignal,
 ): Promise<string> {
-  return enqueueArenaGmImage(() => requestArenaGmImageDirect(prompt, width, height, signal), signal);
+  return enqueueArenaGmImage(attemptSignal => requestArenaGmImageDirect(prompt, width, height, attemptSignal), signal);
 }
 
 export async function requestArenaGmTurn(request: ArenaGmTurnRequest, signal?: AbortSignal): Promise<GameResponse> {
