@@ -201,6 +201,77 @@ test('an active image yields to a new turn without losing its request or respons
   assert.equal((await status()).activeCorrelationId, null);
 });
 
+test('a fresh image heartbeat preserves an active portrait when a duplicate arrives', async () => {
+  const first = { ...makeImage('portrait-live-old'), prompt: 'Garrett portrait' };
+  const duplicate = { ...makeImage('portrait-live-new'), prompt: 'Garrett portrait' };
+  await post('turn', first);
+  assert.equal((await consume(first.correlationId)).status, 204, 'the current browser owner refreshes its heartbeat while waiting');
+
+  await post('turn', duplicate);
+  assert.deepEqual(await status(), {
+    enabled: true,
+    activeCorrelationId: first.correlationId,
+    activeKind: 'arena-gm-image',
+    queuedCount: 1,
+    queuedTurnCount: 0,
+  });
+  assert.equal(JSON.parse(await readFile(path.join(relayDirectory, 'pending.json'), 'utf8')).correlationId, first.correlationId);
+  await writeImageResponse(first.correlationId);
+  assert.equal((await consume(first.correlationId)).status, 200);
+  assert.equal(JSON.parse(await readFile(path.join(relayDirectory, 'pending.json'), 'utf8')).correlationId, duplicate.correlationId);
+  await writeImageResponse(duplicate.correlationId);
+  assert.equal((await consume(duplicate.correlationId)).status, 200);
+});
+
+test('an orphaned active portrait expires by heartbeat so a replacement can be fetched', async () => {
+  const abandoned = { ...makeImage('portrait-orphan'), prompt: 'Garrett portrait' };
+  const replacement = { ...makeImage('portrait-replacement'), prompt: 'Garrett portrait' };
+  await post('turn', abandoned);
+  await writeImageResponse(abandoned.correlationId);
+  await writeFile(path.join(relayDirectory, 'images', `${abandoned.correlationId}.png`), 'old portrait');
+  const activePath = path.join(relayDirectory, 'active-request.json');
+  const active = JSON.parse(await readFile(activePath, 'utf8'));
+  active.lastHeartbeatAt = Date.now() - 31_000;
+  await writeFile(activePath, JSON.stringify(active));
+
+  await post('turn', replacement);
+  assert.deepEqual(await status(), {
+    enabled: true,
+    activeCorrelationId: replacement.correlationId,
+    activeKind: 'arena-gm-image',
+    queuedCount: 0,
+    queuedTurnCount: 0,
+  });
+  assert.equal(JSON.parse(await readFile(path.join(relayDirectory, 'pending.json'), 'utf8')).correlationId, replacement.correlationId);
+  await assert.rejects(readFile(path.join(relayDirectory, 'responses', `${abandoned.correlationId}.json`)), { code: 'ENOENT' });
+  await assert.rejects(readFile(path.join(relayDirectory, 'images', `${abandoned.correlationId}.png`)), { code: 'ENOENT' });
+  await writeImageResponse(replacement.correlationId);
+  assert.equal((await consume(replacement.correlationId)).status, 200);
+});
+
+test('an orphaned queued portrait is pruned before it can block a fresh one', async () => {
+  await post('turn', makeStep('turn-holding-slot'));
+  const abandoned = { ...makeImage('portrait-queued-orphan'), prompt: 'Garrett portrait' };
+  const replacement = { ...makeImage('portrait-queued-replacement'), prompt: 'Garrett portrait' };
+  await post('turn', abandoned);
+  const queuedPath = path.join(relayDirectory, 'request-queue', `${abandoned.correlationId}.json`);
+  const queuedRequest = JSON.parse(await readFile(queuedPath, 'utf8'));
+  queuedRequest.lastHeartbeatAt = Date.now() - 31_000;
+  await writeFile(queuedPath, JSON.stringify(queuedRequest));
+  await writeFile(path.join(relayDirectory, 'images', `${abandoned.correlationId}.png`), 'old portrait');
+  await writeImageResponse(abandoned.correlationId);
+  await post('turn', replacement);
+
+  await writeStepResponse('turn-holding-slot');
+  assert.equal((await consume('turn-holding-slot')).status, 200);
+  assert.equal(JSON.parse(await readFile(path.join(relayDirectory, 'pending.json'), 'utf8')).correlationId, replacement.correlationId);
+  await assert.rejects(readFile(path.join(relayDirectory, 'request-queue', `${abandoned.correlationId}.json`)), { code: 'ENOENT' });
+  await assert.rejects(readFile(path.join(relayDirectory, 'responses', `${abandoned.correlationId}.json`)), { code: 'ENOENT' });
+  await assert.rejects(readFile(path.join(relayDirectory, 'images', `${abandoned.correlationId}.png`)), { code: 'ENOENT' });
+  await writeImageResponse(replacement.correlationId);
+  assert.equal((await consume(replacement.correlationId)).status, 200);
+});
+
 test('a temporary empty server queue does not release an active browser turn lease', async () => {
   const previousWindow = globalThis.window;
   const previousFetch = globalThis.fetch;
@@ -244,6 +315,60 @@ test('a temporary empty server queue does not release an active browser turn lea
     imageController.abort();
     assert.equal(await imageResult, 'AbortError');
   } finally {
+    globalThis.fetch = previousFetch;
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
+test('a still-live image owner resubmits its same packet after a stale-request 410', async () => {
+  const previousWindow = globalThis.window;
+  const previousFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  const postedPackets = [];
+  let pollCount = 0;
+  let cancelCount = 0;
+  const session = new Map();
+  globalThis.window = {
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    sessionStorage: {
+      setItem: (key, value) => session.set(key, value),
+      getItem: key => session.get(key) ?? null,
+      removeItem: key => session.delete(key),
+    },
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    if (url.endsWith('/__arena_gm/turn')) {
+      postedPackets.push(JSON.parse(init.body));
+      return Response.json({ accepted: true, queued: false, duplicate: false }, { status: 202 });
+    }
+    if (url.endsWith('/__arena_gm/cancel')) { cancelCount += 1; return Response.json({ cancelled: true }); }
+    if (url.includes('/__arena_gm/response?')) {
+      pollCount += 1;
+      return pollCount === 1 ? Response.json({ error: 'expired' }, { status: 410 }) : new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected test fetch: ${url}`);
+  };
+
+  let imageController;
+  try {
+    const relay = await server.ssrLoadModule('/utils/arenaGmRelay.ts');
+    imageController = new AbortController();
+    const imageResult = relay.requestArenaGmImage('recoverable portrait', 32, 32, imageController.signal)
+      .then(() => 'resolved', error => error.name);
+    await flushMicrotasks();
+    assert.equal(postedPackets.length, 1);
+    await clock.advance(900);
+    await flushMicrotasks();
+    assert.equal(postedPackets.length, 2);
+    assert.equal(postedPackets[0].correlationId, postedPackets[1].correlationId, 'retry must retain correlation identity');
+    imageController.abort();
+    assert.equal(await imageResult, 'AbortError');
+    assert.equal(cancelCount, 1, 'explicit user cancellation still cancels the request');
+  } finally {
+    imageController?.abort();
     globalThis.fetch = previousFetch;
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;

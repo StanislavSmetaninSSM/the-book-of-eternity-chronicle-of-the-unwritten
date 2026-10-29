@@ -10,6 +10,9 @@ const requestQueueDirectory = path.join(relayDirectory, 'request-queue');
 const responseDirectory = path.join(relayDirectory, 'responses');
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
 const ACTIVE_REQUEST_LEASE_MS = Math.max(30_000, Number(process.env.ARENA_GM_RELAY_ACTIVE_LEASE_MS) || 5 * 60_000);
+// Image clients must keep polling while they still own a request. A much shorter
+// heartbeat lease clears orphan portraits without relying on an empty turn queue.
+const IMAGE_REQUEST_LEASE_MS = Math.max(5_000, Number(process.env.ARENA_GM_RELAY_IMAGE_LEASE_MS) || 30_000);
 const CORRELATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 interface QueuedRelayRequest {
@@ -57,9 +60,10 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
   let active = await readActiveRequest();
   if (active) {
     const heartbeatAt = active.lastHeartbeatAt ?? active.queuedAt;
-    if (Number.isFinite(heartbeatAt) && Date.now() - heartbeatAt > ACTIVE_REQUEST_LEASE_MS) {
+    const activeLeaseMs = active.packet.kind === 'arena-gm-image' ? IMAGE_REQUEST_LEASE_MS : ACTIVE_REQUEST_LEASE_MS;
+    if (Number.isFinite(heartbeatAt) && Date.now() - heartbeatAt > activeLeaseMs) {
       const staleId = active.packet.correlationId;
-      console.warn(`Expiring stale Arena GM request ${staleId}: no browser heartbeat for ${Date.now() - heartbeatAt}ms.`);
+      console.warn(`Expiring stale Arena GM request ${staleId}: no browser heartbeat for ${Date.now() - heartbeatAt}ms (lease ${activeLeaseMs}ms).`);
       await rm(activeRequestPath, { force: true });
       const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
       if (visiblePending?.correlationId === staleId) await rm(pendingPath, { force: true });
@@ -84,7 +88,19 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
     const filePath = path.join(requestQueueDirectory, name);
     try {
       const entry = await readJsonIfPresent<QueuedRelayRequest>(filePath);
-      if (entry?.packet && typeof entry.packet.correlationId === 'string') queued.push({ name, entry });
+      if (!entry?.packet || typeof entry.packet.correlationId !== 'string') continue;
+      if (entry.packet.kind === 'arena-gm-image') {
+        const heartbeatAt = entry.lastHeartbeatAt ?? entry.queuedAt;
+        if (Number.isFinite(heartbeatAt) && Date.now() - heartbeatAt > IMAGE_REQUEST_LEASE_MS) {
+          const staleId = entry.packet.correlationId;
+          console.warn(`Expiring orphaned queued Arena GM image ${staleId}: no browser heartbeat for ${Date.now() - heartbeatAt}ms.`);
+          await rm(filePath, { force: true });
+          await removeResponseForCorrelation(staleId);
+          await rm(path.join(relayDirectory, 'images', `${staleId}.png`), { force: true });
+          continue;
+        }
+      }
+      queued.push({ name, entry });
     } catch (error) {
       console.error(`Ignoring unreadable Arena GM queue entry ${name}:`, error);
     }

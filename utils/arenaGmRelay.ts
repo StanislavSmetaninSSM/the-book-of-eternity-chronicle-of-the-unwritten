@@ -316,7 +316,8 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
   rememberActiveRelayCorrelation(request.correlationId);
   try {
     // Reposting the exact packet is safe: the relay treats matching correlation IDs idempotently.
-    while (!accepted) {
+    while (true) {
+      while (!accepted) {
       if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
       let response: Response;
       try {
@@ -366,6 +367,15 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
         retryDelay = Math.min(10_000, Math.round(retryDelay * 1.7));
         continue;
       }
+      if (result.status === 410 && request.kind === 'arena-gm-image') {
+        // The image lease may expire while its browser owner is disconnected. If this
+        // owner is still polling (and hasn't explicitly aborted), safely requeue the
+        // same correlation ID instead of failing a recoverable image request.
+        console.warn('Arena GM image request expired without a heartbeat; resubmitting the same image request.');
+        accepted = false;
+        retryDelay = 900;
+        break;
+      }
       if (!result.ok) throw new Error(`Relay response read failed (${result.status}).`);
       const envelope = await result.json();
       completed = true;
@@ -374,8 +384,11 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
         throw new Error('The mailbox returned a response for a different request or protocol.');
       }
       return envelope as T;
+      }
+      if (signal?.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
+      if (!accepted && request.kind === 'arena-gm-image') continue;
+      throw new DOMException('Turn cancelled.', 'AbortError');
     }
-    throw new DOMException('Turn cancelled.', 'AbortError');
   } finally {
     // Only an explicit AbortController cancellation may delete an unfinished request.
     // Transient network errors are retried above; page reloads are recovered from a saved turn checkpoint.
