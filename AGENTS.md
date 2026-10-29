@@ -57,3 +57,9 @@ For `kind: "arena-gm-image"`, generate the requested image using an available Ar
 - The optional `npm run relay:watch` utility is a notifier only. It does not call an AI service or answer requests.
 
 For the app's protocol and deployment details, see [docs/ARENA-DEPLOYMENT.md](docs/ARENA-DEPLOYMENT.md) and [docs/arena-gm-relay.md](docs/arena-gm-relay.md).
+
+<!-- spec-kit-superpowers-bridge:arena:start -->
+## Spec Kit Superpowers Bridge (Arena)
+
+When a task involves Spec Kit, Superpowers, `.specify/`, or a durable feature workflow, read `.agents/skills/spec-kit-superpowers-bridge/SKILL.md` and its `references/arena.md` before proceeding. Follow the Arena adaptation and all higher-priority instructions.
+<!-- spec-kit-superpowers-bridge:arena:end -->
