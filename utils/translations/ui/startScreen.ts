@@ -2,6 +2,8 @@
 export const startScreen = {
   en: {
     "An interrupted turn was saved.": "An interrupted turn was saved.",
+    "Restoring saved setup draft...": "Restoring saved setup draft...",
+    "Unfinished setup restored.": "Unfinished setup restored.",
     "Submitted action": "Submitted action",
     "Resuming will replay the action from the last saved game state.": "Resuming will replay the action from the last saved game state. This is a replay, not an exact continuation of an intermediate stage.",
     "Resume interrupted turn": "Resume interrupted turn",
@@ -139,6 +141,8 @@ export const startScreen = {
   },
   ru: {
     "An interrupted turn was saved.": "Сохранён прерванный ход.",
+    "Restoring saved setup draft...": "Восстанавливаем сохранённую настройку персонажа...",
+    "Unfinished setup restored.": "Черновик настройки персонажа восстановлен.",
     "Submitted action": "Отправленное действие",
     "Resuming will replay the action from the last saved game state.": "Возобновление повторно выполнит действие от последнего сохранённого состояния игры. Это повтор действия, а не точное продолжение с промежуточного этапа.",
     "Resume interrupted turn": "Возобновить прерванный ход",
