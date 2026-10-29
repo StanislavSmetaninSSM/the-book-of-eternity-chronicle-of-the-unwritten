@@ -161,6 +161,8 @@ const INTERRUPTED_TURNS_STORE_NAME = 'interrupted_turns';
 const AUTOSAVE_ID = 'current_autosave';
 const INTERRUPTED_TURN_ID = 'pending-turn';
 const CRASH_RECOVERY_ID = 'last_known_good_save';
+const START_SCREEN_FORM_DRAFT_ID = 'start_screen_form_draft';
+const START_SCREEN_WORLD_DRAFT_ID = 'start_screen_world_draft';
 const AUTOSAVE_TIMESTAMP_STORAGE_KEY = 'gemini-rpg-autosave-timestamp';
 const SAVE_SLOT_METADATA_STORAGE_KEY = 'gemini-rpg-save-slot-metadata';
 const CRASH_RECOVERY_METADATA_STORAGE_KEY = 'gemini-rpg-crash-recovery-metadata';
@@ -347,6 +349,83 @@ function openDB(): Promise<IDBDatabase> {
     });
   }
   return dbPromise;
+}
+
+// --- Start-screen draft Functions ---
+
+export interface StartScreenDraft {
+  formData: Record<string, unknown> | null;
+  customGameData: unknown | null;
+}
+
+export async function saveStartScreenFormDraft(formData: Record<string, unknown>): Promise<void> {
+  const db = await openDB();
+  const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
+  transaction.objectStore(AUTOSAVE_STORE_NAME).put({
+    id: START_SCREEN_FORM_DRAFT_ID,
+    updatedAt: new Date().toISOString(),
+    data: formData,
+  });
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+export async function saveStartScreenWorldDraft(customGameData: unknown): Promise<void> {
+  const db = await openDB();
+  const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
+  transaction.objectStore(AUTOSAVE_STORE_NAME).put({
+    id: START_SCREEN_WORLD_DRAFT_ID,
+    updatedAt: new Date().toISOString(),
+    data: customGameData,
+  });
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+export async function loadStartScreenDraft(): Promise<StartScreenDraft> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readonly');
+    const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
+    const formRequest = store.get(START_SCREEN_FORM_DRAFT_ID);
+    const worldRequest = store.get(START_SCREEN_WORLD_DRAFT_ID);
+    const [formRecord, worldRecord] = await Promise.all([
+      new Promise<any>((resolve, reject) => {
+        formRequest.onsuccess = () => resolve(formRequest.result);
+        formRequest.onerror = () => reject(formRequest.error);
+      }),
+      new Promise<any>((resolve, reject) => {
+        worldRequest.onsuccess = () => resolve(worldRequest.result);
+        worldRequest.onerror = () => reject(worldRequest.error);
+      }),
+    ]);
+    return {
+      formData: formRecord?.data && typeof formRecord.data === 'object' ? formRecord.data : null,
+      customGameData: worldRecord?.data ?? null,
+    };
+  } catch (error) {
+    console.error('Failed to load start-screen draft from IndexedDB:', error);
+    return { formData: null, customGameData: null };
+  }
+}
+
+export async function clearStartScreenDraft(): Promise<void> {
+  const db = await openDB();
+  const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
+  const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
+  store.delete(START_SCREEN_FORM_DRAFT_ID);
+  store.delete(START_SCREEN_WORLD_DRAFT_ID);
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
 }
 
 // --- Autosave Functions ---

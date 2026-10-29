@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
 import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import Modal from './Modal';
-import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, type PreparedSaveFile } from '../utils/fileManager';
+import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, loadStartScreenDraft, saveStartScreenFormDraft, saveStartScreenWorldDraft, clearStartScreenDraft, type PreparedSaveFile } from '../utils/fileManager';
 import ConfirmationModal from './ConfirmationModal';
 import { useLocalization } from '../context/LocalizationContext';
 import { gameData } from '../utils/localizationGameData';
@@ -740,9 +740,51 @@ const CreationForm: React.FC<CreationFormProps> = ({
 }
 
 
+const stripApiKeysFromDraft = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(stripApiKeysFromDraft);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value).filter(([key]) => !/api[\s_-]*key/i.test(key))
+                .map(([key, nestedValue]) => [key, stripApiKeysFromDraft(nestedValue)])
+        );
+    }
+    return value;
+};
+
 export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onLoadGame, onLoadAutosave, autosaveTimestamp, crashRecoveryInfo, crashRecoveryMarker, onLoadCrashRecovery, interruptedTurnRecoveryMessage, onResumeInterruptedTurn, onDiscardInterruptedTurn, onLoadFromSlot, dbSaveSlots }: StartScreenProps) {
-    const [formData, setFormData] = useState(initialFormData);
-    const [customGameData, setCustomGameData] = useState(() => JSON.parse(JSON.stringify(gameData)));
+    const [formData, setFormDataState] = useState(initialFormData);
+    const [customGameData, setCustomGameDataState] = useState(() => JSON.parse(JSON.stringify(gameData)));
+    const formDataRef = useRef(formData);
+    const customGameDataRef = useRef(customGameData);
+    const draftReadyRef = useRef(false);
+    const draftSaveWarningShownRef = useRef(false);
+    const [isStartDraftLoaded, setIsStartDraftLoaded] = useState(false);
+    const [wasStartDraftRestored, setWasStartDraftRestored] = useState(false);
+
+    const reportDraftSaveError = (error: unknown) => {
+        if (!draftSaveWarningShownRef.current) {
+            console.warn('Unable to autosave the character setup draft to IndexedDB:', error);
+            draftSaveWarningShownRef.current = true;
+        }
+    };
+    const setFormData: React.Dispatch<React.SetStateAction<typeof initialFormData>> = (update) => {
+        const next = typeof update === 'function'
+            ? (update as (previous: typeof initialFormData) => typeof initialFormData)(formDataRef.current)
+            : update;
+        formDataRef.current = next;
+        setFormDataState(next);
+        if (draftReadyRef.current) {
+            void saveStartScreenFormDraft(stripApiKeysFromDraft(next) as Record<string, unknown>).catch(reportDraftSaveError);
+        }
+    };
+    const setCustomGameData: React.Dispatch<React.SetStateAction<typeof customGameData>> = (update) => {
+        const next = typeof update === 'function'
+            ? (update as (previous: typeof customGameData) => typeof customGameData)(customGameDataRef.current)
+            : update;
+        customGameDataRef.current = next;
+        setCustomGameDataState(next);
+        if (draftReadyRef.current) void saveStartScreenWorldDraft(stripApiKeysFromDraft(next)).catch(reportDraftSaveError);
+    };
     const [preparedConfigurationFile, setPreparedConfigurationFile] = useState<PreparedSaveFile | null>(null);
     const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
     const [isAdultConfirmOpen, setIsAdultConfirmOpen] = useState(false);
@@ -773,6 +815,33 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
         try { await onDiscardInterruptedTurn?.(); }
         finally { setIsRecoveryActionPending(false); }
     };
+
+    useEffect(() => {
+        let cancelled = false;
+        void loadStartScreenDraft().then(draft => {
+            if (cancelled) return;
+            if (draft.formData) {
+                const safeDraft = stripApiKeysFromDraft(draft.formData) as Record<string, unknown>;
+                const restoredFormData = { ...initialFormData, ...safeDraft, youtubeApiKey: '' };
+                formDataRef.current = restoredFormData;
+                setFormDataState(restoredFormData);
+                setWasStartDraftRestored(true);
+            }
+            if (draft.customGameData && typeof draft.customGameData === 'object') {
+                const restoredWorldData = stripApiKeysFromDraft(draft.customGameData);
+                customGameDataRef.current = restoredWorldData;
+                setCustomGameDataState(restoredWorldData as typeof customGameData);
+                setWasStartDraftRestored(true);
+            }
+        }).catch(error => {
+            console.warn('Unable to restore the character setup draft from IndexedDB:', error);
+        }).finally(() => {
+            if (cancelled) return;
+            draftReadyRef.current = true;
+            setIsStartDraftLoaded(true);
+        });
+        return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => () => {
         if (preparedConfigurationFile) releasePreparedSaveFile(preparedConfigurationFile);
@@ -1095,6 +1164,7 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
         const creationData = prepareCreationData();
         if (creationData) {
             onStartLocal(creationData);
+            void clearStartScreenDraft().catch(reportDraftSaveError);
         }
     };
 
@@ -1108,6 +1178,7 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                 multiplayerNickname: t('Host')
             };
             onStartHost(hostData);
+            void clearStartScreenDraft().catch(reportDraftSaveError);
         }
     };
   
@@ -1162,7 +1233,7 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
         setNewUniverseDescription('');
     };
 
-    return (
+    return isStartDraftLoaded ? (
         <div className="min-h-screen bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="relative w-full max-w-3xl bg-gray-800/80 p-6 md:p-8 rounded-lg shadow-2xl border border-cyan-500/20 ring-1 ring-cyan-500/20">
                 <div className="absolute top-4 right-4 z-20">
@@ -1179,7 +1250,12 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                 <h1 className="text-4xl md:text-5xl font-bold text-cyan-400 mb-2 text-center narrative-text drop-shadow-[0_2px_2px_rgba(0,255,255,0.2)]">{t("The Book of Eternity")}</h1>
                 <p className="text-gray-400 mb-6 text-center text-base md:text-lg narrative-text italic">{t("Chronicle of the Unwritten")}</p>
 
-                {interruptedTurnRecoveryMessage && (
+                {wasStartDraftRestored && (
+                    <p className="mx-auto mb-4 max-w-3xl rounded-md border border-emerald-700/60 bg-emerald-950/40 px-4 py-2 text-center text-sm text-emerald-200" role="status">
+                        {t('Unfinished setup restored.')}
+                    </p>
+                )}
+            {interruptedTurnRecoveryMessage && (
                     <section className="mb-6 rounded-lg border border-amber-500/50 bg-amber-950/40 p-4" role="alert">
                         <h2 className="font-semibold text-amber-200">{t('An interrupted turn was saved.')}</h2>
                         <p className="mt-1 text-sm text-gray-200">{t('Submitted action')}: {interruptedTurnRecoveryMessage}</p>
@@ -1419,6 +1495,10 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                     </div>
                 </Modal>
             )}
+        </div>
+    ) : (
+        <div className="min-h-screen flex items-center justify-center bg-gray-950 text-gray-300" role="status">
+            {t('Restoring saved setup draft...')}
         </div>
     );
 }
