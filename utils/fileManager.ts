@@ -415,6 +415,48 @@ export async function loadStartScreenDraft(): Promise<StartScreenDraft> {
   }
 }
 
+export interface PlayerActionDraft {
+  content: string;
+  isQuestionMode: boolean;
+}
+
+export async function loadPlayerActionDraft(playerId: string): Promise<PlayerActionDraft | null> {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readonly');
+    const request = transaction.objectStore(AUTOSAVE_STORE_NAME).get(`player_action_draft:${playerId}`);
+    return await new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const data = request.result?.data;
+        resolve(data && typeof data.content === 'string'
+          ? { content: data.content, isQuestionMode: Boolean(data.isQuestionMode) }
+          : null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Failed to load player action draft from IndexedDB:', error);
+    return null;
+  }
+}
+
+export async function savePlayerActionDraft(playerId: string, draft: PlayerActionDraft | null): Promise<void> {
+  const db = await openDB();
+  const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
+  const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
+  const id = `player_action_draft:${playerId}`;
+  if (draft?.content.trim()) {
+    store.put({ id, updatedAt: new Date().toISOString(), data: draft });
+  } else {
+    store.delete(id);
+  }
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
 export async function clearStartScreenDraft(): Promise<void> {
   const db = await openDB();
   const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');

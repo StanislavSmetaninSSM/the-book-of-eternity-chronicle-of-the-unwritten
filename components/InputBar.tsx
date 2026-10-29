@@ -1,6 +1,6 @@
 
 
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { 
     PaperAirplaneIcon, 
     ArrowPathIcon, 
@@ -25,6 +25,7 @@ import { ChatMessage, GameSettings, PlayerCharacter, GameState } from '../types'
 import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import LoadingSpinner from './LoadingSpinner';
+import { loadPlayerActionDraft, savePlayerActionDraft } from '../utils/fileManager';
 
 interface InputBarProps {
   onSendMessage: (message: string, image?: { data: string; mimeType: string; } | null) => void;
@@ -148,6 +149,8 @@ const MarkdownToolbar: React.FC<{
 
 export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, gameSettings, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onRequestCollectiveAction, onInitiateSimultaneousAction, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
   const [content, setContent] = useState('');
+  const [isActionDraftReady, setIsActionDraftReady] = useState(false);
+  const [loadedActionDraftKey, setLoadedActionDraftKey] = useState<string | null>(null);
   const [isQuestionMode, setIsQuestionMode] = useState(false);
   const [activeView, setActiveView] = useState<'write' | 'preview'>('write');
   const [isSuggestionsExpanded, setIsSuggestionsExpanded] = useState(true);
@@ -155,6 +158,51 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
   const { t } = useLocalization();
   const [selectedImage, setSelectedImage] = useState<{ dataUrl: string; mimeType: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const actionDraftWarningShownRef = useRef(false);
+  const reportActionDraftError = (error: unknown) => {
+    if (actionDraftWarningShownRef.current) return;
+    console.warn('Unable to persist the player action draft in IndexedDB:', error);
+    actionDraftWarningShownRef.current = true;
+  };
+  const playerActionDraftKey = playerCharacter?.playerId || gameState?.playerCharacter?.playerId || null;
+  const updateContent = (nextContent: string) => {
+    setContent(nextContent);
+    if (playerActionDraftKey && isActionDraftReady && loadedActionDraftKey === playerActionDraftKey) {
+      void savePlayerActionDraft(playerActionDraftKey, nextContent.trim()
+        ? { content: nextContent, isQuestionMode }
+        : null).catch(reportActionDraftError);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsActionDraftReady(false);
+    setLoadedActionDraftKey(null);
+    setContent('');
+    setIsQuestionMode(false);
+    if (!playerActionDraftKey) {
+      setIsActionDraftReady(true);
+      return;
+    }
+    void loadPlayerActionDraft(playerActionDraftKey).then(draft => {
+      if (cancelled) return;
+      if (draft) {
+        setContent(draft.content);
+        setIsQuestionMode(draft.isQuestionMode);
+      }
+      setLoadedActionDraftKey(playerActionDraftKey);
+    }).finally(() => {
+      if (!cancelled) setIsActionDraftReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [playerActionDraftKey]);
+
+  useEffect(() => {
+    if (!playerActionDraftKey || !isActionDraftReady || loadedActionDraftKey !== playerActionDraftKey) return;
+    void savePlayerActionDraft(playerActionDraftKey, content.trim()
+      ? { content, isQuestionMode }
+      : null).catch(reportActionDraftError);
+  }, [isQuestionMode, isActionDraftReady, loadedActionDraftKey, playerActionDraftKey]);
 
   const lastPlayerMessage = useMemo(() => 
     history.slice().reverse().find(m => m.sender === 'player'),
@@ -193,6 +241,9 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
   
   const doSubmit = useCallback(() => {
     if (isDisabled || (content.trim() === '' && !selectedImage)) return;
+    if (playerActionDraftKey) {
+      void savePlayerActionDraft(playerActionDraftKey, null).catch(reportActionDraftError);
+    }
     
     const imagePayload = selectedImage ? { data: selectedImage.dataUrl.split(',')[1], mimeType: selectedImage.mimeType } : null;
 
@@ -208,7 +259,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
     setActiveView('write');
     setTimeout(() => textareaRef.current?.focus(), 0);
 
-  }, [isDisabled, isQuestionMode, onAskQuestion, onSendMessage, content, selectedImage]);
+  }, [isDisabled, isQuestionMode, onAskQuestion, onSendMessage, content, selectedImage, playerActionDraftKey]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -338,11 +389,11 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
         
         {activeView === 'write' ? (
           <div>
-            <MarkdownToolbar textareaRef={textareaRef} onInsert={setContent} />
+            <MarkdownToolbar textareaRef={textareaRef} onInsert={updateContent} />
             <textarea
                 ref={textareaRef}
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={(e) => updateContent(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={isDisabled}
                 placeholder={placeholderText}
