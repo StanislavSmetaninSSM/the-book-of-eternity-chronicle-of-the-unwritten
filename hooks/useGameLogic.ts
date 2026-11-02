@@ -16,7 +16,7 @@ import { createSaveLoadManager } from './logic/saveLoad';
 import { createInventoryActions } from './logic/inventoryActions';
 import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
-import { createMultiplayerManager, commitClientSnapshot, type PendingClientSync } from './logic/multiplayer';
+import { createMultiplayerManager, commitClientSnapshot, snapshotMatchesRendered, type PendingClientSync } from './logic/multiplayer';
 import { processAndApplyResponse } from '../utils/responseProcessor';
 import { restorePlayerStats } from '../utils/restorePlayer';
 import { recalculateAllWeights } from '../utils/inventoryManager';
@@ -84,6 +84,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [clientSyncEpoch, setClientSyncEpoch] = useState(0);
     const scheduleClientSyncCommit = useCallback(() => setClientSyncEpoch(epoch => epoch + 1), []);
     const pendingNetworkTurnRef = useRef<string | null>(null);
+    const hostRestorePendingRef = useRef<{ snapshot: SaveFile | null; release: () => void } | null>(null);
+    const [hostRestoreEpoch, setHostRestoreEpoch] = useState(0);
+    const clearHostRestorePending = useCallback(() => {
+        hostRestorePendingRef.current = null;
+    }, []);
+
 
     const setGameState = useCallback((action: React.SetStateAction<GameState | null>) => {
         const finishMutation = hostTurnAuthorityRef.current!.beginMutation();
@@ -281,6 +287,16 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const restoreFromSaveData = useCallback((data: SaveFile, isNetworkSync: boolean = false, networkIdentityOverride?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => {
         syncRevisionRef.current += 1;
+        if (!isNetworkSync && hostRestorePendingRef.current) {
+            clearHostRestorePending();
+            hostTurnAuthorityRef.current!.reset();
+        }
+        // Keep the authority and local submission locked until the host has
+        // actually committed the player snapshot, not merely queued it.
+        const hostRestore = isNetworkSync && gameStateRef.current?.networkRole === 'host'
+            ? { snapshot: null as SaveFile | null, release: hostTurnAuthorityRef.current!.beginMutation() }
+            : null;
+        if (hostRestore) hostRestorePendingRef.current = hostRestore;
         // Restoration supersedes pending host, player, and local GM tasks.
         // Cinema has its own controller and is deliberately unaffected.
         if (activeTurnRef.current) abortControllerRef.current?.abort();
@@ -770,7 +786,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setError(null);
         // Return exactly what was restored; React state updates may not have
         // rendered when the multiplayer handler needs to broadcast it.
-        return { ...data, gameState: loadedGameState, gameLog: finalGameLog, combatLog: restoredCombatLog };
+        const restored = { ...data, gameState: loadedGameState, gameLog: finalGameLog, combatLog: restoredCombatLog };
+        if (hostRestore) {
+            hostRestore.snapshot = restored;
+            setHostRestoreEpoch(epoch => epoch + 1);
+        }
+        return restored;
 
     }, [setLanguage, t, setGameState, setWorldState, setGameSettings, setSuperInstructions, setGameHistory, setGameLog, setCombatLog, setLastJsonResponse, setSceneImagePrompt, setWorldMap, setVisitedLocations, setTurnNumber, setIsLoading, setError, language]);
 
@@ -1121,7 +1142,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setLastJsonResponse, setLastRequestJson,
             setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions,
             setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
-            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef,
+            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef,
             setSuperInstructions, setGameSettings,
             setLanguage,
             t,
@@ -1170,7 +1191,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     const initialContext = createInitialContext(creationData, language);
                     gameContextRef.current = initialContext;
 
-                    const firstTurnManager = createTurnManager({ gameState: null, setGameState, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
+                    const firstTurnManager = createTurnManager({ gameState: null, setGameState, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
                     firstTurnManager.initializeAndRunFirstTurn(creationData, networkConfig);
                 },
                 restoreFromSaveData,
@@ -1193,6 +1214,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 observedHostStampRef,
                 pendingClientSyncRef,
                 scheduleClientSyncCommit,
+                clearHostRestorePending,
                 syncNewPeerRef,
                 sendMessageRef,
                 gameStateRef,
@@ -1610,8 +1632,45 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         clientTurnStampRef.current = stamp;
         pendingClientSyncRef.current = null;
         pendingNetworkTurnRef.current = null;
+        setError(prev => prev === t('network_sync_stalled') ? null : prev);
         setIsLoading(activeTurnRef.current !== null);
-    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, clientSyncEpoch]);
+    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, clientSyncEpoch, t]);
+
+    useEffect(() => {
+        const pending = hostRestorePendingRef.current;
+        if (!pending?.snapshot) return;
+        if (!snapshotMatchesRendered(pending.snapshot, {
+            gameState, currentGameState: gameStateRef.current, gameHistory, gameLog,
+            combatLog, lastJsonResponse, sceneImagePrompt
+        })) return;
+        hostRestorePendingRef.current = null;
+        pending.release();
+        setError(prev => prev === t('host_sync_not_ready') ? null : prev);
+        // Re-render to publish a snapshot after the authority hold is released.
+        setSnapshotEpoch(epoch => epoch + 1);
+    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, hostRestoreEpoch, t]);
+
+    // A divergent local update must not leave the player silently waiting
+    // forever. Keep the grant blocked and offer an explicit recovery path.
+    useEffect(() => {
+        const pending = pendingClientSyncRef.current;
+        if (!pending) return;
+        const timer = window.setTimeout(() => {
+            if (pendingClientSyncRef.current !== pending) return;
+            setError(t('network_sync_stalled'));
+            setIsLoading(activeTurnRef.current !== null);
+        }, 3000);
+        return () => window.clearTimeout(timer);
+    }, [clientSyncEpoch, t]);
+
+    useEffect(() => {
+        const pending = hostRestorePendingRef.current;
+        if (!pending) return;
+        const timer = window.setTimeout(() => {
+            if (hostRestorePendingRef.current === pending) setError(t('host_sync_not_ready'));
+        }, 3000);
+        return () => window.clearTimeout(timer);
+    }, [hostRestoreEpoch, t]);
 
     const forceSyncAll = useCallback(() => {
         if (gameState?.networkRole !== 'host') {
@@ -2140,6 +2199,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const beginTurnSubmission = useCallback(() => {
         if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current) return false;
         if (!gameStateRef.current || !gameContextRef.current) return false;
+        if (hostRestorePendingRef.current) { setError(t('host_sync_not_ready')); return false; }
         if (gameStateRef.current.networkRole === 'player' && !clientTurnStampRef.current) {
             setError(t('network_sync_not_ready'));
             return false;
@@ -2155,7 +2215,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const startingRevision = syncRevisionRef.current;
         try {
             await savePreActionCrashRecovery();
-            if (syncRevisionRef.current !== startingRevision) {
+            if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current) {
                 isTurnSubmitPendingRef.current = false;
                 setError(t('turn_sync_before_send'));
                 return;
@@ -2181,7 +2241,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const startingRevision = syncRevisionRef.current;
         try {
             await savePreActionCrashRecovery();
-            if (syncRevisionRef.current !== startingRevision) {
+            if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current) {
                 isTurnSubmitPendingRef.current = false;
                 setError(t('turn_sync_before_send'));
                 return;

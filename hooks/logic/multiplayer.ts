@@ -37,6 +37,7 @@ interface MultiplayerManagerProps {
     observedHostStampRef: React.MutableRefObject<TurnSyncStamp | null>;
     pendingClientSyncRef: React.MutableRefObject<PendingClientSync | null>;
     scheduleClientSyncCommit: () => void;
+    clearHostRestorePending: () => void;
     syncNewPeerRef: React.MutableRefObject<(conn: DataConnection) => void>;
     sendMessageRef: React.MutableRefObject<(message: string, image?: { data: string; mimeType: string; } | null) => void>;
     gameStateRef: React.RefObject<GameState | null>;
@@ -46,30 +47,32 @@ interface MultiplayerManagerProps {
 
 export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; }
 
-export function commitClientSnapshot(pending: PendingClientSync | null, rendered: { gameState: GameState | null; currentGameState: GameState | null; gameHistory: ChatMessage[]; gameLog: string[]; combatLog: string[]; lastJsonResponse: string | null; sceneImagePrompt: string | null }): TurnSyncStamp | null {
-    if (!pending) return null;
-    const snapshot = pending.snapshot;
+export function snapshotMatchesRendered(snapshot: SaveFile, rendered: { gameState: GameState | null; currentGameState: GameState | null; gameHistory: ChatMessage[]; gameLog: string[]; combatLog: string[]; lastJsonResponse: string | null; sceneImagePrompt: string | null }): boolean {
     // A superseded task can append a local system warning after restoration.
     // Its suffix is safe; the authoritative history must still be the prefix.
     const historyMatches = Array.isArray(snapshot.gameHistory) && rendered.gameHistory.length >= snapshot.gameHistory.length &&
         snapshot.gameHistory.every((entry, index) => rendered.gameHistory[index] === entry) &&
         rendered.gameHistory.slice(snapshot.gameHistory.length).every(entry => entry.sender === 'system');
-    // Cinema can finish independently during synchronization. Permit only a
-    // cinema-only change on top of this snapshot; all gameplay fields must
-    // still match. The state setter re-filters these two collections, so
+    // Cinema or an image job can finish independently during synchronization.
+    // Permit those presentation-only fields; all gameplay fields must still
+    // match. The state setter re-filters these two collections, so
     // compare their entries rather than their array identities.
     const actual = rendered.gameState, expected = snapshot.gameState;
     const sameEntries = (a: unknown, b: unknown) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((entry, i) => entry === b[i]);
     const stateMatches = actual === expected || !!actual && !!expected &&
         Object.keys(actual).length === Object.keys(expected).length &&
         Object.keys(actual).every(key => Object.prototype.hasOwnProperty.call(expected, key)) &&
-        Object.keys(expected).every(key => key === 'cinematics' ||
+        Object.keys(expected).every(key => key === 'cinematics' || key === 'imageCache' ||
             ((key === 'encounteredNPCs' || key === 'encounteredFactions') && sameEntries((actual as any)[key], (expected as any)[key])) ||
             (actual as any)[key] === (expected as any)[key]);
     return stateMatches && rendered.currentGameState === rendered.gameState &&
         historyMatches && rendered.gameLog === snapshot.gameLog &&
         rendered.combatLog === snapshot.combatLog && rendered.lastJsonResponse === snapshot.lastJsonResponse &&
-        rendered.sceneImagePrompt === snapshot.sceneImagePrompt ? pending.stamp : null;
+        rendered.sceneImagePrompt === snapshot.sceneImagePrompt;
+}
+
+export function commitClientSnapshot(pending: PendingClientSync | null, rendered: Parameters<typeof snapshotMatchesRendered>[1]): TurnSyncStamp | null {
+    return pending && snapshotMatchesRendered(pending.snapshot, rendered) ? pending.stamp : null;
 }
 
 // Invalidate the usable grant before restoration. A grant is made usable only
@@ -160,6 +163,7 @@ export const createMultiplayerManager = (
         observedHostStampRef,
         pendingClientSyncRef,
         scheduleClientSyncCommit,
+        clearHostRestorePending,
         syncNewPeerRef,
         sendMessageRef,
         gameStateRef,
@@ -184,6 +188,7 @@ export const createMultiplayerManager = (
     };
 
     const startHost = (creationData: any) => {
+        clearHostRestorePending();
         hostTurnAuthority.reset();
         clientTurnStampRef.current = null;
         observedHostStampRef.current = null;
@@ -317,6 +322,7 @@ export const createMultiplayerManager = (
     };
 
     const joinGame = (hostPeerId: string, role: NetworkRole, playerName: string) => {
+        clearHostRestorePending();
         clientTurnStampRef.current = null;
         observedHostStampRef.current = null;
         pendingClientSyncRef.current = null;
@@ -481,6 +487,7 @@ export const createMultiplayerManager = (
             return;
         }
 
+        clearHostRestorePending();
         hostTurnAuthority.reset();
         clientTurnStampRef.current = null;
         observedHostStampRef.current = null;
@@ -646,6 +653,7 @@ export const createMultiplayerManager = (
         observedHostStampRef.current = null;
         pendingClientSyncRef.current = null;
         pendingNetworkTurnRef.current = null;
+        clearHostRestorePending();
         hostTurnAuthority.reset();
         const role = gameStateRef.current?.networkRole;
         

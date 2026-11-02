@@ -55,6 +55,9 @@ test('a host grant is unusable until the exact client snapshot commits, and fail
       // wrapper re-filters the NPC/faction arrays). This is safe to commit.
       const cinemaState = { ...queuedState, cinematics: [{ id: 'cinema' }], encounteredNPCs: [...queuedState.encounteredNPCs], encounteredFactions: [...queuedState.encounteredFactions] };
       assert.deepEqual(commitClientSnapshot(pending.current, { ...render, gameState: cinemaState, currentGameState: cinemaState }), fresh);
+      // Background image generation can complete in the same interval.
+      const withImage = { ...cinemaState, imageCache: { generated: { src: 'image' } } };
+      assert.deepEqual(commitClientSnapshot(pending.current, { ...render, gameState: withImage, currentGameState: withImage }), fresh);
       const unsafe = { ...cinemaState, playerCharacter: { ...cinemaState.playerCharacter, currentHealth: 20 } };
       assert.equal(commitClientSnapshot(pending.current, { ...render, gameState: unsafe, currentGameState: unsafe }), null);
       stampRef.current = commitClientSnapshot(pending.current, render); pending.current = null;

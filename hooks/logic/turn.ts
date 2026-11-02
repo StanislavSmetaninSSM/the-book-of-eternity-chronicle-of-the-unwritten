@@ -39,7 +39,7 @@ export const createTurnManager = (
         setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
         gameContextRef, abortControllerRef,
         syncRevisionRef = { current: 0 }, activeTurnRef = { current: null }, turnPhaseRef = { current: 'idle' },
-        clientTurnStampRef, pendingNetworkTurnRef,
+        clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef,
         setSuperInstructions, setGameSettings,
         setLanguage,
         t,
@@ -78,6 +78,7 @@ export const createTurnManager = (
         turnPhaseRef?: React.MutableRefObject<'idle' | 'generating' | 'sending' | 'committed' | 'awaiting-sync'>,
         clientTurnStampRef?: React.MutableRefObject<TurnSyncStamp | null>,
         pendingNetworkTurnRef?: React.MutableRefObject<string | null>,
+        hostRestorePendingRef?: React.MutableRefObject<unknown | null>,
         setSuperInstructions: React.Dispatch<React.SetStateAction<string>>,
         setGameSettings: React.Dispatch<React.SetStateAction<any>>,
         setLanguage: (lang: any) => void,
@@ -104,6 +105,7 @@ export const createTurnManager = (
 
     const handleTurn = async (context: GameContext, fullHistoryForTurn: ChatMessage[], baseStateOverride?: GameState) => {
         if (activeTurnRef.current) return;
+        if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
         const turnToken = Symbol('turn');
         activeTurnRef.current = turnToken;
         turnPhaseRef.current = 'generating';
@@ -352,6 +354,7 @@ export const createTurnManager = (
     
     const sendMessage = (message: string, image?: { data: string; mimeType: string; } | null) => {
         if (isLoading || activeTurnRef.current) return;
+        if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
         if (gameStateRef.current?.networkRole === 'player' && clientTurnStampRef && !clientTurnStampRef.current) {
             setError(t('network_sync_not_ready')); return;
         }
@@ -441,6 +444,7 @@ export const createTurnManager = (
     const askQuestion = async (question: string, image?: { data: string; mimeType: string; } | null) => {
         const baseState: GameState | null = gameStateRef.current;
         if (!gameContextRef.current || isLoading || !baseState || activeTurnRef.current) return;
+        if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
         const startingStamp = clientTurnStampRef?.current ? { ...clientTurnStampRef.current } : null;
         if (baseState.networkRole === 'player' && clientTurnStampRef && !startingStamp) {
             setError(t('network_sync_not_ready'));
@@ -684,6 +688,7 @@ export const createTurnManager = (
     };
 
     const resumeInterruptedTurn = (recovery: { context: GameContext; baseState: GameState; history: ChatMessage[] }) => {
+        if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
         if (recovery.baseState.networkRole === 'player' && clientTurnStampRef && !clientTurnStampRef.current) {
             setError(t('network_sync_not_ready')); return;
         }

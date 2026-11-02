@@ -127,6 +127,8 @@ a previous client state while React updates are still pending.
 
 A host also rejects new player results while its own turn or question is
 active; a superseding restore invalidates host generation as well as player
-generation. A cinema-only update during a client snapshot commit is allowed
-without treating the gameplay snapshot as changed; other state changes during
-snapshot commit keep the grant blocked.
+generation. After accepting a player result, host submissions and new grants
+remain blocked until its restored snapshot has committed. Independent cinema
+and image-cache updates can complete during snapshot commit; other gameplay
+changes keep the grant blocked. If a client snapshot cannot commit, a warning
+instructs the player to request another sync or reconnect.
