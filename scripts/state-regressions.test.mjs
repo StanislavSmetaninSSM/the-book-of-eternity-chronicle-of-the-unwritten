@@ -1019,12 +1019,35 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
     const duplicate = apply(deepMergeResponses({ inventoryTransfers: [transfer] }, { inventoryTransfers: [transfer] }));
     assert.equal(duplicate.newState.encounteredNPCs[0].inventory[0].count, 2);
     assert.equal(duplicate.newState.players[1].inventory.length, 1);
-    const mixed = apply({ inventoryTransfers: [transfer], NPCInventoryRemovals: [{ NPCId: 'a', itemId: 'potion' }], inventoryItemsData: [fullItem({ existedId: 'new' })], currentHealthChange: -1 });
-    assert.equal(mixed.newState.encounteredNPCs[0].inventory[0].count, 4);
-    assert.equal(mixed.newState.playerCharacter.inventory.length, 0);
-    assert.equal(mixed.newState.players[1].inventory.length, 0);
-    assert.equal(mixed.newState.playerCharacter.currentHealth, p.currentHealth - 1);
-    assert.ok(mixed.logsToAdd.includes('warning_inventory_transfer_conflict'));
+    const mixed = { inventoryTransfers: [transfer], NPCInventoryRemovals: [{ NPCId: 'a', itemId: 'potion' }], inventoryItemsData: [fullItem({ existedId: 'new' })], currentHealthChange: -1 };
+    const mixedBefore = structuredClone(mixed);
+    assert.throws(() => apply(mixed), /warning_inventory_transfer_conflict/);
+    assert.deepEqual(mixed, mixedBefore);
+    assert.deepEqual(base, before);
+    for (const count of [0, '0']) {
+      assert.throws(() => apply({ inventoryTransfers: [transfer], NPCInventoryUpdates: [{ NPCId: 'a', itemUpdate: { existedId: 'potion', count, name: 'Changed', durability: '0%' } }] }), /warning_inventory_transfer_conflict/);
+      assert.deepEqual(base, before);
+    }
+    const resourceBase = structuredClone(base);
+    Object.assign(resourceBase.encounteredNPCs[0].inventory[0], { resource: 1, maximumResource: 2, isConsumption: true });
+    const resourceSplit = apply({ inventoryTransfers: [transfer] }, resourceBase).newState;
+    assert.equal(resourceSplit.encounteredNPCs[0].inventory[0].resource, 1);
+    assert.equal(resourceSplit.players[1].inventory[0].resource, 2);
+    const otherSource = structuredClone(resourceBase);
+    otherSource.players[1].inventory = [structuredClone(otherSource.encounteredNPCs[0].inventory[0])];
+    const fromOther = apply({ inventoryTransfers: [{ ...transfer, transferId: 'other', source: { type: 'player', id: 'p2', itemId: 'potion' }, destination: { type: 'npc', id: 'b' } }] }, otherSource).newState;
+    assert.equal(fromOther.players[1].inventory[0].resource, 1);
+    assert.equal(fromOther.encounteredNPCs[1].inventory[0].resource, 2);
+    const healingBase = structuredClone(base);
+    healingBase.playerCharacter.currentHealth = 40;
+    healingBase.playerCharacter.inventory = [fullItem({ existedId: 'healing', resource: 1, maximumResource: 1, isConsumption: true })];
+    healingBase.players[0] = structuredClone(healingBase.playerCharacter);
+    const healingBefore = structuredClone(healingBase);
+    assert.throws(() => apply({ inventoryTransfers: [transfer], inventoryItemsResources: [{ existedId: 'healing', resource: 0 }], currentHealthChange: 10 }, healingBase), /warning_inventory_transfer_conflict/);
+    assert.deepEqual(healingBase, healingBefore);
+    const invalidCount = apply({ NPCInventoryUpdates: [{ NPCId: 'a', itemUpdate: { existedId: 'potion', count: '0' } }] });
+    assert.equal(invalidCount.newState.encounteredNPCs[0].inventory[0].count, 4);
+    assert.ok(invalidCount.logsToAdd.includes('warning_npc_item_transfer'));
     for (const unsupported of [{ isContainer: true }, { isSentient: true }]) {
       const state = structuredClone(base); Object.assign(state.encounteredNPCs[0].inventory[0], unsupported);
       const failed = apply({ inventoryTransfers: [transfer] }, state);

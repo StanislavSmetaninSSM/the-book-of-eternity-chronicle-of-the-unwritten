@@ -22,7 +22,7 @@ test('the entire guide is invariant across different turn contexts', () => {
   assert.match(guide, /\{\{context\.regenerationReason\}\}/);
   // Intentional guide edits require an explicit snapshot update and review.
   // Updated for the explicit inventory-transfer protocol.
-  assert.equal(sha256(guide), '46c0e2fe026d942979c30b2023df09d36335e7891925fae9e255d16e0707dcfa');
+  assert.equal(sha256(guide), 'ca9bb224cef4d4733f018f76958a2119155ae2439a065e5aa72cb5bdeb35228f');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);

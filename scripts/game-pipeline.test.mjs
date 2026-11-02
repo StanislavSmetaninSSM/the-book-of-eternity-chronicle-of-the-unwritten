@@ -402,3 +402,37 @@ test('direct combat cleanup hands named NPC final health to NPC stage', async ()
     assert.deepEqual(next.enemiesDataForCurrentTurn, []);
   } finally { globalThis.fetch = oldFetch; if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; await server.close(); }
 });
+
+test('inventory processing overrides contradictory simple-turn routing for transfers', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
+  const packets = [], storage = new Map();
+  const transfer = { transferId: 't1', source: { type: 'npc', id: 'n', itemId: 'i' }, destination: { type: 'player', id: 'p' }, quantity: 1 };
+  globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k, v) => storage.set(k, v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
+  globalThis.fetch = async (url, init) => {
+    if (url === '/__arena_gm/turn') { packets.push(JSON.parse(init.body)); return new Response('{}'); }
+    if (String(url).startsWith('/__arena_gm/response')) {
+      const p = packets.at(-1);
+      const output = p.stepName === 'Step0_AnalysisAndPlanning_TaskGuide'
+        ? { _internal_flags_: { isSimpleTurn: true, needsInventoryProcessing: true, needsWorldProgression: false, needsFactionProgression: false } }
+        : p.stepName === 'Step5_Inventory_TaskGuide' ? { inventoryTransfers: [transfer] } : {};
+      return Response.json({ kind: 'arena-gm-step-response', protocolVersion: 1, correlationId: p.correlationId, output });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+  try {
+    const { executeTurn } = await server.ssrLoadModule('/utils/gemini.ts');
+    const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
+    const context = createInitialContext({ universe: 'fantasy', playerName: 'Mira', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear', doNotUseWorldEvents: true }, 'en');
+    context.currentTurnNumber = 2;
+    const result = await executeTurn(context, new AbortController().signal, () => {}, () => {}, () => {});
+    assert.ok(packets.some(p => p.stepName === 'Step5_Inventory_TaskGuide'));
+    assert.ok(!packets.some(p => p.stepName === 'StepSimpleFullResponse_TaskGuide'));
+    assert.deepEqual(result.inventoryTransfers, [transfer]);
+    assert.equal(result._internal_flags_.isSimpleTurn, false);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow;
+    await server.close();
+  }
+});

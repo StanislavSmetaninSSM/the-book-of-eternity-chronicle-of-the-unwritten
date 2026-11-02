@@ -770,3 +770,41 @@ test('stale location tag does not override an explicit threat destination', asyn
     assert.equal(result.new.activeThreats.length, 0);
   } finally { await server.close(); }
 });
+
+test('conflicting transfer rejects the whole turn and preserves stash and player loading state', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
+  const packets = [], storage = new Map();
+  globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k,v) => storage.set(k,v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
+  globalThis.fetch = async (url, init) => {
+    if (url === '/__arena_gm/turn') { packets.push(JSON.parse(init.body)); return new Response('{}'); }
+    if (String(url).startsWith('/__arena_gm/response')) {
+      const packet = packets.at(-1);
+      const output = packet.stepName === 'Step0_AnalysisAndPlanning_TaskGuide' ? { _internal_flags_: { isSimpleTurn: true } } : {
+        response: 'The potion is consumed.', image_prompt: 'A false scene', dialogueOptions: ['False option'], currentHealthChange: 10,
+        inventoryTransfers: [{ transferId: 't', source: { type: 'npc', id: 'n', itemId: 'gift' }, destination: { type: 'player', id: 'p' }, quantity: 1 }],
+        inventoryItemsResources: [{ existedId: 'potion', resource: 0 }]
+      };
+      return Response.json({ kind: 'arena-gm-step-response', protocolVersion: 1, correlationId: packet.correlationId, output });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+  try {
+    const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
+    const { createTurnManager } = await server.ssrLoadModule('/hooks/logic/turn.ts');
+    for (const role of ['host', 'player']) {
+      const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
+      context.currentTurnNumber = 2;
+      const p = { ...context.playerCharacter, playerId: 'p', currentHealth: 40, inventory: [{ existedId: 'potion', name: 'Potion', count: 1, weight: 1, resource: 1 }] };
+      const npc = { ...p, NPCId: 'n', name: 'NPC', inventory: [{ existedId: 'gift', name: 'Gift', count: 1, weight: 1 }] };
+      context.playerCharacter = p; context.players = [p]; context.encounteredNPCs = [npc];
+      const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, temporaryStash: [{ existedId: 'stash', name: 'Saved', count: 1, weight: 1 }], worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: role, myPeerId: 'p', peers: [], isConnectedToHost: true };
+      const snapshot = structuredClone(base); let state = base, error = null, loading = null, image = null, sync = null, sent = null;
+      const noop = () => {}; const manager = createTurnManager({ gameState: base, setGameState: v => { state = typeof v === 'function' ? v(state) : v; }, gameHistory: [], setGameHistory: noop, isLoading: false, setIsLoading: v => { loading = v; }, setError: v => { error = v; }, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: noop, setCombatLog: noop, setSceneImagePrompt: v => { image = v; }, setSuggestedActions: noop, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef: { current: context }, abortControllerRef: { current: null }, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: k => k, turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: { send: v => { sent = v; } } }, gameStateRef: { current: base }, broadcastFullSync: v => { sync = v; }, combatLog: [], gameLog: [] });
+      await manager.resumeInterruptedTurn({ context, baseState: base, history: [] });
+      assert.deepEqual(state, snapshot); assert.deepEqual(base, snapshot);
+      assert.match(error, /warning_inventory_transfer_conflict/);
+      assert.equal(loading, false); assert.equal(image, null); assert.equal(sync, null); assert.equal(sent, null);
+    }
+  } finally { globalThis.fetch = oldFetch; if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; await server.close(); }
+});

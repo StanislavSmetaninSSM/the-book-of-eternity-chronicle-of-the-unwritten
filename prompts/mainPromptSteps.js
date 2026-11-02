@@ -304,7 +304,7 @@ export const getStep0 = () => {
             
             -   **needsNPCProcessing:** Set to 'true' if ANY NPC data (relationship, inventory, state, location) needs to be updated.
             
-            -   **needsInventoryProcessing:** For every player/NPC item transfer this MUST be true; Step 5 emits inventoryTransfers.
+            -   **needsInventoryProcessing:** For every player/NPC item transfer this MUST be true and isSimpleTurn MUST be false; Step 5 emits inventoryTransfers.
             -   **needsInventoryProcessing (other cases):**
                 -   **CRITICAL TURN 1 DIRECTIVE:** If 'currentTurnNumber' is 1, you are OBLIGATED to set this flag to **'true'**.
                     This is a mandatory setup step to generate the player's starting inventory. This rule overrides all other conditions for this flag on the first turn.
@@ -334,7 +334,7 @@ export const getStep0 = () => {
                 *Criteria for Simple Turn (turn 2+ only):*
                 - Simple movement to known location.
                 - Casual conversation (no dice roll, no rep change).
-                - Eating food (simple resource update).
+                - Eating food only if no inventory or resource update is required; otherwise set needsInventoryProcessing true and use the full pipeline.
                 - Checking inventory/journal.
                 - **Effect:** If 'true', the system will skip Steps 0.5-6 and use 'StepSimpleFullResponse'.
             

@@ -1245,7 +1245,10 @@ export const processAndApplyResponse = (
         ['NPCInventoryAdds', 'NPCInventoryUpdates', 'NPCInventoryRemovals', 'NPCEquipmentChanges', 'NPCInventoryResourcesChanges'].some(key => asArray((changes as any)[key]).length > 0) ||
         asArray(changes.NPCsData).some(npc => !findNpcForUpdate(npc, newState.encounteredNPCs) && asArray(npc.inventory).length > 0)
     );
-    if (transferBatchConflict) logsToAdd.push(t('warning_inventory_transfer_conflict'));
+    // The other changes may be consequences of the deferred inventory command
+    // (for example healing from a consumed potion). Without causal links we
+    // cannot safely apply only part of this turn. Reject it before any commit.
+    if (transferBatchConflict) throw new Error(t('warning_inventory_transfer_conflict'));
     for (const item of ambiguousTopItems) logsToAdd.push(t('warning_inventory_item_identity', { subject: item.initialId || item.name || '?' }));
     const combatLogsToAdd = asArray(changes.combatLogEntries);
     const activePlayerIndex = newState.activePlayerIndex;
@@ -1386,7 +1389,7 @@ export const processAndApplyResponse = (
     const hasInlineNpcDestination = asArray(changes.NPCsData).some(npc => !findNpcForUpdate(npc, newState.encounteredNPCs) && asArray(npc.inventory).length > 0);
     const hasDestination = npcAdds.length > 0 || acceptedPlayerItems.length > 0 || hasInlineNpcDestination;
     const invalidTransferIdentity = (invalidNpcDestination && (hasNpcSource || hasPlayerSource)) || (invalidNpcSource && hasDestination);
-    const deferNpcTransferBatch = transferBatchConflict || (rejectedPlayerItems.length > 0 && hasNpcSource) || invalidTransferIdentity;
+    const deferNpcTransferBatch = (rejectedPlayerItems.length > 0 && hasNpcSource) || invalidTransferIdentity;
     if (deferNpcTransferBatch) {
         const inventoryKeys: Array<keyof GameResponse> = [
             'inventoryItemsData', 'removeInventoryItems', 'updateItemTextContents', 'itemBondLevelChanges',
@@ -1842,7 +1845,7 @@ export const processAndApplyResponse = (
         if (index < 0) return;
         const existing = npc.inventory[index];
         const update = { ...u.itemUpdate };
-        if (typeof update.count === 'number' && deferNpcTransferBatch) {
+        if (update.count !== undefined && (deferNpcTransferBatch || !Number.isSafeInteger(update.count) || update.count < 0)) {
             delete update.count;
             logsToAdd.push(t('warning_npc_item_transfer', { subject: existing.name || existing.existedId || '?' }));
         }
@@ -1909,7 +1912,13 @@ export const processAndApplyResponse = (
             moved.contentsPath = null;
             delete moved.initialId;
             if (item.count === transfer.quantity) source.inventory.splice(source.inventory.indexOf(item), 1);
-            else { item.count -= transfer.quantity; moved.existedId = generateId('item'); }
+            else {
+                item.count -= transfer.quantity;
+                moved.existedId = generateId('item');
+                // The partially used unit remains in the source stack, matching
+                // splitItemStack/splitItemStackForNpc; moved units are full.
+                if (moved.resource !== undefined && moved.maximumResource !== undefined) moved.resource = moved.maximumResource;
+            }
             destination.inventory.push(moved);
             if (!newState.completedInventoryTransfers) newState.completedInventoryTransfers = {};
             Object.defineProperty(newState.completedInventoryTransfers, id, { value: signature, enumerable: true, writable: true, configurable: true });

@@ -80,20 +80,14 @@ export const createTurnManager = (
         setLastTurnSaveFile?: React.Dispatch<React.SetStateAction<SaveFile | null>>;
     }
 ) => {
-    const clearStashForNewTurn = () => {
-        setGameState(prev => {
-            if (!prev) return null;
-            if (prev.temporaryStash && prev.temporaryStash.length > 0) {
-                return { ...prev, temporaryStash: [] };
-            }
-            return prev;
-        });
-    };
+    // Clear the previous stash only in the candidate state. A rejected turn
+    // must leave it available, and a successful turn may create a new stash.
+    const withoutPreviousStash = (state: GameState): GameState =>
+        state.temporaryStash?.length ? { ...state, temporaryStash: [] } : state;
 
     const handleTurn = async (context: GameContext, fullHistoryForTurn: ChatMessage[], baseStateOverride?: GameState) => {
         setIsLoading(true);
         setError(null);
-        clearStashForNewTurn();
         if (!context.enemiesDataForCurrentTurn || context.enemiesDataForCurrentTurn.length === 0) {
           setCombatLog([]);
         }
@@ -161,15 +155,14 @@ export const createTurnManager = (
             }
           
             setLastJsonResponse(JSON.stringify(finalResponse, null, 2));
+            const gmMessage: ChatMessage = { sender: 'gm', content: finalResponse.response || '' };
+
+            // FIX: Passing context.worldMap to processAndApplyResponse to prevent data bleeding
+            const { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalResponse, withoutPreviousStash(baseState), context.gameSettings, t, true, context.currentTurnNumber, context.worldMap);
             if (finalResponse.image_prompt !== undefined && finalResponse.image_prompt !== null) {
                 setSceneImagePrompt(finalResponse.image_prompt);
             }
             setSuggestedActions(finalResponse.dialogueOptions || []);
-
-            const gmMessage: ChatMessage = { sender: 'gm', content: finalResponse.response || '' };
-                      
-            // FIX: Passing context.worldMap to processAndApplyResponse to prevent data bleeding
-            const { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalResponse, baseState, context.gameSettings, t, true, context.currentTurnNumber, context.worldMap);
 
             // Save the thought signature to the game state for the next turn
             if (finalResponse.thoughtSignature) {
@@ -261,6 +254,8 @@ export const createTurnManager = (
             }
           
         } catch (err: any) {
+          // Failed turns do not receive the host sync that clears loading.
+          setIsLoading(false);
           if (err.name !== 'AbortError') {
             const formattedError = formatError(err);
             setError(formattedError);
@@ -385,7 +380,6 @@ export const createTurnManager = (
         setCurrentModel(null);
         setIsLoading(true);
         setError(null);
-        clearStashForNewTurn();
         if (!gameContextRef.current?.enemiesDataForCurrentTurn || gameContextRef.current.enemiesDataForCurrentTurn.length === 0) {
             setCombatLog([]);
         }
@@ -442,7 +436,7 @@ export const createTurnManager = (
             setLastJsonResponse(JSON.stringify(finalMergedResponse, null, 2));
     
             // FIX: Passing context.worldMap instead of visitedLocations
-            const { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalMergedResponse as GameResponse, baseState, gameSettings, t, false, context.currentTurnNumber, context.worldMap);
+            const { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalMergedResponse as GameResponse, withoutPreviousStash(baseState), gameSettings, t, false, context.currentTurnNumber, context.worldMap);
             
             // Save the signature if present
             if (finalMergedResponse.thoughtSignature) {
@@ -528,6 +522,8 @@ export const createTurnManager = (
             }
           
         } catch (err: any) {
+          // Failed turns do not receive the host sync that clears loading.
+          setIsLoading(false);
           if (err.name !== 'AbortError') {
             const formattedError = formatError(err);
             setError(formattedError);

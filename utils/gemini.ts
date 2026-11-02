@@ -366,6 +366,11 @@ export async function executeTurn(
         flags.isSimpleTurn = false;
     }
     
+    // Inventory work (including transfers) belongs to Step 5. If the model
+    // reports contradictory flags, do not let the simple path skip that step.
+    if (partiallyGeneratedResponse._internal_flags_?.needsInventoryProcessing === true) {
+        partiallyGeneratedResponse._internal_flags_.isSimpleTurn = false;
+    }
     if (partiallyGeneratedResponse._internal_flags_?.isSimpleTurn) {
         await executeStep('StepSimpleFullResponse_TaskGuide', mainPromptSteps.getStepSimpleFullResponse);
         // Attach the final signature to the response object so it can be saved in state
