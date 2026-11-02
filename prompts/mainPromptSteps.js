@@ -304,7 +304,8 @@ export const getStep0 = () => {
             
             -   **needsNPCProcessing:** Set to 'true' if ANY NPC data (relationship, inventory, state, location) needs to be updated.
             
-            -   **needsInventoryProcessing:**
+            -   **needsInventoryProcessing:** For every player/NPC item transfer this MUST be true; Step 5 emits inventoryTransfers.
+            -   **needsInventoryProcessing (other cases):**
                 -   **CRITICAL TURN 1 DIRECTIVE:** If 'currentTurnNumber' is 1, you are OBLIGATED to set this flag to **'true'**.
                     This is a mandatory setup step to generate the player's starting inventory. This rule overrides all other conditions for this flag on the first turn.
                 -   **Standard Check (Turn 2+):** Set to 'true' if player inventory, money, or equipment changed during the simulation.
@@ -1238,6 +1239,7 @@ export const getStep3 = () => {
 export const getStep4 = () => {
     return `
         <InstructionBlock id="Step4_NPC_TaskGuide">
+            <TransferOverride>For a transfer, do not generate legacy inventory or equipment commands in this response. Step 5 exclusively emits inventoryTransfers; other NPC changes remain in scope. Old paired-transfer examples are superseded.</TransferOverride>
             <Title>Step 4 Task: NPC Details Processing</Title>
             <OutputMandate>
                 <Description>
@@ -1551,6 +1553,7 @@ export const getStep4 = () => {
 export const getStep5 = () => {
     return `
         <InstructionBlock id="Step5_Inventory_TaskGuide">
+            <TransferOverride>Output inventoryTransfers for transfers between any players or NPCs, with permanent actor/item IDs, positive integer quantity and unique transferId. Do not output any legacy inventory/equipment/resource commands or inline new-NPC inventory in the same response. Never reproduce Step 4 legacy inventory commands. Equipped items and containers cannot be transferred. Perform the applicable weight and acceptance checks before requesting the transfer.</TransferOverride>
             <Title>Step 5 Task: Inventory and Item Processing</Title>
             <OutputMandate>
                 <Description>
@@ -1562,6 +1565,7 @@ export const getStep5 = () => {
                 </Description>
                 <AllowedKeys>
                     <Key>items_and_stat_calculations</Key>
+                    <Key>inventoryTransfers</Key>
                     <Key>inventoryItemsData</Key>
                     <Key>updateItemTextContents</Key>
                     <Key>inventoryItemsResources</Key>

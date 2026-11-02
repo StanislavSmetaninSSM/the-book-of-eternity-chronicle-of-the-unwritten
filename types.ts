@@ -832,6 +832,13 @@ export interface NPCEffectChange {
     effectsToRemove?: string[];
 }
 
+export interface InventoryTransfer {
+    transferId: string;
+    source: { type: 'player' | 'npc'; id: string; itemId: string };
+    destination: { type: 'player' | 'npc'; id: string };
+    quantity: number;
+}
+
 export interface NPCInventoryAdd {
     NPCId: string | null;
     NPCName: string;
@@ -1119,6 +1126,7 @@ export interface GameResponse {
     NPCFateCardUnlocks?: { NPCId: string; cardId: string; cardName: string }[];
     NPCsInScene?: boolean;
     factionCustomStateChanges?: FactionCustomStateChange[];
+    inventoryTransfers?: InventoryTransfer[];
     NPCInventoryAdds?: NPCInventoryAdd[];
     NPCInventoryUpdates?: NPCInventoryUpdate[];
     NPCInventoryRemovals?: NPCInventoryRemoval[];
@@ -1197,6 +1205,8 @@ export interface GameState {
     playerCustomStates: CustomState[];
     plotOutline: PlotOutline | null;
     temporaryStash?: Item[];
+    // Committed transfer IDs and canonical payloads, saved with the game.
+    completedInventoryTransfers?: Record<string, string>;
     worldStateFlags: WorldStateFlag[];
     worldEventsLog: WorldEvent[];
     imageCache: Record<string, ImageCacheEntry>;

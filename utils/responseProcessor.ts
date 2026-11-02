@@ -1235,6 +1235,17 @@ export const processAndApplyResponse = (
     const logsToAdd: string[] = [];
     const rejectedPlayerItems: Partial<Item>[] = [...ambiguousTopItems];
     const acceptedPlayerItems: Partial<Item>[] = [];
+    // An explicit transfer must not be combined with legacy inventory commands:
+    // without linkage they may represent a second copy of the same operation.
+    const legacyInventoryKeys = ['inventoryItemsData', 'removeInventoryItems', 'updateItemTextContents', 'itemBondLevelChanges', 'itemFateCardUnlocks', 'equipmentChanges', 'inventoryItemsResources', 'moveInventoryItems'];
+    const hasLegacyCommands = (value: any) => legacyInventoryKeys.some(key => asArray(value?.[key]).length > 0);
+    const transferBatchConflict = asArray(changes.inventoryTransfers).length > 0 && (
+        hasLegacyCommands(mutableResponse) || ambiguousTopItems.length > 0 ||
+        Object.values(changes.otherPlayersInteractions || {}).some(commands => asArray(commands).some(hasLegacyCommands)) ||
+        ['NPCInventoryAdds', 'NPCInventoryUpdates', 'NPCInventoryRemovals', 'NPCEquipmentChanges', 'NPCInventoryResourcesChanges'].some(key => asArray((changes as any)[key]).length > 0) ||
+        asArray(changes.NPCsData).some(npc => !findNpcForUpdate(npc, newState.encounteredNPCs) && asArray(npc.inventory).length > 0)
+    );
+    if (transferBatchConflict) logsToAdd.push(t('warning_inventory_transfer_conflict'));
     for (const item of ambiguousTopItems) logsToAdd.push(t('warning_inventory_item_identity', { subject: item.initialId || item.name || '?' }));
     const combatLogsToAdd = asArray(changes.combatLogEntries);
     const activePlayerIndex = newState.activePlayerIndex;
@@ -1375,7 +1386,7 @@ export const processAndApplyResponse = (
     const hasInlineNpcDestination = asArray(changes.NPCsData).some(npc => !findNpcForUpdate(npc, newState.encounteredNPCs) && asArray(npc.inventory).length > 0);
     const hasDestination = npcAdds.length > 0 || acceptedPlayerItems.length > 0 || hasInlineNpcDestination;
     const invalidTransferIdentity = (invalidNpcDestination && (hasNpcSource || hasPlayerSource)) || (invalidNpcSource && hasDestination);
-    const deferNpcTransferBatch = (rejectedPlayerItems.length > 0 && hasNpcSource) || invalidTransferIdentity;
+    const deferNpcTransferBatch = transferBatchConflict || (rejectedPlayerItems.length > 0 && hasNpcSource) || invalidTransferIdentity;
     if (deferNpcTransferBatch) {
         const inventoryKeys: Array<keyof GameResponse> = [
             'inventoryItemsData', 'removeInventoryItems', 'updateItemTextContents', 'itemBondLevelChanges',
@@ -1857,6 +1868,53 @@ export const processAndApplyResponse = (
     });
     if (!deferNpcTransferBatch) asArray(changes.NPCEquipmentChanges).forEach(c => { const npc = findNpcForUpdate(c, newState.encounteredNPCs); if(npc) { if(!npc.equippedItems) npc.equippedItems = {}; if(c.action === 'equip') (c.targetSlots || []).forEach(s => npc.equippedItems![s] = c.itemId); else (c.sourceSlots || []).forEach(s => { if(npc.equippedItems![s] === c.itemId) npc.equippedItems![s] = null; }); } });
     
+    // Explicit transfers are individually atomic and idempotent across saves.
+    // Each side is addressed by a permanent actor ID, never by a name.
+    if (!transferBatchConflict) {
+        const transfers = asArray(changes.inventoryTransfers);
+        const fingerprint = (x: any) => JSON.stringify([x?.source?.type, x?.source?.id, x?.source?.itemId, x?.destination?.type, x?.destination?.id, x?.quantity]);
+        const fingerprints = new Map<string, Set<string>>();
+        for (const x of transfers) if (typeof x?.transferId === 'string') {
+            const set = fingerprints.get(x.transferId) || new Set<string>();
+            set.add(fingerprint(x));
+            fingerprints.set(x.transferId, set);
+        }
+        const actor = (endpoint: any): PlayerCharacter | NPC | undefined => {
+            if (!endpoint || typeof endpoint.id !== 'string' || !endpoint.id.trim()) return undefined;
+            const list = endpoint.type === 'player' ? newState.players.filter(p => p.playerId === endpoint.id)
+                : endpoint.type === 'npc' ? newState.encounteredNPCs.filter(n => n.NPCId === endpoint.id) : [];
+            return list.length === 1 ? list[0] : undefined;
+        };
+        for (const transfer of transfers) {
+            const id = transfer?.transferId;
+            const signature = fingerprint(transfer);
+            const reject = () => logsToAdd.push(t('warning_inventory_transfer_invalid', { subject: typeof id === 'string' ? id : '?' }));
+            if (typeof id !== 'string' || !id.trim() || id !== id.trim() || (fingerprints.get(id)?.size || 0) !== 1) { reject(); continue; }
+            const previous = newState.completedInventoryTransfers && Object.prototype.hasOwnProperty.call(newState.completedInventoryTransfers, id)
+                ? newState.completedInventoryTransfers[id] : undefined;
+            if (previous !== undefined) { if (previous !== signature) reject(); continue; }
+            const source = actor(transfer.source), destination = actor(transfer.destination);
+            const sourceId = transfer.source?.itemId;
+            if (!source || !destination || source === destination || !Array.isArray(source.inventory) || !Array.isArray(destination.inventory) ||
+                typeof sourceId !== 'string' || !sourceId.trim() || !Number.isSafeInteger(transfer.quantity) || transfer.quantity <= 0) { reject(); continue; }
+            const matches = source.inventory.filter(item => item.existedId === sourceId);
+            if (matches.length !== 1) { reject(); continue; }
+            const item = matches[0];
+            const equipped = Object.values(source.equippedItems || {}).includes(sourceId);
+            if (!Number.isSafeInteger(item.count) || item.count < transfer.quantity || item.isContainer || equipped ||
+                (item.isSentient && item.count !== transfer.quantity) ||
+                (item.count === transfer.quantity && destination.inventory.some(other => other.existedId === sourceId))) { reject(); continue; }
+            const moved = JSON.parse(JSON.stringify(item)) as Item;
+            moved.count = transfer.quantity;
+            moved.contentsPath = null;
+            delete moved.initialId;
+            if (item.count === transfer.quantity) source.inventory.splice(source.inventory.indexOf(item), 1);
+            else { item.count -= transfer.quantity; moved.existedId = generateId('item'); }
+            destination.inventory.push(moved);
+            if (!newState.completedInventoryTransfers) newState.completedInventoryTransfers = {};
+            Object.defineProperty(newState.completedInventoryTransfers, id, { value: signature, enumerable: true, writable: true, configurable: true });
+        }
+    }
     if (!deferNpcTransferBatch) asArray(changes.NPCInventoryResourcesChanges).forEach(change => {
         const npc = findNpcForUpdate(change, newState.encounteredNPCs);
         if (npc && npc.inventory) {

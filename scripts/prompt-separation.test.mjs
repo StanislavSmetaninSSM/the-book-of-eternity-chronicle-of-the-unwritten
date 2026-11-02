@@ -21,8 +21,8 @@ test('the entire guide is invariant across different turn contexts', () => {
   assert.match(guide, /\{\{context\.partiallyGeneratedResponse\}\}/);
   assert.match(guide, /\{\{context\.regenerationReason\}\}/);
   // Intentional guide edits require an explicit snapshot update and review.
-  // Updated for the reviewed location-link and threat-activity identity contract.
-  assert.equal(sha256(guide), '01bc5dceaa8e9ea030a0592a4c756a256add6e1599dc646221d802bebcca7feb');
+  // Updated for the explicit inventory-transfer protocol.
+  assert.equal(sha256(guide), '46c0e2fe026d942979c30b2023df09d36335e7891925fae9e255d16e0707dcfa');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);
@@ -117,4 +117,14 @@ test('context document preserves the old substitutions and fallback values', asy
       assert.deepEqual(value, oldValue, `${expression} -> ${refs[i]}`);
     }
   }
+});
+
+test('explicit transfer protocol is available in the inventory stage and supersedes legacy transfer examples', async () => {
+  const { getStep0, getStep4, getStep5 } = await import('../prompts/mainPromptSteps.js');
+  assert.match(getGameMasterGuideRules(), /InventoryTransferProtocol priority="overrides older transfer examples and directions"/);
+  assert.match(getGameMasterGuideRules(), /client does not enforce those narrative rules/);
+  assert.match(getStep0(), /For every player\/NPC item transfer this MUST be true/);
+  assert.match(getStep4(), /Step 5 exclusively emits inventoryTransfers/);
+  assert.match(getStep5(), /<Key>inventoryTransfers<\/Key>/);
+  assert.match(getStep5(), /Do not output any legacy inventory/);
 });

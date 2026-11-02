@@ -962,3 +962,78 @@ test('inline effects on new NPCs persist for their first turn while old effects 
     assert.equal(base.encounteredNPCs[0].activeEffects[0].duration, 3);
   } finally { await server.close(); }
 });
+
+test('explicit inventory transfers are atomic, actor-addressed and idempotent across saves', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  try {
+    const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
+    const { processAndApplyResponse, deepMergeResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
+    const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
+    const p = { ...ctx.playerCharacter, playerId: 'p', inventory: [] };
+    const second = { ...structuredClone(p), playerId: 'p2' };
+    const item = fullItem({ existedId: 'potion', name: 'Potion', count: 4 });
+    const npc = (id, inv = []) => ({ ...ctx.playerCharacter, NPCId: id, name: id, inventory: inv, progressionType: id === 'a' ? 'Companion' : 'Standard', equippedItems: {} });
+    const base = { playerCharacter: p, players: [structuredClone(p), second], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('a', [item]), npc('b')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const before = structuredClone(base);
+    const transfer = { transferId: 't1', source: { type: 'npc', id: 'a', itemId: 'potion' }, destination: { type: 'player', id: 'p2' }, quantity: 2 };
+    const apply = (response, state = base) => processAndApplyResponse(response, state, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
+    const response = { inventoryTransfers: [transfer] }, original = structuredClone(response);
+    const result = apply(response);
+    assert.equal(result.newState.encounteredNPCs[0].inventory[0].count, 2);
+    assert.equal(result.newState.players[1].inventory[0].count, 2);
+    assert.notEqual(result.newState.players[1].inventory[0].existedId, 'potion');
+    assert.equal(result.newState.temporaryStash?.length || 0, 0);
+    assert.deepEqual(response, original); assert.deepEqual(base, before);
+    const restored = JSON.parse(JSON.stringify(result.newState));
+    const replay = apply(response, restored);
+    assert.equal(replay.newState.encounteredNPCs[0].inventory[0].count, 2);
+    assert.equal(replay.newState.players[1].inventory.length, 1);
+    const mismatch = apply({ inventoryTransfers: [{ ...transfer, quantity: 1 }] }, restored);
+    assert.ok(mismatch.logsToAdd.includes('warning_inventory_transfer_invalid'));
+    assert.equal(mismatch.newState.encounteredNPCs[0].inventory[0].count, 2);
+    const full = apply({ inventoryTransfers: [{ ...transfer, transferId: 't2', quantity: 4, destination: { type: 'npc', id: 'b' } }] });
+    assert.equal(full.newState.encounteredNPCs[0].inventory.length, 0);
+    assert.equal(full.newState.encounteredNPCs[1].inventory[0].existedId, 'potion');
+    assert.equal(full.newState.temporaryStash?.length || 0, 0);
+    const back = apply({ inventoryTransfers: [{ transferId: 't3', source: { type: 'npc', id: 'b', itemId: 'potion' }, destination: { type: 'player', id: 'p' }, quantity: 4 }] }, full.newState);
+    assert.equal(back.newState.playerCharacter.inventory[0].existedId, 'potion');
+    const betweenPlayers = apply({ inventoryTransfers: [{ transferId: 't4', source: { type: 'player', id: 'p', itemId: 'potion' }, destination: { type: 'player', id: 'p2' }, quantity: 4 }] }, back.newState);
+    assert.equal(betweenPlayers.newState.players[0].inventory.length, 0);
+    assert.equal(betweenPlayers.newState.players[1].inventory[0].existedId, 'potion');
+    for (const bad of [
+      { ...transfer, quantity: 0 }, { ...transfer, quantity: 5 }, { ...transfer, quantity: 1.5 },
+      { ...transfer, source: { ...transfer.source, itemId: 'missing' } },
+      { ...transfer, destination: { type: 'npc', id: 'missing' } },
+      { ...transfer, destination: { type: 'npc', id: 'a' } },
+      { ...transfer, transferId: '' },
+    ]) {
+      const failed = apply({ inventoryTransfers: [bad], currentHealthChange: -1 });
+      assert.equal(failed.newState.encounteredNPCs[0].inventory[0].count, 4);
+      assert.equal(failed.newState.players[1].inventory.length, 0);
+      assert.equal(failed.newState.playerCharacter.currentHealth, p.currentHealth - 1);
+      assert.ok(failed.logsToAdd.includes('warning_inventory_transfer_invalid'));
+    }
+    const collision = apply({ inventoryTransfers: [transfer, { ...transfer, quantity: 1 }] });
+    assert.equal(collision.newState.encounteredNPCs[0].inventory[0].count, 4);
+    assert.equal(collision.newState.players[1].inventory.length, 0);
+    const duplicate = apply(deepMergeResponses({ inventoryTransfers: [transfer] }, { inventoryTransfers: [transfer] }));
+    assert.equal(duplicate.newState.encounteredNPCs[0].inventory[0].count, 2);
+    assert.equal(duplicate.newState.players[1].inventory.length, 1);
+    const mixed = apply({ inventoryTransfers: [transfer], NPCInventoryRemovals: [{ NPCId: 'a', itemId: 'potion' }], inventoryItemsData: [fullItem({ existedId: 'new' })], currentHealthChange: -1 });
+    assert.equal(mixed.newState.encounteredNPCs[0].inventory[0].count, 4);
+    assert.equal(mixed.newState.playerCharacter.inventory.length, 0);
+    assert.equal(mixed.newState.players[1].inventory.length, 0);
+    assert.equal(mixed.newState.playerCharacter.currentHealth, p.currentHealth - 1);
+    assert.ok(mixed.logsToAdd.includes('warning_inventory_transfer_conflict'));
+    for (const unsupported of [{ isContainer: true }, { isSentient: true }]) {
+      const state = structuredClone(base); Object.assign(state.encounteredNPCs[0].inventory[0], unsupported);
+      const failed = apply({ inventoryTransfers: [transfer] }, state);
+      assert.equal(failed.newState.encounteredNPCs[0].inventory[0].count, 4);
+      assert.ok(failed.logsToAdd.includes('warning_inventory_transfer_invalid'));
+    }
+    const equipped = structuredClone(base); equipped.encounteredNPCs[0].equippedItems.MainHand = 'potion';
+    assert.ok(apply({ inventoryTransfers: [transfer] }, equipped).logsToAdd.includes('warning_inventory_transfer_invalid'));
+    const { general } = await server.ssrLoadModule('/utils/translations/general.ts');
+    assert.match(general.en.warning_inventory_transfer_invalid, /Warning/); assert.match(general.ru.warning_inventory_transfer_invalid, /Предупреждение/);
+  } finally { await server.close(); }
+});
