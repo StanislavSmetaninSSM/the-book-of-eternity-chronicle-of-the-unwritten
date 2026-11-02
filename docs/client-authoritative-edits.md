@@ -1,5 +1,8 @@
 # Client gameplay edits: safety phase and follow-up
 
+The detailed phased specification, numbered tasks and acceptance criteria are in
+[client-authoritative-edits-spec.md](client-authoritative-edits-spec.md).
+
 A host full sync replaces the client's game snapshot. Until a command protocol
 exists, a client-only gameplay edit is not authoritative and may be lost on
 that replacement. The first safety phase refuses client/spectator inventory,
