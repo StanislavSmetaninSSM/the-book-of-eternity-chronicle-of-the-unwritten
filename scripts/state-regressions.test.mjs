@@ -858,3 +858,107 @@ test('deferred transfer batch also withholds a new NPC inline inventory and its 
     assert.equal(base.encounteredNPCs[0].inventory.length, 1);
   } finally { await server.close(); }
 });
+
+test('NPC transfer endpoints are validated before applying either side', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  try {
+    const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
+    const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
+    const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
+    const p = { ...ctx.playerCharacter, inventory: [fullItem({ existedId: 'owned', count: 3 })] };
+    const npc = (id, name, inventory = []) => ({ ...ctx.playerCharacter, NPCId: id, name, inventory, progressionType: 'Standard' });
+    const sourceItem = fullItem({ existedId: 'from', name: 'Potion', count: 2 });
+    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('a', 'Source', [sourceItem]), npc('b', 'Recipient'), npc('c', 'Namesake'), npc('d', 'Namesake')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const original = structuredClone(base);
+    const apply = response => processAndApplyResponse(response, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
+    const added = fullItem({ existedId: 'to', name: 'Potion', count: 2 });
+    const removal = { NPCId: 'a', itemId: 'from' };
+    for (const add of [{ NPCId: 'missing', item: added }, { NPCName: 'Namesake', item: added }]) {
+      const input = { NPCInventoryRemovals: [removal], NPCInventoryAdds: [add], currentHealthChange: -3 };
+      const snapshot = structuredClone(input);
+      const result = apply(input);
+      assert.equal(result.newState.encounteredNPCs[0].inventory.length, 1);
+      assert.equal(result.newState.playerCharacter.currentHealth, p.currentHealth - 3);
+      assert.ok(result.logsToAdd.includes('warning_npc_transfer_identity'));
+      assert.deepEqual(input, snapshot);
+    }
+    for (const badRemoval of [{ NPCId: 'a', itemId: 'missing' }, { NPCId: 'missing', itemId: 'from' }]) {
+      const result = apply({ NPCInventoryRemovals: [badRemoval], NPCInventoryAdds: [{ NPCId: 'b', item: added }] });
+      assert.equal(result.newState.encounteredNPCs[1].inventory.length, 0);
+      assert.ok(result.logsToAdd.includes('warning_npc_transfer_identity'));
+    }
+    const duplicate = structuredClone(base);
+    duplicate.encounteredNPCs[0].inventory.push(structuredClone(sourceItem));
+    const dupResult = processAndApplyResponse({ NPCInventoryRemovals: [removal], NPCInventoryAdds: [{ NPCId: 'b', item: added }] }, duplicate, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
+    assert.equal(dupResult.newState.encounteredNPCs[0].inventory.length, 2);
+    assert.equal(dupResult.newState.encounteredNPCs[1].inventory.length, 0);
+    const count = apply({ NPCInventoryUpdates: [{ NPCId: 'a', itemUpdate: { existedId: 'missing', count: 1 } }], NPCInventoryAdds: [{ NPCId: 'b', item: added }] });
+    assert.equal(count.newState.encounteredNPCs[1].inventory.length, 0);
+    const player = apply({ inventoryItemsData: [{ existedId: 'owned', count: 1 }], NPCInventoryAdds: [{ NPCId: 'missing', item: added }] });
+    assert.equal(player.newState.playerCharacter.inventory[0].count, 3);
+    const other = { ...structuredClone(p), playerId: 'other' };
+    const multiplayer = { ...base, players: [structuredClone(p), other] };
+    const otherResult = processAndApplyResponse({ otherPlayersInteractions: { other: [{ removeInventoryItems: [{ removedItemId: 'owned' }], currentHealthChange: -2 }] }, NPCInventoryAdds: [{ NPCId: 'missing', item: added }] }, multiplayer, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
+    assert.equal(otherResult.newState.players[1].inventory[0].count, 3);
+    assert.equal(otherResult.newState.players[1].currentHealth, other.currentHealth - 2);
+    const success = apply({ NPCInventoryRemovals: [removal], NPCInventoryAdds: [{ NPCId: 'b', item: added }] });
+    assert.equal(success.newState.encounteredNPCs[0].inventory.length, 0);
+    assert.equal(success.newState.encounteredNPCs[1].inventory[0].existedId, 'to');
+    const recipient = npc('new', 'New recipient');
+    const newRecipient = apply({ NPCsData: [recipient], NPCInventoryRemovals: [removal], NPCInventoryAdds: [{ NPCId: 'new', item: added }] });
+    assert.equal(newRecipient.newState.encounteredNPCs.find(n => n.NPCId === 'new').inventory[0].existedId, 'to');
+    assert.equal(newRecipient.newState.encounteredNPCs[0].inventory.length, 0);
+    const { general } = await server.ssrLoadModule('/utils/translations/general.ts');
+    assert.match(general.en.warning_npc_transfer_identity, /Warning/);
+    assert.match(general.ru.warning_npc_transfer_identity, /Предупреждение/);
+    assert.deepEqual(base, original);
+  } finally { await server.close(); }
+});
+
+test('companion to NPC transfer does not also stash the transferred stack', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  try {
+    const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
+    const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
+    const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
+    const p = { ...ctx.playerCharacter, inventory: [] };
+    const source = { ...p, NPCId: 'a', name: 'Companion', progressionType: 'Companion', inventory: [fullItem({ existedId: 'from', name: 'Potion', count: 2 })] };
+    const recipient = { ...p, NPCId: 'b', name: 'Recipient', progressionType: 'Standard', inventory: [] };
+    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [source, recipient], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const apply = r => processAndApplyResponse(r, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap).newState;
+    const removal = { NPCId: 'a', itemId: 'from' };
+    const gift = fullItem({ existedId: 'to', name: 'Potion', count: 2 });
+    const success = apply({ NPCInventoryRemovals: [removal], NPCInventoryAdds: [{ NPCId: 'b', item: gift }] });
+    assert.equal(success.encounteredNPCs[0].inventory.length, 0);
+    assert.equal(success.encounteredNPCs[1].inventory.length, 1);
+    assert.equal(success.temporaryStash?.length || 0, 0);
+    const newNpc = { ...recipient, NPCId: 'new', name: 'New', inventory: [gift] };
+    const inline = apply({ NPCInventoryRemovals: [removal], NPCsData: [newNpc] });
+    assert.equal(inline.encounteredNPCs.find(n => n.NPCId === 'new').inventory.length, 1);
+    assert.equal(inline.temporaryStash?.length || 0, 0);
+    const drop = apply({ NPCInventoryRemovals: [removal] });
+    assert.equal(drop.temporaryStash[0].existedId, 'from');
+    assert.equal(base.encounteredNPCs[0].inventory.length, 1);
+  } finally { await server.close(); }
+});
+
+test('inline effects on new NPCs persist for their first turn while old effects tick', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  try {
+    const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
+    const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
+    const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
+    const p = ctx.playerCharacter;
+    const old = { ...p, NPCId: 'old', name: 'Old', inventory: [], activeEffects: [{ effectId: 'shared', duration: 3 }] };
+    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [old], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    for (const id of ['new', null]) {
+      const input = { NPCsData: [{ ...p, NPCId: id, initialId: 'new-tag', name: 'New', inventory: [], activeEffects: [{ effectId: 'shared', duration: 1 }] }] };
+      const snapshot = structuredClone(input);
+      const state = processAndApplyResponse(input, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap).newState;
+      assert.equal(state.encounteredNPCs.find(n => n.name === 'New').activeEffects[0].duration, 1);
+      assert.equal(state.encounteredNPCs.find(n => n.NPCId === 'old').activeEffects[0].duration, 2);
+      assert.deepEqual(input, snapshot);
+    }
+    assert.equal(base.encounteredNPCs[0].activeEffects[0].duration, 3);
+  } finally { await server.close(); }
+});

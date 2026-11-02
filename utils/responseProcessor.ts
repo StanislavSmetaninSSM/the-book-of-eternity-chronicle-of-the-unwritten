@@ -1347,12 +1347,35 @@ export const processAndApplyResponse = (
     }
 
     // Without explicit transfer linkage we cannot know which destination goes
-    // with which NPC source. If any player-side creation failed alongside an
-    // NPC removal or count update, defer the whole inventory/equipment batch
-    // on both sides, instead of committing destinations but keeping sources.
-    const deferNpcTransferBatch = rejectedPlayerItems.length > 0 &&
-        (asArray(changes.NPCInventoryRemovals).length > 0 ||
-         asArray(changes.NPCInventoryUpdates).some(update => typeof update?.itemUpdate?.count === 'number'));
+    // with which source. When a possible transfer contains rejected player
+    // items or invalid NPC endpoints, defer the inventory/equipment batch on
+    // both sides rather than losing or duplicating a stack.
+    const npcRemovals = asArray(changes.NPCInventoryRemovals);
+    const npcCountUpdates = asArray(changes.NPCInventoryUpdates).filter(update => typeof update?.itemUpdate?.count === 'number');
+    const npcAdds = asArray(changes.NPCInventoryAdds);
+    // Validate both sides before committing a possible transfer. NPCs created
+    // in this turn are included so a valid new recipient is not rejected.
+    const projectedNpcs = mergeById(newState.encounteredNPCs || [], asArray(changes.NPCsData), 'NPCId', 'name', undefined, true) as NPC[];
+    const invalidNpcDestination = npcAdds.some(add => !add?.item || !findNpcForUpdate(add, projectedNpcs));
+    const invalidNpcSource = npcRemovals.some(removal => {
+        const npc = findNpcForUpdate(removal, projectedNpcs);
+        return !removal.itemId || !npc?.inventory || npc.inventory.filter(item => item.existedId === removal.itemId).length !== 1;
+    }) || npcCountUpdates.some(update => {
+        const npc = findNpcForUpdate(update, projectedNpcs);
+        const id = update.itemUpdate?.existedId;
+        return !id || !npc?.inventory || npc.inventory.filter(item => item.existedId === id).length !== 1;
+    });
+    const hasNpcSource = npcRemovals.length > 0 || npcCountUpdates.length > 0;
+    const hasPlayerSource = playerApplications.some(application =>
+        asArray(application.changes.removeInventoryItems).length > 0 ||
+        asArray(application.changes.inventoryItemsData).some(update => {
+            const original = playersBeforeChanges[application.index]?.inventory?.find(item => item.existedId === update.existedId);
+            return !!original && typeof update.count === 'number' && update.count < original.count;
+        }));
+    const hasInlineNpcDestination = asArray(changes.NPCsData).some(npc => !findNpcForUpdate(npc, newState.encounteredNPCs) && asArray(npc.inventory).length > 0);
+    const hasDestination = npcAdds.length > 0 || acceptedPlayerItems.length > 0 || hasInlineNpcDestination;
+    const invalidTransferIdentity = (invalidNpcDestination && (hasNpcSource || hasPlayerSource)) || (invalidNpcSource && hasDestination);
+    const deferNpcTransferBatch = (rejectedPlayerItems.length > 0 && hasNpcSource) || invalidTransferIdentity;
     if (deferNpcTransferBatch) {
         const inventoryKeys: Array<keyof GameResponse> = [
             'inventoryItemsData', 'removeInventoryItems', 'updateItemTextContents', 'itemBondLevelChanges',
@@ -1373,6 +1396,7 @@ export const processAndApplyResponse = (
         for (const item of rejectedPlayerItems.slice(ambiguousTopItems.length)) {
             logsToAdd.push(t('warning_inventory_item_identity', { subject: item.existedId || item.name || item.initialId || '?' }));
         }
+        if (invalidTransferIdentity) logsToAdd.push(t('warning_npc_transfer_identity'));
         logsToAdd.push(t('warning_npc_transfer_batch'));
     }
     playerApplications.forEach(application => logsToAdd.push(...application.logs));
@@ -1624,6 +1648,16 @@ export const processAndApplyResponse = (
         return update;
     });
     newState.encounteredNPCs = mergeById(newState.encounteredNPCs || [], npcUpdates, 'NPCId', 'name', undefined, true);
+    // Initial inline effects on a newly created NPC are reported this turn,
+    // just like NPCEffectChanges, and must not immediately lose a turn.
+    for (const update of npcUpdates) {
+        if (findNpcForUpdate(update, baseState.encounteredNPCs)) continue;
+        const npc = findNpcForUpdate(update, newState.encounteredNPCs);
+        if (!npc) continue;
+        for (const effect of asArray(update.activeEffects)) {
+            if (effect?.effectId && effect.duration !== undefined) recordNpcEffect(actorEffectKey(npc.NPCId, npc.name), effect.effectId);
+        }
+    }
     newState.encounteredNPCs.forEach(npc => {
         if (npc && !Array.isArray(npc.inventory)) {
             npc.inventory = [];
@@ -1745,11 +1779,29 @@ export const processAndApplyResponse = (
         if (npc?.activeEffects) npc.activeEffects = removeEffectsForHealedWounds(npc.activeEffects, npc.wounds, [wu]);
     });
     asArray(changes.NPCCustomStateChanges).forEach(sc => { const npc = findNpcForUpdate(sc, newState.encounteredNPCs); if (npc) npc.customStates = mergeById(npc.customStates || [], asArray(sc.stateChanges), 'stateId'); });
-    if (!deferNpcTransferBatch) asArray(changes.NPCInventoryAdds).forEach(add => { const npc = findNpcForUpdate(add, newState.encounteredNPCs); if(npc) { if (!npc.inventory) npc.inventory = []; const newItem = { ...add.item, existedId: add.item.existedId || generateId('item') }; if (add.destinationContainerId) { const c = npc.inventory.find(i => i.existedId === add.destinationContainerId); if (c) newItem.contentsPath = c.contentsPath ? [...c.contentsPath, c.name] : [c.name]; } npc.inventory.push(newItem as Item); } });
+    const acceptedNpcItems: Array<{ npc: NPC; item: Item }> = [];
+    if (!deferNpcTransferBatch) {
+        for (const update of npcUpdates) {
+            if (findNpcForUpdate(update, baseState.encounteredNPCs)) continue;
+            const npc = findNpcForUpdate(update, newState.encounteredNPCs);
+            if (npc) for (const item of asArray(npc.inventory)) acceptedNpcItems.push({ npc, item });
+        }
+        asArray(changes.NPCInventoryAdds).forEach(add => {
+            const npc = findNpcForUpdate(add, newState.encounteredNPCs);
+            if (!npc || !add.item) return;
+            if (!npc.inventory) npc.inventory = [];
+            const newItem = { ...add.item, existedId: add.item.existedId || generateId('item') };
+            if (add.destinationContainerId) {
+                const c = npc.inventory.find(i => i.existedId === add.destinationContainerId);
+                if (c) newItem.contentsPath = c.contentsPath ? [...c.contentsPath, c.name] : [c.name];
+            }
+            npc.inventory.push(newItem as Item);
+            acceptedNpcItems.push({ npc, item: newItem as Item });
+        });
+    }
     // There is no transfer transaction ID in the response. A rejected player
     // item may correspond to *any* NPC removal, even when names differ. Defer
     // destructive NPC inventory commands rather than losing a possible source.
-    const hasRejectedPlayerItem = rejectedPlayerItems.length > 0;
     const normalizedItemName = (name: unknown) => typeof name === 'string' ? name.trim().toLocaleLowerCase() : '';
     const removals = asArray(changes.NPCInventoryRemovals);
     const sourceItems = removals.map(removal => {
@@ -1757,17 +1809,20 @@ export const processAndApplyResponse = (
         const item = npc?.inventory?.find(i => i.existedId === removal.itemId);
         return { removal, npc, item };
     });
-    // A unique same-name, same-count accepted player item can represent the
-    // removed stack; do not also put that stack in the companion safeguard
-    // stash. Ambiguous cases cannot be resolved reliably without a transfer ID.
+    // A unique same-name, same-count accepted player or NPC item can represent
+    // the removed stack; do not also put it in the companion safeguard stash.
+    // Ambiguous cases cannot be resolved reliably without a transfer ID.
     const acceptedStillPresent = acceptedPlayerItems.filter(item => item.existedId &&
         newState.players.some(player => player.inventory?.some(i => i.existedId === item.existedId)));
-    const isUnambiguousPlayerTransfer = (item: Item) => {
+    const isUnambiguousTransfer = (item: Item) => {
         const name = normalizedItemName(item.name);
         if (!name || !Number.isFinite(item.count)) return false;
         const sourceMatches = sourceItems.filter(source => source.item && normalizedItemName(source.item.name) === name && source.item.count === item.count);
-        const destinationMatches = acceptedStillPresent.filter(candidate => normalizedItemName(candidate.name) === name && candidate.count === item.count);
-        return sourceMatches.length === 1 && destinationMatches.length === 1;
+        if (sourceMatches.length !== 1) return false;
+        const sourceNpc = sourceMatches[0].npc;
+        const playerMatches = acceptedStillPresent.filter(candidate => normalizedItemName(candidate.name) === name && candidate.count === item.count);
+        const npcMatches = acceptedNpcItems.filter(candidate => candidate.npc !== sourceNpc && normalizedItemName(candidate.item.name) === name && candidate.item.count === item.count);
+        return playerMatches.length + npcMatches.length === 1;
     };
     asArray(changes.NPCInventoryUpdates).forEach(u => {
         const npc = findNpcForUpdate(u, newState.encounteredNPCs);
@@ -1788,13 +1843,13 @@ export const processAndApplyResponse = (
         const index = npc.inventory.findIndex(item => item.existedId === r.itemId);
         if (index < 0) return;
         const item = npc.inventory[index];
-        if (hasRejectedPlayerItem) {
+        if (deferNpcTransferBatch) {
             logsToAdd.push(t('warning_npc_item_transfer', { subject: item.name || item.existedId || '?' }));
             return;
         }
-        const wasTransferredToPlayer = isUnambiguousPlayerTransfer(item);
+        const wasTransferred = isUnambiguousTransfer(item);
         const [removed] = npc.inventory.splice(index, 1);
-        if (npc.progressionType === 'Companion' && !wasTransferredToPlayer) {
+        if (npc.progressionType === 'Companion' && !wasTransferred) {
             if (!newState.temporaryStash) newState.temporaryStash = [];
             if (!newState.temporaryStash.find(item => item.existedId === removed.existedId)) newState.temporaryStash.push({ ...removed, contentsPath: null });
             logsToAdd.push(t('item_moved_to_stash_from_npc', { itemName: removed.name, npcName: npc.name }));
