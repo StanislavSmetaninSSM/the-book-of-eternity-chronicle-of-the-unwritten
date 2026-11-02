@@ -1,5 +1,5 @@
 import { PresentationJournal } from '../utils/presentationJournal';
-import { beginGameplayMutation, gameplayMutationCommitted } from '../utils/gameplayMutationGate';
+import { beginGameplayMutation, gameplayMutationCommitted, clientLocalEditBlocked, guardGameplayActions } from '../utils/gameplayMutationGate';
 import { HostTurnAuthority, type TurnSyncStamp } from '../utils/networkTurnProtocol';
 import { broadcastToConnections } from '../utils/peerSend';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
@@ -84,7 +84,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const historyMutationRevisionRef = useRef(0), historyMutationAppliedRef = useRef(0);
     const gameplayMutationPendingRef = useRef(false);
     const [gameplayMutationEpoch, setGameplayMutationEpoch] = useState(0);
-    const mutationMessageRef = useRef({ delivery: '', host: '' });
+    const mutationMessageRef = useRef({ delivery: '', host: '', client: '' });
     const hostHistoryHoldRef = useRef<(() => void) | null>(null);
     const hostTurnAuthorityRef = useRef<HostTurnAuthority | null>(null);
     if (!hostTurnAuthorityRef.current) hostTurnAuthorityRef.current = new HostTurnAuthority();
@@ -147,6 +147,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
             setError(mutationMessageRef.current.host); return;
         }
+        if (clientLocalEditBlocked(gameStateRef.current?.networkRole)) {
+            setError(mutationMessageRef.current.client); return;
+        }
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
             gameStateRef.current?.networkRole, turnPhaseRef.current,
             pendingClientSyncRef.current !== null || pendingNetworkTurnRef.current !== null || !clientTurnStampRef.current);
@@ -165,6 +168,16 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setGameplayMutationEpoch(epoch => epoch + 1);
         if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
     }, [setGameStateInternal]);
+
+    const userGameplayActionBlocked = useCallback(() => {
+        if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
+            setError(mutationMessageRef.current.host); return true;
+        }
+        if (clientLocalEditBlocked(gameStateRef.current?.networkRole)) {
+            setError(mutationMessageRef.current.client); return true;
+        }
+        return false;
+    }, []);
 
     const setPresentationState = useCallback((action: React.SetStateAction<GameState | null>) => {
         const record = gameStateRef.current?.networkRole === 'player';
@@ -190,6 +203,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const setUserGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
         if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
             setError(mutationMessageRef.current.host); return;
+        }
+        if (clientLocalEditBlocked(gameStateRef.current?.networkRole)) {
+            setError(mutationMessageRef.current.client); return;
         }
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
             gameStateRef.current?.networkRole, turnPhaseRef.current,
@@ -276,7 +292,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [isLoading]);
 
     const { t } = useLocalization();
-    mutationMessageRef.current = { delivery: t('game_edit_blocked_delivery'), host: t('host_sync_not_ready') };
+    mutationMessageRef.current = { delivery: t('game_edit_blocked_delivery'), host: t('host_sync_not_ready'), client: t('client_edit_host_only') };
     const gameContextRef = useRef<GameContext | null>(null);
 
     useEffect(() => {
@@ -313,7 +329,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             playerLevelRef.current = currentLevel;
         }
     
-        if (previousLevel !== null && typeof currentLevel === 'number' && currentLevel > previousLevel) {
+        if (previousLevel !== null && typeof currentLevel === 'number' && currentLevel > previousLevel &&
+            !clientLocalEditBlocked(gameStateRef.current?.networkRole)) {
             console.log(`Level up detected! From ${previousLevel} to ${currentLevel}. Scaling quest rewards.`);
             
             const newExpForNextLevel = gameState.playerCharacter.experienceForNextLevel;
@@ -1287,13 +1304,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             ...turnManager,
             initializeAndRunFirstTurn,
             ...saveLoadManager,
-            ...createInventoryActions({
+            ...guardGameplayActions(createInventoryActions({
                 setGameState, gameContextRef, t, gameState
-            }),
-            ...createPlayerActionsManager({
+            }), userGameplayActionBlocked),
+            ...guardGameplayActions(createPlayerActionsManager({
                 setGameState, setGameHistory, setUserGameHistory, setGameLog, setCombatLog, setVisitedLocations,
                 setWorldMap, setWorldState, gameSettings, gameContextRef, t
-            }),
+            }), userGameplayActionBlocked),
             ...createMusicManager({
                 gameContextRef, setError, t, setGameLog, setMusicPrompt,
                 setIsMusicLoading, setIsMusicPlayerVisible, previousMusicQueries
@@ -1461,6 +1478,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, []);
 
     const updateGameSettings = useCallback((newSettings: Partial<GameSettings>) => {
+        // Local display/media preferences are not game-rule edits. Shared
+        // rules must stay host-owned until they have an authoritative protocol.
+        const localSettings = new Set(['language', 'youtubeApiKey', 'notificationSound', 'showPartyStatusPanel',
+            'uiControlScale', 'uiFontScale', 'showImageSourceInfo', 'generateWorldEventImages', 'disableImageGeneration']);
+        if (Object.keys(newSettings).some(key => !localSettings.has(key)) && userGameplayActionBlocked()) return;
         setGameSettings(prevSettings => {
             if (!prevSettings) return prevSettings;
 
@@ -1472,14 +1494,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             return updatedSettings;
         });
-    }, []);
+    }, [userGameplayActionBlocked]);
 
     const updateSuperInstructions = useCallback((newInstructions: string) => {
+        if (userGameplayActionBlocked()) return;
         setSuperInstructions(newInstructions);
-    }, []);
+    }, [userGameplayActionBlocked]);
 
     const editLocationData = (locationId: string, field: keyof Location, value: any) => {
-        if (!gameSettings?.allowHistoryManipulation) return;
+        if (!gameSettings?.allowHistoryManipulation || userGameplayActionBlocked()) return;
 
         setWorldMap(prevMap => {
             const newMap = { ...prevMap };
@@ -2149,7 +2172,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [gameSettings, setGameState]);
 
     const deleteLocationThreat = useCallback((locationId: string, threatId: string) => {
-        if (!gameSettings?.allowHistoryManipulation) return;
+        if (!gameSettings?.allowHistoryManipulation || userGameplayActionBlocked()) return;
 
         const updater = (location: Location) => {
             if (location && location.activeThreats) {
@@ -2462,19 +2485,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             console.log(`[CLIENT] Sending 'submit_collective_action' to host. MyPeerId: ${effectiveSenderId}, Action: "${action}"`);
             hostConnectionRef.current.send(message);
 
-            setGameState(prevState => {
-                if (!prevState || !prevState.collectiveActionState?.isActive) return prevState;
-                const newActions = { ...prevState.collectiveActionState.actions, [effectiveSenderId]: action };
-                const newCollectiveState = { ...prevState.collectiveActionState, actions: newActions };
-                console.log(`[CLIENT] Updated local collectiveActionState for ${effectiveSenderId}:`, newCollectiveState.actions);
-                return { ...prevState, collectiveActionState: newCollectiveState };
-            });
+
         }
     }, [setGameState]);
 
     const processCollectiveActions = useCallback(() => {
         const currentState = gameStateRef.current;
         if (!currentState || !currentState.collectiveActionState?.isActive) return;
+        if (clientLocalEditBlocked(currentState.networkRole)) { setError(t('client_edit_host_only')); return; }
 
         const { prompt, actions, initiatorName } = currentState.collectiveActionState;
         let combinedMessage = `[${t('Collective Action requested by {name}', { name: initiatorName })}: ${prompt}]\n`;
@@ -2554,12 +2572,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             };
             hostConnectionRef.current.send(message);
 
-            setGameState(prevState => {
-                if (!prevState || !prevState.simultaneousActionState?.isActive) return prevState;
-                const newActions = { ...prevState.simultaneousActionState.actions, [myPlayerIdConst]: action };
-                const newSimultaneousState = { ...prevState.simultaneousActionState, actions: newActions };
-                return { ...prevState, simultaneousActionState: newSimultaneousState };
-            });
+
         }
     }, [setGameState, myPlayerId]);
 

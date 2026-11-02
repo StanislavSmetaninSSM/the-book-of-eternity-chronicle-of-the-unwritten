@@ -453,7 +453,7 @@ export const createMultiplayerManager = (
         };
         hostConnectionRef.current.send(message);
 
-        setGameState(prev => prev ? { ...prev, playerNeedsToCreateCharacter: false } : null);
+        setGameStateForConnection(prev => prev ? { ...prev, playerNeedsToCreateCharacter: false } : null);
         const sentMessage: ChatMessage = { sender: 'system', content: 'Character data sent to host. Waiting for game state sync...' };
         setGameHistory(prev => [...prev, sentMessage]);
     };

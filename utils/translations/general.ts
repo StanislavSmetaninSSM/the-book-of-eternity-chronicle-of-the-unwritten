@@ -1,5 +1,6 @@
 export const general = {
   en: {
+    "client_edit_host_only": "This change is temporarily available only to the host. Ask the host to make it; client changes are blocked to prevent losing them during synchronization.",
     "game_state_updating": "A game change is still being applied. Wait for it to finish before starting a turn.",
     "game_edit_blocked_delivery": "The turn is being sent or synchronized. Wait for the host before changing game state.",
     "turn_game_state_changed": "The game state changed while the response was being generated. The old response was discarded; review the change before trying again.",
@@ -238,6 +239,7 @@ export const general = {
     "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.": "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.",
   },
   ru: {
+    "client_edit_host_only": "Это изменение временно доступно только хосту. Попросите хоста выполнить его: локальные изменения клиента заблокированы, чтобы они не терялись при синхронизации.",
     "game_state_updating": "Изменение игрового состояния ещё применяется. Дождитесь его завершения перед ходом.",
     "game_edit_blocked_delivery": "Ход отправляется или синхронизируется. Дождитесь хоста, прежде чем менять игровое состояние.",
     "turn_game_state_changed": "Игровое состояние изменилось во время генерации. Старый ответ отброшен; проверьте изменение перед повтором хода.",

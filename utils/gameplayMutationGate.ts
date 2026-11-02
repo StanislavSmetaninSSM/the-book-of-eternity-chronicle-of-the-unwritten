@@ -1,5 +1,11 @@
 import type { NetworkRole } from '../types';
 
+/** Until host-authoritative edit commands exist, never make a client-only
+ * gameplay or history change that a later host snapshot can silently erase. */
+export function clientLocalEditBlocked(role: NetworkRole | undefined): boolean {
+    return role === 'player' || role === 'spectator';
+}
+
 /** Starting a local edit while a result is in flight cannot revoke that send. */
 export function beginGameplayMutation(
     revision: { current: number }, pending: { current: boolean },
@@ -18,4 +24,13 @@ export function gameplayMutationCommitted(
     if (!pending.current || applied.current !== revision.current || renderedState !== currentState) return false;
     pending.current = false;
     return true;
+}
+
+/** Guard whole user actions, including writes outside the GameState setter. */
+export function guardGameplayActions<T extends Record<string, (...args: any[]) => void>>(
+    actions: T, blocked: () => boolean
+): T {
+    return Object.fromEntries(Object.entries(actions).map(([key, action]) => [key, (...args: any[]) => {
+        if (!blocked()) action(...args);
+    }])) as T;
 }
