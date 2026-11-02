@@ -21,7 +21,8 @@ interface MultiplayerManagerProps {
     restoreFromSaveData: (data: SaveFile, isNetworkSync?: boolean, identity?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => SaveFile;
     packageSaveData: (gameState: GameState | null) => SaveFile | null;
     broadcastFullSync: (saveData: SaveFile, syncRequestId?: string) => void | Promise<void>;
-    addPlayer: (creationData: any) => void;
+    addPlayer: (creationData: any, connection?: DataConnection) => void;
+    onPeerDisconnected?: (peerId: string) => void;
     removePlayer: (playerId: string) => void;
     passTurnToPlayer: (playerIndex: number) => void;
     gameContextRef: React.MutableRefObject<any>;
@@ -161,6 +162,7 @@ export const createMultiplayerManager = (
         packageSaveData,
         broadcastFullSync,
         addPlayer,
+        onPeerDisconnected,
         removePlayer,
         passTurnToPlayer,
         gameContextRef,
@@ -185,6 +187,22 @@ export const createMultiplayerManager = (
         onChatMessage
     }: MultiplayerManagerProps
 ) => {
+
+    const handlePeerClose = (conn: DataConnection) => {
+        // A delayed close from an old connection must not remove a reconnect.
+        if (connectionsRef.current.get(conn.peer) !== conn) return;
+        connectionsRef.current.delete(conn.peer);
+        if (onPeerDisconnected) {
+            onPeerDisconnected(conn.peer);
+            return;
+        }
+        setGameState(prev => {
+            if (!prev) return null;
+            const peer = prev.peers.find(entry => entry.id === conn.peer);
+            setGameHistory(history => [...history, { sender: 'system', content: t('player_has_disconnected', { name: peer?.name || conn.peer }) }]);
+            return { ...prev, peers: prev.peers.filter(entry => entry.id !== conn.peer) };
+        });
+    };
 
     const requestSyncFromHost = () => {
         const currentGameState = gameStateRef.current;
@@ -245,7 +263,7 @@ export const createMultiplayerManager = (
                         break;
                     }
                     case 'new_player_character_data': {
-                        addPlayer(message.payload.playerCharacter);
+                        addPlayer(message.payload?.playerCharacter, conn);
                         break;
                     }
                     case 'request_full_sync': {
@@ -322,14 +340,7 @@ export const createMultiplayerManager = (
 
             (conn as any).on('close', () => {
                 console.log(`Connection from ${conn.peer} closed.`);
-                connectionsRef.current.delete(conn.peer);
-                setGameState(prev => {
-                    if (!prev) return null;
-                    const peerThatLeft = prev.peers.find(p => p.id === conn.peer);
-                    const disconnectMessage: ChatMessage = { sender: 'system', content: t('player_has_disconnected', { name: peerThatLeft?.name || conn.peer }) };
-                    setGameHistory(p => [...p, disconnectMessage]);
-                    return { ...prev, peers: prev.peers.filter(p => p.id !== conn.peer) };
-                });
+                handlePeerClose(conn);
             });
         });
 
@@ -573,7 +584,7 @@ export const createMultiplayerManager = (
                         break;
                     }
                     case 'new_player_character_data': {
-                        addPlayer(message.payload.playerCharacter);
+                        addPlayer(message.payload?.playerCharacter, conn);
                         break;
                     }
                     case 'chat_message': {
@@ -650,14 +661,7 @@ export const createMultiplayerManager = (
 
             (conn as any).on('close', () => {
                 console.log(`Connection from ${conn.peer} closed.`);
-                connectionsRef.current.delete(conn.peer);
-                setGameState(prev => {
-                    if (!prev) return null;
-                    const peerThatLeft = prev.peers.find(p => p.id === conn.peer);
-                    const disconnectMessage: ChatMessage = { sender: 'system', content: t('player_has_disconnected', { name: peerThatLeft?.name || conn.peer }) };
-                    setGameHistory(p => [...p, disconnectMessage]);
-                    return { ...prev, peers: prev.peers.filter(p => p.id !== conn.peer) };
-                });
+                handlePeerClose(conn);
             });
         });
 

@@ -98,9 +98,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const queuedHostSyncRequestsRef = useRef(new Set<string>());
     const presentationJournalRef = useRef(new PresentationJournal());
     const hostRestorePendingRef = useRef<{ snapshot: SaveFile | null; release: () => void } | null>(null);
+    const pendingNewPeersRef = useRef(new Map<string, DataConnection>());
+    const pendingRemovedPeersRef = useRef(new Set<string>());
+    const pendingPeerCharactersRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
+    const pendingPeerCharacterIdsRef = useRef(new Set<string>());
     const [hostRestoreEpoch, setHostRestoreEpoch] = useState(0);
     const clearHostRestorePending = useCallback(() => {
         hostRestorePendingRef.current = null;
+        pendingNewPeersRef.current.clear();
+        pendingRemovedPeersRef.current.clear();
+        pendingPeerCharactersRef.current.clear();
+        pendingPeerCharacterIdsRef.current.clear();
         hostHistoryHoldRef.current?.();
         hostHistoryHoldRef.current = null;
         pendingSyncRequestRef.current = null;
@@ -313,8 +321,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     useEffect(() => {
         if (gameState) {
             playerLevelRef.current = gameState.playerCharacter.level;
+            for (const player of gameState.players || []) {
+                if (player.playerId && !pendingPeerCharactersRef.current.has(player.playerId)) {
+                    pendingPeerCharacterIdsRef.current.delete(player.playerId);
+                }
+            }
         }
-    }, [gameState?.playerCharacter.level]);
+    }, [gameState]);
 
     useEffect(() => {
         if (!gameState) {
@@ -990,8 +1003,30 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
     }, [t, setNetworkChatHistory]);
 
-    const addPlayer = useCallback((creationData: PlayerCharacter | any) => {
-        if (!gameSettings || userGameplayActionBlocked()) return;
+    const addPlayer = useCallback((creationData: PlayerCharacter | any, connection?: DataConnection) => {
+        if (!gameSettings) return;
+        if (connection) {
+            // Network identity comes from the live connection, not the payload.
+            if (gameStateRef.current?.networkRole !== 'host' || !connection.open ||
+                connectionsRef.current.get(connection.peer) !== connection || connection.metadata?.role !== 'player' ||
+                !creationData || typeof creationData !== 'object' || creationData.playerId !== connection.peer ||
+                typeof creationData.name !== 'string') return;
+            if (gameStateRef.current.players.some(player => player.playerId === connection.peer)) return;
+            if (pendingPeerCharacterIdsRef.current.has(connection.peer)) {
+                const queued = pendingPeerCharactersRef.current.get(connection.peer);
+                if (!queued || queued.connection === connection) return;
+                // A reconnected peer replaces an obsolete queued connection.
+                pendingPeerCharactersRef.current.delete(connection.peer);
+                pendingPeerCharacterIdsRef.current.delete(connection.peer);
+            }
+            if (hostRestorePendingRef.current) {
+                pendingPeerCharacterIdsRef.current.add(connection.peer);
+                pendingPeerCharactersRef.current.set(connection.peer, { player: creationData, connection });
+                return;
+            }
+        }
+        if (userGameplayActionBlocked()) return;
+        if (connection) pendingPeerCharacterIdsRef.current.add(connection.peer);
 
         const currentPartyLevel = gameStateRef.current?.playerCharacter.level || 1;
 
@@ -1022,6 +1057,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
 
     }, [gameSettings, t, setGameState, setGameHistory, userGameplayActionBlocked]);
+
+    // Peer callbacks are registered once and must use the current settings
+    // and guards rather than the render that created the connection.
+    const addPlayerRef = useRef(addPlayer);
+    addPlayerRef.current = addPlayer;
 
     const removePlayer = useCallback((playerIdToRemove: string) => {
         setGameState(prevState => {
@@ -1059,6 +1099,22 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return newState;
         });
     }, [t, setGameState, setGameHistory]);
+
+    const handlePeerDisconnected = useCallback((peerId: string) => {
+        if (gameStateRef.current?.networkRole !== 'host' || connectionsRef.current.has(peerId)) return;
+        if (hostRestorePendingRef.current) {
+            pendingRemovedPeersRef.current.add(peerId);
+            return;
+        }
+        setGameState(prev => {
+            if (!prev || !prev.peers.some(peer => peer.id === peerId)) return prev;
+            const peer = prev.peers.find(entry => entry.id === peerId);
+            setGameHistory(history => [...history, { sender: 'system', content: t('player_has_disconnected', { name: peer?.name || peerId }) }]);
+            return { ...prev, peers: prev.peers.filter(entry => entry.id !== peerId) };
+        });
+    }, [setGameState, setGameHistory, t]);
+    const handlePeerDisconnectedRef = useRef(handlePeerDisconnected);
+    handlePeerDisconnectedRef.current = handlePeerDisconnected;
 
     const passTurnToPlayer = useCallback((targetPlayerIndex: number) => {
         setGameState(prevState => {
@@ -1331,7 +1387,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 restoreFromSaveData,
                 packageSaveData: state => packageSaveDataRef.current?.(state) ?? null,
                 broadcastFullSync,
-                addPlayer,
+                addPlayer: (creationData, connection) => addPlayerRef.current(creationData, connection),
+                onPeerDisconnected: peerId => handlePeerDisconnectedRef.current(peerId),
                 removePlayer,
                 passTurnToPlayer,
                 gameContextRef,
@@ -1796,6 +1853,26 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         })) return;
         hostRestorePendingRef.current = null;
         pending.release();
+        for (const peerId of pendingRemovedPeersRef.current) {
+            pendingRemovedPeersRef.current.delete(peerId);
+            handlePeerDisconnected(peerId);
+        }
+        for (const [peerId, connection] of pendingNewPeersRef.current) {
+            pendingNewPeersRef.current.delete(peerId);
+            if (connection.open && connectionsRef.current.get(peerId) === connection) {
+                syncNewPeerRef.current(connection);
+            }
+        }
+        // A peer can finish character creation while the accepted snapshot is
+        // still waiting for React. Apply it only after that snapshot commits,
+        // and only if the same connection is still alive.
+        for (const [peerId, entry] of pendingPeerCharactersRef.current) {
+            pendingPeerCharactersRef.current.delete(peerId);
+            pendingPeerCharacterIdsRef.current.delete(peerId);
+            if (entry.connection.open && connectionsRef.current.get(peerId) === entry.connection) {
+                addPlayer(entry.player, entry.connection);
+            }
+        }
         setError(prev => prev === t('host_sync_not_ready') ? null : prev);
         // Re-render to publish a snapshot after the authority hold is released.
         setSnapshotEpoch(epoch => epoch + 1);
@@ -2318,6 +2395,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const closeCinemaPlayer = stopPlayingCinematic;
 
     const syncNewPeer = useCallback((conn: DataConnection) => {
+        if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
+            pendingNewPeersRef.current.set(conn.peer, conn);
+            return;
+        }
         const newPeer: PeerInfo = { id: conn.peer, name: conn.metadata.playerName || `Player-${conn.peer.slice(-4)}` };
 
         setGameState(prev => {
