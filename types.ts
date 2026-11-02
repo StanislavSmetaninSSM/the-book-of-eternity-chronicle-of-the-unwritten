@@ -1363,7 +1363,8 @@ export type NetworkMessageType =
   'submit_collective_action' |
   'request_simultaneous_action' |
   'simultaneous_action_submit' |
-  'turn_result_from_player';
+  'turn_result_from_player' |
+  'turn_result_ack';
 
 export interface SaveFile {
   gameContext: GameContext;

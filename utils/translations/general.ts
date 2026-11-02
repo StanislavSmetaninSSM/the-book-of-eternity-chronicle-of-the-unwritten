@@ -1,5 +1,8 @@
 export const general = {
   en: {
+    "network_protocol_incompatible": "The host has not supplied a compatible turn protocol. Update both game clients and reconnect before acting.",
+    "network_turn_rejected": "The host rejected this turn because its base state is stale or incompatible. It was not applied by the host. Synchronize before taking another action.",
+    "network_turn_duplicate": "The host already accepted this turn ID. Do not repeat the action; synchronize with the host.",
     "cancel_waiting_sync": "The result was already sent and applied locally. The host may or may not have received it. Do not repeat the action; reconnect and synchronize with the host first.",
     "turn_sync_before_send": "The host synchronized the game while your action was being generated. The old result was discarded and was not sent. Review the synchronized state before taking another action.",
     "turn_sync_during_send": "The host synchronized the game while your result was being sent. The synchronized state was preserved, but delivery of your result is not confirmed. Check the host history and synchronize again if necessary before repeating the action.",
@@ -228,6 +231,9 @@ export const general = {
     "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.": "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.",
   },
   ru: {
+    "network_protocol_incompatible": "Хост не предоставил совместимый протокол ходов. Обновите игру у всех участников и переподключитесь перед действием.",
+    "network_turn_rejected": "Хост отклонил ход: исходное состояние устарело или несовместимо. На хосте он не применён. Синхронизируйте игру перед следующим действием.",
+    "network_turn_duplicate": "Хост уже принял этот ID хода. Не повторяйте действие; синхронизируйте игру с хостом.",
     "cancel_waiting_sync": "Результат уже отправлен и применён локально. Хост мог его получить или не получить. Не повторяйте действие; сначала восстановите соединение и синхронизацию с хостом.",
     "turn_sync_before_send": "Хост синхронизировал игру во время подготовки действия. Старый результат отброшен и не отправлен. Перед следующим действием проверьте синхронизированное состояние.",
     "turn_sync_during_send": "Хост синхронизировал игру во время отправки результата. Синхронизированное состояние сохранено, но доставка результата не подтверждена. Перед повтором проверьте историю хоста и при необходимости синхронизируйте игру ещё раз.",

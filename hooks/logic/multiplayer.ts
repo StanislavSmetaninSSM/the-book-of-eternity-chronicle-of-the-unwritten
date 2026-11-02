@@ -4,6 +4,8 @@ import { GameState, SaveFile, NetworkMessage, NetworkRole, PeerInfo, PlayerChara
 import Peer, { DataConnection } from 'peerjs';
 import { createNewPlayerCharacter } from '../../utils/characterManager';
 import { formatError } from '../../utils/errorUtils';
+import { acceptHostStamp, HostTurnAuthority, type TurnSyncStamp } from '../../utils/networkTurnProtocol';
+import { sendOnOpenConnection } from '../../utils/peerSend';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -29,6 +31,9 @@ interface MultiplayerManagerProps {
     activeTurnRef: React.MutableRefObject<symbol | null>;
     abortControllerRef: React.MutableRefObject<AbortController | null>;
     turnPhaseRef: React.MutableRefObject<'idle' | 'generating' | 'sending' | 'committed' | 'awaiting-sync'>;
+    hostTurnAuthority: HostTurnAuthority;
+    clientTurnStampRef: React.MutableRefObject<TurnSyncStamp | null>;
+    pendingNetworkTurnRef: React.MutableRefObject<string | null>;
     syncNewPeerRef: React.MutableRefObject<(conn: DataConnection) => void>;
     sendMessageRef: React.MutableRefObject<(message: string, image?: { data: string; mimeType: string; } | null) => void>;
     gameStateRef: React.RefObject<GameState | null>;
@@ -36,25 +41,30 @@ interface MultiplayerManagerProps {
 }
 
 
-export const applyPlayerTurnResult = async (message: NetworkMessage, {
-    gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t
-}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't'>) => {
-    if (!message.payload?.saveFile) {
-        console.error("Received turn_result_from_player without saveFile payload.");
-        return;
-    }
+export const applyPlayerTurnResult = async (message: NetworkMessage, connectionId: string, {
+    gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority
+}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't' | 'hostTurnAuthority'>, acknowledge: (payload: any) => Promise<void>) => {
     const current = gameStateRef.current;
-    if (!current || current.players[current.activePlayerIndex]?.playerId !== message.senderId) {
-        console.warn(`Turn result from non-active player ${message.senderId}. Ignoring.`);
-        return;
-    }
-    // The returned snapshot contains the exact state and logs restored on
-    // the host, without relying on pending React state or stale closures.
-    const restored = restoreFromSaveData(message.payload.saveFile, true);
+    const submission = message.payload?.submission;
+    const decision = message.payload?.saveFile && current
+        ? hostTurnAuthority.accept(submission, message.senderId, connectionId, current.players[current.activePlayerIndex]?.playerId)
+        : 'invalid';
+    const reply = async (status: string) => {
+        try { await acknowledge({ turnId: submission?.turnId, status }); }
+        catch (error) { console.warn('Could not deliver turn acknowledgement:', error); }
+    };
+    if (decision !== 'accepted') { await reply(decision); return; }
+    let restored = false;
     try {
-        await broadcastFullSync(restored);
+        const snapshot = restoreFromSaveData(message.payload.saveFile, true);
+        restored = true;
+        // Acknowledgement is a receipt, not proof that every peer received sync.
+        void reply('accepted').catch(() => {});
+        await broadcastFullSync(snapshot);
     } catch (err) {
-        const error = `${t('error_turn_applied_followup')}\n\n${formatError(err)}`;
+        // The grant was consumed even if restoration failed; never replay blindly.
+        if (!restored) { hostTurnAuthority.markUnknown(submission.turnId); void reply('unknown'); }
+        const error = `${t(restored ? 'error_turn_applied_followup' : 'error_turn_delivery_unknown')}\n\n${formatError(err)}`;
         setError(error);
         setGameHistory(prev => [...prev, { sender: 'system', content: `Error: ${error}` }]);
     }
@@ -81,6 +91,9 @@ export const createMultiplayerManager = (
         activeTurnRef,
         abortControllerRef,
         turnPhaseRef,
+        hostTurnAuthority,
+        clientTurnStampRef,
+        pendingNetworkTurnRef,
         syncNewPeerRef,
         sendMessageRef,
         gameStateRef,
@@ -105,6 +118,9 @@ export const createMultiplayerManager = (
     };
 
     const startHost = (creationData: any) => {
+        hostTurnAuthority.reset();
+        clientTurnStampRef.current = null;
+        pendingNetworkTurnRef.current = null;
         setIsLoading(true);
         setError(null);
         if (peerRef.current) {
@@ -133,7 +149,7 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
-                        applyPlayerTurnResult(message, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t });
+                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
                     case 'new_player_character_data': {
@@ -142,9 +158,10 @@ export const createMultiplayerManager = (
                     }
                     case 'request_full_sync': {
                         console.log(`Received sync request from ${conn.peer}. Broadcasting full state.`);
+                        hostTurnAuthority.revoke();
                         const saveData = packageSaveData(gameStateRef.current);
                         if (saveData) {
-                            Promise.resolve().then(() => broadcastFullSync(saveData)).then(() => {
+                            Promise.resolve(broadcastFullSync(saveData)).then(() => {
                                 const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
                                 setGameHistory(prev => [...prev, systemMessage]);
                             }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
@@ -232,6 +249,8 @@ export const createMultiplayerManager = (
     };
 
     const joinGame = (hostPeerId: string, role: NetworkRole, playerName: string) => {
+        clientTurnStampRef.current = null;
+        pendingNetworkTurnRef.current = null;
         setIsLoading(true);
         setError(null);
         if (peerRef.current) {
@@ -263,6 +282,10 @@ export const createMultiplayerManager = (
                 
                 switch(message.type) {
                     case 'full_sync':
+                        const stampDecision = acceptHostStamp(clientTurnStampRef.current, message.payload?.protocol);
+                        if (stampDecision === 'invalid') { setError(t('network_protocol_incompatible')); setIsLoading(false); break; }
+                        if (stampDecision !== 'accept') break;
+                        clientTurnStampRef.current = message.payload.protocol;
                         console.log("Received full_sync, restoring state...");
 
                         // ФИКС: Сначала восстанавливаем состояние
@@ -305,6 +328,20 @@ export const createMultiplayerManager = (
                         // Keep submission locked until that task notices the new revision.
                         setIsLoading(activeTurnRef.current !== null);
                         break;
+
+                    case 'turn_result_ack': {
+                        const { turnId, status } = message.payload || {};
+                        if (typeof turnId !== 'string' || pendingNetworkTurnRef.current !== turnId) break;
+                        if (status === 'accepted') break; // Wait for the authoritative full sync.
+                        pendingNetworkTurnRef.current = null;
+                        const warning = t(status === 'duplicate' ? 'network_turn_duplicate' : status === 'unknown' ? 'error_turn_delivery_unknown' : 'network_turn_rejected');
+                        setError(warning);
+                        setGameHistory(prev => [...prev, { sender: 'system', content: warning }]);
+                        if (activeTurnRef.current && turnPhaseRef.current === 'sending') abortControllerRef.current?.abort();
+                        else setIsLoading(false);
+                        requestSyncFromHost();
+                        break;
+                    }
 
                     case 'chat_message':
                         onChatMessage(message.payload);
@@ -412,6 +449,9 @@ export const createMultiplayerManager = (
             return;
         }
 
+        hostTurnAuthority.reset();
+        clientTurnStampRef.current = null;
+        pendingNetworkTurnRef.current = null;
         setIsLoading(true);
         setError(null);
         if (peerRef.current) {
@@ -468,7 +508,7 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
-                        applyPlayerTurnResult(message, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t });
+                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
                     case 'new_player_character_data': {
@@ -485,9 +525,10 @@ export const createMultiplayerManager = (
                     }
                     case 'request_full_sync': {
                         console.log(`Received sync request from ${conn.peer}. Broadcasting full state.`);
+                        hostTurnAuthority.revoke();
                         const saveData = packageSaveData(gameStateRef.current);
                         if (saveData) {
-                            Promise.resolve().then(() => broadcastFullSync(saveData)).then(() => {
+                            Promise.resolve(broadcastFullSync(saveData)).then(() => {
                                 const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
                                 setGameHistory(prev => [...prev, systemMessage]);
                             }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
@@ -567,6 +608,9 @@ export const createMultiplayerManager = (
     };
 
     const disconnect = () => {
+        clientTurnStampRef.current = null;
+        pendingNetworkTurnRef.current = null;
+        hostTurnAuthority.reset();
         const role = gameStateRef.current?.networkRole;
         
         setGameHistory(prev => [...prev, { sender: 'system', content: t('disconnecting_message') }]);

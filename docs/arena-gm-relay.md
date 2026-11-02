@@ -100,3 +100,21 @@ When an enabled faction-progression stage creates or changes a world event and e
 ### Combat-end NPC handoff
 
 If combat ends with both combatant arrays explicitly empty and named NPCs are known, the turn also runs the NPC stage. The combat log must provide evidence for final named-NPC health and effects; the combat stage reports wounds and effects using its allowed atomic keys, and the NPC stage can report supported final health in `NPCsData`. This handoff does not compute or invent missing values and is not proof that the GM calculated them correctly. The combat-log stage continues to receive the full guide.
+
+### Multiplayer turn synchronization
+
+Hosts and players must run the updated protocol together; older peers without
+protocol version 1 cannot submit turns or restore a full sync. Reconnect after
+switching hosts or restarting the host session. Each host session issues a
+revision with its authoritative snapshot. Player turns and questions include
+that revision and a unique turn ID. A host consumes the grant once and rejects
+late, duplicate, unauthorized, or incompatible results. A sync request revokes
+the old grant before the replacement snapshot is sent; a pending host state
+update delays publication until a current snapshot is available.
+
+An ACK is best-effort, not a reliable delivery guarantee. If sending was
+cancelled or an ACK/sync is lost, delivery can be unknown: request a host sync
+and inspect the authoritative result before retrying. Do not repeat an action
+just because an ACK was not received. Protocol IDs and PeerJS connection IDs
+are concurrency checks, not authentication or protection against a malicious
+host/player. The accepted-ID registry is in memory for the hosting session.

@@ -1,3 +1,4 @@
+import { HostTurnAuthority, type TurnSyncStamp } from '../utils/networkTurnProtocol';
 import { broadcastToConnections } from '../utils/peerSend';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // FIX: Imported missing types to resolve multiple "Cannot find name" errors.
@@ -74,9 +75,17 @@ const formatTime = (totalMinutes: number) => {
 export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [gameState, _setGameState] = useState<GameState | null>(null);
     const gameStateRef = useRef(gameState);
+    const [snapshotEpoch, setSnapshotEpoch] = useState(0);
+    const hostTurnAuthorityRef = useRef<HostTurnAuthority | null>(null);
+    if (!hostTurnAuthorityRef.current) hostTurnAuthorityRef.current = new HostTurnAuthority();
+    const clientTurnStampRef = useRef<TurnSyncStamp | null>(null);
+    const pendingNetworkTurnRef = useRef<string | null>(null);
 
     const setGameState = useCallback((action: React.SetStateAction<GameState | null>) => {
+        const finishMutation = hostTurnAuthorityRef.current!.beginMutation();
         _setGameState(prevState => {
+          let changed = true;
+          try {
             const newState = typeof action === 'function' ? (action as (prevState: GameState | null) => GameState | null)(prevState) : action;
 
             if (newState) {
@@ -88,8 +97,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 }
             }
 
+            changed = newState !== prevState;
             gameStateRef.current = newState;
             return newState;
+          } finally {
+            finishMutation();
+            // Even a no-op updater can invalidate a grant without changing the
+            // state identity, so request a post-render publication explicitly.
+            if (!changed && gameStateRef.current?.networkRole === 'host') {
+                queueMicrotask(() => setSnapshotEpoch(epoch => epoch + 1));
+            }
+          }
         });
     }, []);
 
@@ -1059,11 +1077,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const broadcastFullSync = useCallback((saveData: SaveFile) => {
         console.log("Broadcasting full sync to all clients...");
-        const syncMessage: NetworkMessage = {
-            type: 'full_sync',
-            payload: { saveFile: saveData },
-        };
-
         const currentGameState = gameStateRef.current;
 
         if (currentGameState?.networkRole !== 'host') {
@@ -1071,6 +1084,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return Promise.reject(new Error("Only the host can broadcast a full sync."));
         }
 
+        // An asynchronously retained snapshot must never receive a fresh grant.
+        if (saveData.gameState !== currentGameState) return Promise.resolve();
+        const stamp = hostTurnAuthorityRef.current!.issue();
+        // A pending React mutation means this snapshot might be stale. The
+        // state-change effect publishes the committed snapshot after render.
+        if (!stamp) return Promise.resolve();
+        const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: saveData, protocol: stamp } };
         return broadcastToConnections(connectionsRef.current.values(), syncMessage);
     }, []);
 
@@ -1091,7 +1111,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setLastJsonResponse, setLastRequestJson,
             setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions,
             setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
-            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef,
+            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef,
             setSuperInstructions, setGameSettings,
             setLanguage,
             t,
@@ -1140,7 +1160,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     const initialContext = createInitialContext(creationData, language);
                     gameContextRef.current = initialContext;
 
-                    const firstTurnManager = createTurnManager({ gameState: null, setGameState, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
+                    const firstTurnManager = createTurnManager({ gameState: null, setGameState, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
                     firstTurnManager.initializeAndRunFirstTurn(creationData, networkConfig);
                 },
                 restoreFromSaveData,
@@ -1157,6 +1177,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 activeTurnRef,
                 abortControllerRef,
                 turnPhaseRef,
+                hostTurnAuthority: hostTurnAuthorityRef.current!,
+                clientTurnStampRef,
+                pendingNetworkTurnRef,
                 syncNewPeerRef,
                 sendMessageRef,
                 gameStateRef,
@@ -1555,12 +1578,21 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
     }, [gameState, allManagers]);
 
+    useEffect(() => {
+        if (gameState?.networkRole !== 'host' || gameState !== gameStateRef.current) return;
+        // History and logs can change independently of gameState.
+        hostTurnAuthorityRef.current!.revoke();
+        const saveData = allManagers.packageSaveData(gameState, false);
+        if (saveData) void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
+    }, [gameState, snapshotEpoch, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt]);
+
     const forceSyncAll = useCallback(() => {
         if (gameState?.networkRole !== 'host') {
             console.warn("forceSyncAll called by non-host.");
             return;
         }
         console.log("Host is forcing a full sync...");
+        hostTurnAuthorityRef.current!.revoke();
         const saveData = allManagers.packageSaveData(gameState, false);
         if (saveData) {
             void allManagers.broadcastFullSync(saveData).then(() => {
@@ -2068,12 +2100,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const saveData = allManagers.packageSaveData(gameStateRef.current!, false);
         
         if (saveData) {
-            const syncMessage: NetworkMessage = {
-                type: 'full_sync',
-                payload: { saveFile: saveData },
-            };
-            conn.send(syncMessage);
-            console.log(`Sent full_sync to ${conn.peer}`);
+            void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
         } else {
             console.warn("Could not package save data for new peer, game state might be null. This can happen if a player connects during initial world generation.");
         }
@@ -2319,9 +2346,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
     }, [t, setGameHistory, setGameState]);
 
+    const cinemaAbortControllerRef = useRef<AbortController | null>(null);
     const cancelCinemaGeneration = useCallback(() => {
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
+        if (cinemaAbortControllerRef.current) {
+            cinemaAbortControllerRef.current.abort();
+            cinemaAbortControllerRef.current = null;
         }
         setIsGeneratingCinema(false);
         setExtendingCinematicId(null);
@@ -2335,7 +2364,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setError(null);
         setCinemaGenerationProgress({ current: 0, total: 1, message: t('Generating trailer script...') });
 
-        abortControllerRef.current = new AbortController();
+        cinemaAbortControllerRef.current?.abort();
+        const cinemaController = new AbortController();
+        cinemaAbortControllerRef.current = cinemaController;
 
         try {
             const cinemaContext = {
@@ -2348,7 +2379,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const result = await executeCancellableJsonGeneration(
                 prompt,
                 cinemaContext,
-                abortControllerRef.current.signal,
+                cinemaController.signal,
                 (text) => { /* streaming not needed here */ }
             );
 
@@ -2365,7 +2396,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setCinemaGenerationProgress({ current: 0, total: newCinematic.frames.length, message: t('Generating scene images...') });
 
                 for (let i = 0; i < newCinematic.frames.length; i++) {
-                    if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
+                    if (cinemaController.signal.aborted) throw new Error("Cancelled");
                     if (Boolean(gameContextRef.current?.gameSettings?.disableImageGeneration)) break;
                     setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newCinematic.frames.length}` }));
 
@@ -2373,14 +2404,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         newCinematic.frames[i].imagePrompt,
                         1024,
                         1024,
-                        abortControllerRef.current.signal,
+                        cinemaController.signal,
                     );
-                    if (!abortControllerRef.current.signal.aborted) {
+                    if (!cinemaController.signal.aborted) {
                         newCinematic.frames[i].imageUrl = imageUrl;
                     }
                 }
             }
             
+            if (cinemaController.signal.aborted) return;
             setGameState(prev => {
                 if (!prev) return null;
                 const cinematics = [...(prev.cinematics || []), newCinematic];
@@ -2395,7 +2427,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 console.error("Failed to generate film trailer:", e);
             }
         } finally {
-            setIsGeneratingCinema(false);
+            if (cinemaAbortControllerRef.current === cinemaController) {
+                cinemaAbortControllerRef.current = null;
+                setIsGeneratingCinema(false);
+            }
         }
     }, [gameSettings, superInstructions, t, setError, setGameState]);
 
@@ -2412,7 +2447,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setExtendingCinematicId(cinematicId);
         setError(null);
         setCinemaGenerationProgress({ current: 0, total: 1, message: t('Continuing trailer script...') });
-        abortControllerRef.current = new AbortController();
+        cinemaAbortControllerRef.current?.abort();
+        const cinemaController = new AbortController();
+        cinemaAbortControllerRef.current = cinemaController;
 
         try {
             const cinemaContext = {
@@ -2424,7 +2461,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const result = await executeCancellableJsonGeneration(
                 prompt,
                 cinemaContext,
-                abortControllerRef.current.signal,
+                cinemaController.signal,
                 (text) => { /* streaming not needed here */ }
             );
 
@@ -2434,18 +2471,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setCinemaGenerationProgress({ current: 0, total: newFrames.length, message: t('Generating additional scenes...') });
 
                 for (let i = 0; i < newFrames.length; i++) {
-                    if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
+                    if (cinemaController.signal.aborted) throw new Error("Cancelled");
                     if (Boolean(gameContextRef.current?.gameSettings?.disableImageGeneration)) break;
                     setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newFrames.length}` }));
                     newFrames[i].imageUrl = await requestArenaGmImage(
                         newFrames[i].imagePrompt,
                         1024,
                         1024,
-                        abortControllerRef.current.signal,
+                        cinemaController.signal,
                     );
                 }
             }
 
+            if (cinemaController.signal.aborted) return;
             setGameState(prev => {
                 if (!prev) return null;
                 const newCinematics = (prev.cinematics || []).map(c => {
@@ -2465,8 +2503,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 console.error("Failed to continue film trailer:", e);
             }
         } finally {
-            setIsGeneratingCinema(false);
-            setExtendingCinematicId(null);
+            if (cinemaAbortControllerRef.current === cinemaController) {
+                cinemaAbortControllerRef.current = null;
+                setIsGeneratingCinema(false);
+                setExtendingCinematicId(null);
+            }
         }
     }, [gameSettings, superInstructions, t, setError, setGameState, gameStateRef]);
 

@@ -7,6 +7,7 @@ import { formatError } from '../../utils/errorUtils';
 import { playNotificationSound } from '../../utils/soundManager';
 import { DataConnection } from 'peerjs';
 import { sendOnOpenConnection } from '../../utils/peerSend';
+import type { TurnSyncStamp } from '../../utils/networkTurnProtocol';
 import { deepMergeResponses, processAndApplyResponse } from '../../utils/responseProcessor';
 import { deepStripModerationSymbols } from '../../utils/textUtils';
 import { acquireArenaGmTurnLease } from '../../utils/arenaGmRelay';
@@ -38,6 +39,7 @@ export const createTurnManager = (
         setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
         gameContextRef, abortControllerRef,
         syncRevisionRef = { current: 0 }, activeTurnRef = { current: null }, turnPhaseRef = { current: 'idle' },
+        clientTurnStampRef, pendingNetworkTurnRef,
         setSuperInstructions, setGameSettings,
         setLanguage,
         t,
@@ -74,6 +76,8 @@ export const createTurnManager = (
         syncRevisionRef?: React.MutableRefObject<number>,
         activeTurnRef?: React.MutableRefObject<symbol | null>,
         turnPhaseRef?: React.MutableRefObject<'idle' | 'generating' | 'sending' | 'committed' | 'awaiting-sync'>,
+        clientTurnStampRef?: React.MutableRefObject<TurnSyncStamp | null>,
+        pendingNetworkTurnRef?: React.MutableRefObject<string | null>,
         setSuperInstructions: React.Dispatch<React.SetStateAction<string>>,
         setGameSettings: React.Dispatch<React.SetStateAction<any>>,
         setLanguage: (lang: any) => void,
@@ -105,6 +109,12 @@ export const createTurnManager = (
         turnPhaseRef.current = 'generating';
         const startingRevision = syncRevisionRef.current;
         const isPlayerTurn = (baseStateOverride || gameStateRef.current)?.networkRole === 'player';
+        const startingStamp = clientTurnStampRef?.current ? { ...clientTurnStampRef.current } : null;
+        if (isPlayerTurn && clientTurnStampRef && !startingStamp) {
+            activeTurnRef.current = null; turnPhaseRef.current = 'idle';
+            setIsLoading(false); setError(t('network_protocol_incompatible'));
+            return;
+        }
         const wasSuperseded = () => isPlayerTurn && syncRevisionRef.current !== startingRevision;
         setIsLoading(true);
         setError(null);
@@ -229,11 +239,12 @@ export const createTurnManager = (
                 if (hostConnectionRef.current) {
                     const message: NetworkMessage = {
                         type: 'turn_result_from_player',
-                        payload: { saveFile: newSaveData },
+                        payload: { saveFile: newSaveData, ...(startingStamp ? { submission: { turnId: crypto.randomUUID(), base: startingStamp } } : {}) },
                         senderId: baseState.myPeerId!,
                     };
                     if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
                     playerSendAttempted = true;
+                    if (pendingNetworkTurnRef) pendingNetworkTurnRef.current = message.payload.submission?.turnId || null;
                     turnPhaseRef.current = 'sending';
                     await waitForSendOrAbort(sendOnOpenConnection(hostConnectionRef.current, message), turnController.signal);
                     if (wasSuperseded()) { reportSuperseded(); return; }
@@ -427,6 +438,11 @@ export const createTurnManager = (
     const askQuestion = async (question: string, image?: { data: string; mimeType: string; } | null) => {
         const baseState: GameState | null = gameStateRef.current;
         if (!gameContextRef.current || isLoading || !baseState || activeTurnRef.current) return;
+        const startingStamp = clientTurnStampRef?.current ? { ...clientTurnStampRef.current } : null;
+        if (baseState.networkRole === 'player' && clientTurnStampRef && !startingStamp) {
+            setError(t('network_protocol_incompatible'));
+            return;
+        }
     
         if (packageSaveDataForTurn && setLastTurnSaveFile) {
             const saveData = packageSaveDataForTurn();
@@ -548,11 +564,12 @@ export const createTurnManager = (
                 if (hostConnectionRef.current) {
                     const message: NetworkMessage = {
                         type: 'turn_result_from_player',
-                        payload: { saveFile: newSaveData },
+                        payload: { saveFile: newSaveData, ...(startingStamp ? { submission: { turnId: crypto.randomUUID(), base: startingStamp } } : {}) },
                         senderId: baseState.myPeerId!,
                     };
                     if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
                     playerSendAttempted = true;
+                    if (pendingNetworkTurnRef) pendingNetworkTurnRef.current = message.payload.submission?.turnId || null;
                     turnPhaseRef.current = 'sending';
                     await waitForSendOrAbort(sendOnOpenConnection(hostConnectionRef.current, message), turnController.signal);
                     if (wasSuperseded()) { reportSuperseded(); return; }

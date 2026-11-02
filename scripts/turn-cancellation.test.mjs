@@ -35,6 +35,8 @@ test('cancel and superseding sync stop waiting without claiming an in-flight sen
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { createTurnManager } = await server.ssrLoadModule('/hooks/logic/turn.ts');
+    const { HostTurnAuthority } = await server.ssrLoadModule('/utils/networkTurnProtocol.ts');
+    const { applyPlayerTurnResult } = await server.ssrLoadModule('/hooks/logic/multiplayer.ts');
     const { translate } = await server.ssrLoadModule('/utils/localization.ts');
     for (const scenario of ['cancel-send', 'sync-generate', 'sync-send', 'host-committed', 'awaiting-sync']) for (const question of [false, true]) {
       const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
@@ -46,8 +48,9 @@ test('cancel and superseding sync stop waiting without claiming an in-flight sen
       const sent = deferred(), sendGate = deferred(), broadcastStarted = deferred(), broadcastGate = deferred();
       responseGate = scenario === 'sync-generate' ? deferred() : null; responseStarted = deferred();
       const noop = () => {};
-      const conn = { open: true, on: noop, off: noop, send: () => { sent.resolve(); return scenario === 'awaiting-sync' ? undefined : sendGate.promise; } };
-      const manager = createTurnManager({ gameState: base, setGameState: v => { state = typeof v === 'function' ? v(state) : v; }, gameHistory: [], setGameHistory: v => { history = typeof v === 'function' ? v(history) : v; }, isLoading: false, setIsLoading: v => { loading = v; }, setError: v => { error = v; }, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: v => { gameLog = typeof v === 'function' ? v(gameLog) : v; }, setCombatLog: v => { combatLog = typeof v === 'function' ? v(combatLog) : v; }, setSceneImagePrompt: noop, setSuggestedActions: noop, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef: contextRef, abortControllerRef: controller, syncRevisionRef: revision, activeTurnRef: active, turnPhaseRef: phase, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: (k,r) => translate('en', k, r), turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: conn }, gameStateRef: { current: base }, broadcastFullSync: () => { broadcastStarted.resolve(); return broadcastGate.promise; }, combatLog: ['Old battle'], gameLog: ['Old log'] });
+      const authority = new HostTurnAuthority(() => 'test-session'); const stamp = authority.issue(); let sentPacket;
+      const conn = { open: true, on: noop, off: noop, send: message => { sentPacket = message; sent.resolve(); return scenario === 'awaiting-sync' ? undefined : sendGate.promise; } };
+      const manager = createTurnManager({ gameState: base, setGameState: v => { state = typeof v === 'function' ? v(state) : v; }, gameHistory: [], setGameHistory: v => { history = typeof v === 'function' ? v(history) : v; }, isLoading: false, setIsLoading: v => { loading = v; }, setError: v => { error = v; }, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: v => { gameLog = typeof v === 'function' ? v(gameLog) : v; }, setCombatLog: v => { combatLog = typeof v === 'function' ? v(combatLog) : v; }, setSceneImagePrompt: noop, setSuggestedActions: noop, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef: contextRef, abortControllerRef: controller, clientTurnStampRef: { current: stamp }, pendingNetworkTurnRef: { current: null }, syncRevisionRef: revision, activeTurnRef: active, turnPhaseRef: phase, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: (k,r) => translate('en', k, r), turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: conn }, gameStateRef: { current: base }, broadcastFullSync: () => { broadcastStarted.resolve(); return broadcastGate.promise; }, combatLog: ['Old battle'], gameLog: ['Old log'] });
       const pending = question ? manager.askQuestion('Heal?') : manager.resumeInterruptedTurn({ context, baseState: base, history: [] });
       if (scenario === 'sync-generate') await responseStarted.promise;
       else if (scenario === 'host-committed') await broadcastStarted.promise;
@@ -70,6 +73,17 @@ test('cancel and superseding sync stop waiting without claiming an in-flight sen
         if (scenario === 'cancel-send') {
           assert.equal(state.playerCharacter.currentHealth, 40); assert.deepEqual(gameLog, ['Old log']); assert.deepEqual(combatLog, ['Old battle']);
           assert.ok(!history.some(m => m.sender === 'gm')); assert.match(error, /host may still have received/i); assert.match(error, /Do not repeat/);
+          // A sync invalidates the captured submission; even after a newer
+          // result has been accepted, delivering this actual turn packet late
+          // must not restore its old state or history on the host.
+          authority.revoke(); const newStamp = authority.issue();
+          let hostState = { ...base, networkRole: 'host', playerCharacter: { ...p, currentHealth: 70 } }, hostHistory = ['new'];
+          const hostRef = { current: hostState }; let hostRestores = 0, decision;
+          const hostProps = { gameStateRef: hostRef, hostTurnAuthority: authority, restoreFromSaveData: save => { hostRestores++; hostRef.current = save.gameState; hostHistory = save.gameHistory; return save; }, broadcastFullSync: noop, setError: noop, setGameHistory: noop, t: k => k };
+          const next = { ...sentPacket, payload: { ...sentPacket.payload, submission: { turnId: 'newer-action-00000000001', base: newStamp }, saveFile: { ...sentPacket.payload.saveFile, gameState: hostState, gameHistory: hostHistory } } };
+          await applyPlayerTurnResult(next, 'p', hostProps, async ack => { decision = ack.status; }); assert.equal(decision, 'accepted');
+          await applyPlayerTurnResult(sentPacket, 'p', hostProps, async ack => { decision = ack.status; });
+          assert.equal(decision, 'stale'); assert.equal(hostRestores, 1); assert.equal(hostRef.current.playerCharacter.currentHealth, 70); assert.deepEqual(hostHistory, ['new']);
           sendGate.resolve(); await Promise.resolve(); assert.equal(state.playerCharacter.currentHealth, 40);
         } else {
           assert.equal(state.playerCharacter.currentHealth, 70); assert.deepEqual(gameLog, ['Authoritative log']); assert.deepEqual(combatLog, ['Authoritative battle']);
