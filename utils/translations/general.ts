@@ -1,5 +1,7 @@
 export const general = {
   en: {
+    "error_turn_delivery_unknown": "The result was not applied locally because sending failed. The host may still have received it. Do not repeat the action until you reconnect and synchronize with the host.",
+    "error_sync_failed": "Synchronization could not be sent to every player. Do not repeat the last action; reconnect and synchronize before continuing. Delivery is not guaranteed.",
     "error_turn_applied_followup": "The turn was already applied, but a subsequent operation failed. Do not repeat the action. In multiplayer, reconnect and synchronize before continuing; other players may not have received the result.",
     "warning_item_journal_identity": "Warning: the journal entry for item {subject} was not added because the item could not be identified uniquely. Other turn changes may have been applied.",
     "warning_inventory_item_identity": "Warning: item {subject} was not added or updated because its ID is ambiguous or the new item is incomplete. Other turn changes may have been applied.",
@@ -223,6 +225,8 @@ export const general = {
     "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.": "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.",
   },
   ru: {
+    "error_turn_delivery_unknown": "Результат не применён локально из-за ошибки отправки. Хост всё же мог его получить. Не повторяйте действие, пока не восстановите соединение и синхронизацию с хостом.",
+    "error_sync_failed": "Не удалось отправить синхронизацию всем игрокам. Не повторяйте последнее действие; восстановите соединение и синхронизацию перед продолжением. Доставка не гарантирована.",
     "error_turn_applied_followup": "Ход уже применён, но последующее действие завершилось ошибкой. Не повторяйте ход. В мультиплеере восстановите соединение и синхронизацию перед продолжением: другие игроки могли не получить результат.",
     "warning_item_journal_identity": "Предупреждение: запись в дневник предмета {subject} не добавлена, поскольку предмет не удалось однозначно определить. Другие изменения хода могли быть применены.",
     "warning_inventory_item_identity": "Предупреждение: предмет {subject} не добавлен и не обновлён, поскольку его ID неоднозначен или данные нового предмета неполны. Другие изменения хода могли быть применены.",

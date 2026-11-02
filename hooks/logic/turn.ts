@@ -6,6 +6,7 @@ import { createInitialContext, buildNextContext, WorldMapWarning } from '../../u
 import { formatError } from '../../utils/errorUtils';
 import { playNotificationSound } from '../../utils/soundManager';
 import { DataConnection } from 'peerjs';
+import { sendOnOpenConnection } from '../../utils/peerSend';
 import { deepMergeResponses, processAndApplyResponse } from '../../utils/responseProcessor';
 import { deepStripModerationSymbols } from '../../utils/textUtils';
 import { acquireArenaGmTurnLease } from '../../utils/arenaGmRelay';
@@ -73,7 +74,7 @@ export const createTurnManager = (
         gameSettings: GameSettings | null,
         hostConnectionRef: React.MutableRefObject<DataConnection | null>,
         gameStateRef: React.RefObject<GameState | null>,
-        broadcastFullSync: (saveData: SaveFile) => void,
+        broadcastFullSync: (saveData: SaveFile) => void | Promise<void>,
         combatLog: string[],
         gameLog: string[],
         packageSaveDataForTurn?: () => SaveFile | null;
@@ -99,6 +100,7 @@ export const createTurnManager = (
         // Errors after committing the state (e.g. broadcasting it) must not
         // roll back its logs or suggest that the user repeat the action.
         let stateCommitted = false;
+        let playerSendAttempted = false;
 
         try {
             const onPartialResponse = (response: any, stepName: string, modelName: string) => {
@@ -199,7 +201,8 @@ export const createTurnManager = (
                         payload: { saveFile: newSaveData },
                         senderId: baseState.myPeerId!,
                     };
-                    hostConnectionRef.current.send(message);
+                    playerSendAttempted = true;
+                    await sendOnOpenConnection(hostConnectionRef.current, message);
                     
                     // Optimistic update for UI responsiveness
                     applyResponsePresentation();
@@ -256,7 +259,7 @@ export const createTurnManager = (
                         sceneImagePrompt: finalResponse.image_prompt || null,
                         timestamp: new Date().toISOString()
                     };
-                    broadcastFullSync(newSaveData);
+                    await broadcastFullSync(newSaveData);
                 }
             }
             if (baseState.networkRole === 'none') {
@@ -271,9 +274,9 @@ export const createTurnManager = (
             setCombatLog(combatLog);
           }
           setIsLoading(false);
-          if (err.name !== 'AbortError' || stateCommitted) {
+          if (err.name !== 'AbortError' || stateCommitted || playerSendAttempted) {
             const detail = formatError(err);
-            const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : detail;
+            const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : playerSendAttempted ? `${t('error_turn_delivery_unknown')}\n\n${detail}` : detail;
             setError(formattedError);
             const systemMessage: ChatMessage = { sender: 'system', content: `Error: ${formattedError}` };
             setGameHistory(prev => [...prev, systemMessage]);
@@ -419,6 +422,7 @@ export const createTurnManager = (
         };
         setLastRequestJson(JSON.stringify(context, null, 2));
         let stateCommitted = false;
+        let playerSendAttempted = false;
 
         try {
             const onStepStart = (stepName: string, modelName: string) => {
@@ -486,7 +490,8 @@ export const createTurnManager = (
                         payload: { saveFile: newSaveData },
                         senderId: baseState.myPeerId!,
                     };
-                    hostConnectionRef.current.send(message);
+                    playerSendAttempted = true;
+                    await sendOnOpenConnection(hostConnectionRef.current, message);
                     
                     // Optimistic update for UI responsiveness
                     setGameHistory(newHistoryWithAnswer);
@@ -537,7 +542,7 @@ export const createTurnManager = (
                         sceneImagePrompt: finalMergedResponse.image_prompt || null,
                         timestamp: new Date().toISOString()
                     };
-                    broadcastFullSync(newSaveData);
+                    await broadcastFullSync(newSaveData);
                 }
             }
           
@@ -547,9 +552,9 @@ export const createTurnManager = (
             setCombatLog(combatLog);
           }
           setIsLoading(false);
-          if (err.name !== 'AbortError' || stateCommitted) {
+          if (err.name !== 'AbortError' || stateCommitted || playerSendAttempted) {
             const detail = formatError(err);
-            const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : detail;
+            const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : playerSendAttempted ? `${t('error_turn_delivery_unknown')}\n\n${detail}` : detail;
             setError(formattedError);
             const systemMessage: ChatMessage = { sender: 'system', content: `Error: ${formattedError}` };
             if (stateCommitted) setGameHistory(prev => [...prev, systemMessage]);

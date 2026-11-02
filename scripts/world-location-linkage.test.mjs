@@ -852,7 +852,7 @@ test('failed host sync preserves committed turn and question; failed player send
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { createTurnManager } = await server.ssrLoadModule('/hooks/logic/turn.ts');
     const { translate } = await server.ssrLoadModule('/utils/localization.ts');
-    for (const [role, mode] of [['host', 'throw'], ['host', 'success'], ['player', 'throw'], ['player', 'missing'], ['player', 'success']]) for (const question of [false, true]) for (const activeCombat of [false, true]) {
+    for (const [role, mode] of [['host', 'throw'], ['host', 'success'], ['player', 'throw'], ['player', 'missing'], ['player', 'closed'], ['player', 'event'], ['player', 'reject'], ['player', 'success']]) for (const question of [false, true]) for (const activeCombat of [false, true]) {
       const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
       context.currentTurnNumber = 2;
       if (activeCombat) context.enemiesDataForCurrentTurn = [{ name: 'Enemy', currentHealth: 10, maxHealth: 10 }];
@@ -862,7 +862,14 @@ test('failed host sync preserves committed turn and question; failed player send
       const savedGameLog = ['Previous calculation'], savedCombatLog = ['Previous combat'];
       let state = base, history = [], gameLog = savedGameLog, combatLog = savedCombatLog, error = null, loading = null, sentSync = null, sentPlayer = null, image = 'Previous image', actions = [];
       const contextRef = { current: context }, noop = () => {};
-      const manager = createTurnManager({ gameState: base, setGameState: v => { state = typeof v === 'function' ? v(state) : v; }, gameHistory: [], setGameHistory: v => { history = typeof v === 'function' ? v(history) : v; }, isLoading: false, setIsLoading: v => { loading = v; }, setError: v => { error = v; }, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: v => { gameLog = typeof v === 'function' ? v(gameLog) : v; }, setCombatLog: v => { combatLog = typeof v === 'function' ? v(combatLog) : v; }, setSceneImagePrompt: v => { image = v; }, setSuggestedActions: v => { actions = v; }, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef: contextRef, abortControllerRef: { current: null }, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: (k, r) => translate('en', k, r), turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: mode === 'missing' ? null : { send: v => { if (mode === 'throw') throw new Error('player send failed'); sentPlayer = v.payload.saveFile; } } }, gameStateRef: { current: base }, broadcastFullSync: v => { sentSync = v; if (mode === 'throw') throw new Error('peer send failed'); }, combatLog: savedCombatLog, gameLog: savedGameLog });
+      const listeners = new Set();
+      const connection = { open: mode !== 'closed', on: (event, fn) => { if (event === 'error') listeners.add(fn); }, off: (event, fn) => { if (event === 'error') listeners.delete(fn); }, send: v => {
+        if (mode === 'throw') throw new Error('player send failed');
+        if (mode === 'event') { for (const listener of listeners) listener(new Error('peer emitted failure')); return; }
+        if (mode === 'reject') return Promise.reject(new Error('async send failed'));
+        sentPlayer = v.payload.saveFile;
+      } };
+      const manager = createTurnManager({ gameState: base, setGameState: v => { state = typeof v === 'function' ? v(state) : v; }, gameHistory: [], setGameHistory: v => { history = typeof v === 'function' ? v(history) : v; }, isLoading: false, setIsLoading: v => { loading = v; }, setError: v => { error = v; }, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: v => { gameLog = typeof v === 'function' ? v(gameLog) : v; }, setCombatLog: v => { combatLog = typeof v === 'function' ? v(combatLog) : v; }, setSceneImagePrompt: v => { image = v; }, setSuggestedActions: v => { actions = v; }, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef: contextRef, abortControllerRef: { current: null }, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: (k, r) => translate('en', k, r), turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: mode === 'missing' ? null : connection }, gameStateRef: { current: base }, broadcastFullSync: v => { sentSync = v; if (mode === 'throw') throw new Error('peer send failed'); }, combatLog: savedCombatLog, gameLog: savedGameLog });
       if (question) await manager.askQuestion('Heal?');
       else await manager.resumeInterruptedTurn({ context, baseState: base, history: [] });
       assert.equal(loading, role === 'player' && mode === 'success');
@@ -886,8 +893,12 @@ test('failed host sync preserves committed turn and question; failed player send
         assert.deepEqual(gameLog, savedGameLog); assert.deepEqual(combatLog, savedCombatLog);
         assert.ok(!history.some(m => m.sender === 'gm'));
         assert.doesNotMatch(error, /already applied/);
-        if (mode === 'throw') assert.match(error, /player send failed/);
-        else assert.match(error, /Connection to host lost/);
+        if (mode === 'missing') assert.match(error, /Connection to host lost/);
+        else {
+          assert.match(error, /Do not repeat/);
+          assert.match(error, mode === 'throw' ? /player send failed/ : mode === 'closed' ? /Connection is not open/ : mode === 'event' ? /peer emitted failure/ : /async send failed/);
+        }
+        assert.equal(listeners.size, 0);
         assert.equal(image, 'Previous image'); assert.deepEqual(actions, []);
         assert.equal(sentSync, null);
       }

@@ -17,7 +17,7 @@ interface MultiplayerManagerProps {
     initializeAndRunFirstTurn: (creationData: any, networkConfig?: { role: NetworkRole; peerId?: string }) => void;
     restoreFromSaveData: (data: SaveFile, isNetworkSync?: boolean) => SaveFile;
     packageSaveData: (gameState: GameState | null) => SaveFile | null;
-    broadcastFullSync: (saveData: SaveFile) => void;
+    broadcastFullSync: (saveData: SaveFile) => void | Promise<void>;
     addPlayer: (creationData: any) => void;
     removePlayer: (playerId: string) => void;
     passTurnToPlayer: (playerIndex: number) => void;
@@ -33,7 +33,7 @@ interface MultiplayerManagerProps {
 }
 
 
-export const applyPlayerTurnResult = (message: NetworkMessage, {
+export const applyPlayerTurnResult = async (message: NetworkMessage, {
     gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t
 }: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't'>) => {
     if (!message.payload?.saveFile) {
@@ -49,7 +49,7 @@ export const applyPlayerTurnResult = (message: NetworkMessage, {
     // the host, without relying on pending React state or stale closures.
     const restored = restoreFromSaveData(message.payload.saveFile, true);
     try {
-        broadcastFullSync(restored);
+        await broadcastFullSync(restored);
     } catch (err) {
         const error = `${t('error_turn_applied_followup')}\n\n${formatError(err)}`;
         setError(error);
@@ -138,9 +138,10 @@ export const createMultiplayerManager = (
                         console.log(`Received sync request from ${conn.peer}. Broadcasting full state.`);
                         const saveData = packageSaveData(gameStateRef.current);
                         if (saveData) {
-                            broadcastFullSync(saveData);
-                            const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
-                            setGameHistory(prev => [...prev, systemMessage]);
+                            Promise.resolve().then(() => broadcastFullSync(saveData)).then(() => {
+                                const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
+                                setGameHistory(prev => [...prev, systemMessage]);
+                            }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
                         }
                         break;
                     }
@@ -300,6 +301,8 @@ export const createMultiplayerManager = (
             });
             
             (conn as any).on('close', () => {
+                if (hostConnectionRef.current !== conn) return;
+                hostConnectionRef.current = null;
                 console.log('Connection to host lost.');
                 setError(t('connection_lost'));
                 setIsLoading(false);
@@ -472,9 +475,10 @@ export const createMultiplayerManager = (
                         console.log(`Received sync request from ${conn.peer}. Broadcasting full state.`);
                         const saveData = packageSaveData(gameStateRef.current);
                         if (saveData) {
-                            broadcastFullSync(saveData);
-                            const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
-                            setGameHistory(prev => [...prev, systemMessage]);
+                            Promise.resolve().then(() => broadcastFullSync(saveData)).then(() => {
+                                const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
+                                setGameHistory(prev => [...prev, systemMessage]);
+                            }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
                         }
                         break;
                     }

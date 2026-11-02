@@ -1,3 +1,4 @@
+import { broadcastToConnections } from '../utils/peerSend';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // FIX: Imported missing types to resolve multiple "Cannot find name" errors.
 import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Quest, Wound, CustomState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item, CompletedActivity, AdjacencyMapEntry, Project, CompletedProject, StructuredBonus, ActiveThreat, Cinematic, FactionRank, NetworkChatMessage, CinemaFrame, SkillMastery, ImageCacheEntry, DayInfo, Month, NetworkRole, NetworkMessage, PeerInfo, CollectiveActionState, SimultaneousActionState } from '../types';
@@ -1062,13 +1063,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         if (currentGameState?.networkRole !== 'host') {
             console.warn("Non-host trying to broadcast sync!");
-            return;
+            return Promise.reject(new Error("Only the host can broadcast a full sync."));
         }
 
-        connectionsRef.current.forEach(conn => {
-            console.log(`📡 Sending sync to client: ${conn.peer}`);
-            conn.send(syncMessage);
-        });
+        return broadcastToConnections(connectionsRef.current.values(), syncMessage);
     }, []);
 
     // Peer event handlers outlive the render in which they were registered.
@@ -1524,8 +1522,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 // Prompt asked to only GC on MANUAL saves. So OFF here.
                 const saveData = allManagers.packageSaveData(gameState, false);
                 if (saveData) {
-                    allManagers.broadcastFullSync(saveData);
                     lastBroadcastedStateRef.current = currentTurnInfo;
+                    void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
                 }
             }
         }
@@ -1542,8 +1540,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 console.log("Co-op state changed on host, broadcasting sync.");
                 const saveData = allManagers.packageSaveData(gameState, false);
                 if (saveData) {
-                    allManagers.broadcastFullSync(saveData);
                     lastBroadcastedCoopState.current = currentCoopState;
+                    void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
                 }
             }
         }
@@ -1557,12 +1555,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         console.log("Host is forcing a full sync...");
         const saveData = allManagers.packageSaveData(gameState, false);
         if (saveData) {
-            allManagers.broadcastFullSync(saveData);
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('host_forced_sync'),
-            };
-            setGameHistory(prev => [...prev, systemMessage]);
+            void allManagers.broadcastFullSync(saveData).then(() => {
+                const systemMessage: ChatMessage = { sender: 'system', content: t('host_forced_sync') };
+                setGameHistory(prev => [...prev, systemMessage]);
+            }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
         } else {
             console.error("Could not package save data for forced sync.");
         }
@@ -1577,7 +1573,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 console.log(`Player list changed on host (${prevLength} -> ${currentLength}), broadcasting new state...`);
                 const newSaveData = allManagers.packageSaveData(gameState, false);
                 if (newSaveData) {
-                    allManagers.broadcastFullSync(newSaveData);
+                    void allManagers.broadcastFullSync(newSaveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
                 }
             }
         }
