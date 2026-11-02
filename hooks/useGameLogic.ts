@@ -1,3 +1,4 @@
+import { networkSafeSaveFile } from '../utils/networkSavePrivacy';
 import { isLocalPreferenceKey, mergeNetworkLocalPreferences, updateLocalPreferences } from '../utils/localGamePreferences';
 import { PresentationJournal } from '../utils/presentationJournal';
 import { beginGameplayMutation, gameplayMutationCommitted, clientLocalEditBlocked, guardGameplayActions } from '../utils/gameplayMutationGate';
@@ -1320,7 +1321,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         queuedHostSyncRequestsRef.current.clear();
         const ids: (string | undefined)[] = requests.length ? requests : [undefined];
         return Promise.all(ids.map(id => {
-            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: saveData, protocol: stamp, ...(id ? { syncRequestId: id } : {}) } };
+            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: networkSafeSaveFile(saveData), protocol: stamp, ...(id ? { syncRequestId: id } : {}) } };
             return broadcastToConnections(connectionsRef.current.values(), syncMessage);
         })).then(() => undefined);
     }, []);

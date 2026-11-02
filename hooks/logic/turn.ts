@@ -1,3 +1,4 @@
+import { networkSafeSaveFile } from '../../utils/networkSavePrivacy';
 
 import React from 'react';
 import { GameState, GameContext, ChatMessage, GameResponse, WorldStateFlag, Location, NPC, PeerInfo, NetworkRole, GameSettings, NetworkMessage, SaveFile } from '../../types';
@@ -253,7 +254,7 @@ export const createTurnManager = (
                 if (hostConnectionRef.current) {
                     const message: NetworkMessage = {
                         type: 'turn_result_from_player',
-                        payload: { saveFile: newSaveData, ...(startingStamp ? { submission: { turnId: crypto.randomUUID(), base: startingStamp } } : {}) },
+                        payload: { saveFile: networkSafeSaveFile(newSaveData), ...(startingStamp ? { submission: { turnId: crypto.randomUUID(), base: startingStamp } } : {}) },
                         senderId: baseState.myPeerId!,
                     };
                     if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
@@ -590,7 +591,7 @@ export const createTurnManager = (
                 if (hostConnectionRef.current) {
                     const message: NetworkMessage = {
                         type: 'turn_result_from_player',
-                        payload: { saveFile: newSaveData, ...(startingStamp ? { submission: { turnId: crypto.randomUUID(), base: startingStamp } } : {}) },
+                        payload: { saveFile: networkSafeSaveFile(newSaveData), ...(startingStamp ? { submission: { turnId: crypto.randomUUID(), base: startingStamp } } : {}) },
                         senderId: baseState.myPeerId!,
                     };
                     if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
