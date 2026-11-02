@@ -1,3 +1,4 @@
+import { isLocalPreferenceKey, mergeNetworkLocalPreferences, updateLocalPreferences } from '../utils/localGamePreferences';
 import { PresentationJournal } from '../utils/presentationJournal';
 import { beginGameplayMutation, gameplayMutationCommitted, clientLocalEditBlocked, guardGameplayActions } from '../utils/gameplayMutationGate';
 import { HostTurnAuthority, type TurnSyncStamp } from '../utils/networkTurnProtocol';
@@ -198,6 +199,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const [worldState, setWorldState] = useState<WorldState | null>(null);
     const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
+    const localPreferencesRef = useRef<Partial<GameSettings>>({});
     const [superInstructions, setSuperInstructions] = useState<string>('');
     const [gameHistory, _setGameHistory] = useState<ChatMessage[]>([]);
     const gameHistoryRef = useRef(gameHistory);
@@ -418,6 +420,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const restoreFromSaveData = useCallback((data: SaveFile, isNetworkSync: boolean = false, networkIdentityOverride?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => {
         syncRevisionRef.current += 1;
         if (!isNetworkSync) {
+            localPreferencesRef.current = {};
             presentationJournalRef.current.clear();
             pendingClientSyncRef.current = null;
             clientTurnStampRef.current = null;
@@ -592,7 +595,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
         // --- END FACTION RANK MIGRATION ---
         
-        const loadedSettings = data.gameContext.gameSettings;
+        let loadedSettings = data.gameContext.gameSettings;
+        if (isNetworkSync) {
+            loadedSettings = mergeNetworkLocalPreferences(loadedSettings, gameContextRef.current?.gameSettings, localPreferencesRef.current);
+            data.gameContext.gameSettings = loadedSettings;
+        }
         const loadedLanguage = loadedSettings.language || 'en';
         setLanguage(loadedLanguage);
 
@@ -648,7 +655,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             'useDynamicThinkingBudget', 'geminiApiKey', 'useGoogleSearch', 'imageGenerationModelPipeline',
             'pollinationsImageModel', 'useNanoBananaFallback', 'useNanoBananaPrimary',
         ].forEach(key => delete legacyAISettings[key]);
-        loadedSettings.showImageSourceInfo = false;
+        if (!isNetworkSync ||
+            (!Object.prototype.hasOwnProperty.call(gameContextRef.current?.gameSettings || {}, 'showImageSourceInfo') &&
+             !Object.prototype.hasOwnProperty.call(localPreferencesRef.current, 'showImageSourceInfo'))) {
+            loadedSettings.showImageSourceInfo = false;
+        }
 
         ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameContext.currentLocation);
         ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameState?.currentLocationData);
@@ -1537,9 +1548,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const updateGameSettings = useCallback((newSettings: Partial<GameSettings>) => {
         // Local display/media preferences are not game-rule edits. Shared
         // rules must stay host-owned until they have an authoritative protocol.
-        const localSettings = new Set(['language', 'youtubeApiKey', 'notificationSound', 'showPartyStatusPanel',
-            'uiControlScale', 'uiFontScale', 'showImageSourceInfo', 'generateWorldEventImages', 'disableImageGeneration']);
-        if (Object.keys(newSettings).some(key => !localSettings.has(key)) && userGameplayActionBlocked()) return;
+        if (Object.keys(newSettings).some(key => !isLocalPreferenceKey(key)) && userGameplayActionBlocked()) return;
+        // Record before scheduling the React update so a racing host snapshot
+        // cannot erase a local preference that has not committed yet.
+        updateLocalPreferences(localPreferencesRef.current, newSettings);
         setGameSettings(prevSettings => {
             if (!prevSettings) return prevSettings;
 

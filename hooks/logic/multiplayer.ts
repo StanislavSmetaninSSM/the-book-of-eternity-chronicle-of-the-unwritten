@@ -255,6 +255,8 @@ export const createMultiplayerManager = (
             });
 
             (conn as any).on('data', (data: any) => {
+                if (!conn.open || connectionsRef.current.get(conn.peer) !== conn ||
+                    !data || typeof data !== 'object' || Array.isArray(data) || typeof data.type !== 'string') return;
                 const message = data as NetworkMessage;
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
@@ -383,6 +385,8 @@ export const createMultiplayerManager = (
             });
             
             (conn as any).on('data', (data: any) => {
+                if (!conn.open || hostConnectionRef.current !== conn ||
+                    !data || typeof data !== 'object' || Array.isArray(data) || typeof data.type !== 'string') return;
                 const message = data as NetworkMessage;
                 console.log('Received data from host:', message.type);
                 
@@ -576,6 +580,8 @@ export const createMultiplayerManager = (
             });
 
             (conn as any).on('data', (data: any) => {
+                if (!conn.open || connectionsRef.current.get(conn.peer) !== conn ||
+                    !data || typeof data !== 'object' || Array.isArray(data) || typeof data.type !== 'string') return;
                 const message = data as NetworkMessage;
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
