@@ -1,5 +1,7 @@
 export const general = {
   en: {
+    "network_sync_not_ready": "The host snapshot is not ready. Synchronize and wait for it to finish before acting.",
+    "network_sync_restore_failed": "The host snapshot could not be restored. Do not act; request synchronization again or reconnect.",
     "network_protocol_incompatible": "The host has not supplied a compatible turn protocol. Update both game clients and reconnect before acting.",
     "network_turn_rejected": "The host rejected this turn because its base state is stale or incompatible. It was not applied by the host. Synchronize before taking another action.",
     "network_turn_duplicate": "The host already accepted this turn ID. Do not repeat the action; synchronize with the host.",
@@ -231,6 +233,8 @@ export const general = {
     "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.": "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.",
   },
   ru: {
+    "network_sync_not_ready": "Состояние хоста ещё не готово. Синхронизируйте игру и дождитесь завершения перед действием.",
+    "network_sync_restore_failed": "Не удалось восстановить состояние хоста. Не выполняйте действий; повторите синхронизацию или подключитесь заново.",
     "network_protocol_incompatible": "Хост не предоставил совместимый протокол ходов. Обновите игру у всех участников и переподключитесь перед действием.",
     "network_turn_rejected": "Хост отклонил ход: исходное состояние устарело или несовместимо. На хосте он не применён. Синхронизируйте игру перед следующим действием.",
     "network_turn_duplicate": "Хост уже принял этот ID хода. Не повторяйте действие; синхронизируйте игру с хостом.",

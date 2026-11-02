@@ -112,7 +112,7 @@ export const createTurnManager = (
         const startingStamp = clientTurnStampRef?.current ? { ...clientTurnStampRef.current } : null;
         if (isPlayerTurn && clientTurnStampRef && !startingStamp) {
             activeTurnRef.current = null; turnPhaseRef.current = 'idle';
-            setIsLoading(false); setError(t('network_protocol_incompatible'));
+            setIsLoading(false); setError(t('network_sync_not_ready'));
             return;
         }
         const wasSuperseded = () => isPlayerTurn && syncRevisionRef.current !== startingRevision;
@@ -352,6 +352,9 @@ export const createTurnManager = (
     
     const sendMessage = (message: string, image?: { data: string; mimeType: string; } | null) => {
         if (isLoading || activeTurnRef.current) return;
+        if (gameStateRef.current?.networkRole === 'player' && clientTurnStampRef && !clientTurnStampRef.current) {
+            setError(t('network_sync_not_ready')); return;
+        }
 
         if (packageSaveDataForTurn && setLastTurnSaveFile) {
             const saveData = packageSaveDataForTurn();
@@ -440,7 +443,7 @@ export const createTurnManager = (
         if (!gameContextRef.current || isLoading || !baseState || activeTurnRef.current) return;
         const startingStamp = clientTurnStampRef?.current ? { ...clientTurnStampRef.current } : null;
         if (baseState.networkRole === 'player' && clientTurnStampRef && !startingStamp) {
-            setError(t('network_protocol_incompatible'));
+            setError(t('network_sync_not_ready'));
             return;
         }
     
@@ -682,6 +685,9 @@ export const createTurnManager = (
     };
 
     const resumeInterruptedTurn = (recovery: { context: GameContext; baseState: GameState; history: ChatMessage[] }) => {
+        if (recovery.baseState.networkRole === 'player' && clientTurnStampRef && !clientTurnStampRef.current) {
+            setError(t('network_sync_not_ready')); return;
+        }
         gameContextRef.current = recovery.context;
         setGameState(recovery.baseState);
         setGameHistory(recovery.history);

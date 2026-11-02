@@ -17,7 +17,7 @@ interface MultiplayerManagerProps {
     setError: React.Dispatch<React.SetStateAction<string | null>>;
     t: TFunction;
     initializeAndRunFirstTurn: (creationData: any, networkConfig?: { role: NetworkRole; peerId?: string }) => void;
-    restoreFromSaveData: (data: SaveFile, isNetworkSync?: boolean) => SaveFile;
+    restoreFromSaveData: (data: SaveFile, isNetworkSync?: boolean, identity?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => SaveFile;
     packageSaveData: (gameState: GameState | null) => SaveFile | null;
     broadcastFullSync: (saveData: SaveFile) => void | Promise<void>;
     addPlayer: (creationData: any) => void;
@@ -34,10 +34,61 @@ interface MultiplayerManagerProps {
     hostTurnAuthority: HostTurnAuthority;
     clientTurnStampRef: React.MutableRefObject<TurnSyncStamp | null>;
     pendingNetworkTurnRef: React.MutableRefObject<string | null>;
+    observedHostStampRef: React.MutableRefObject<TurnSyncStamp | null>;
+    pendingClientSyncRef: React.MutableRefObject<PendingClientSync | null>;
+    scheduleClientSyncCommit: () => void;
     syncNewPeerRef: React.MutableRefObject<(conn: DataConnection) => void>;
     sendMessageRef: React.MutableRefObject<(message: string, image?: { data: string; mimeType: string; } | null) => void>;
     gameStateRef: React.RefObject<GameState | null>;
     onChatMessage: (message: NetworkChatMessage) => void;
+}
+
+
+export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; }
+
+export function commitClientSnapshot(pending: PendingClientSync | null, rendered: { gameState: GameState | null; currentGameState: GameState | null; gameHistory: ChatMessage[]; gameLog: string[]; combatLog: string[]; lastJsonResponse: string | null; sceneImagePrompt: string | null }): TurnSyncStamp | null {
+    if (!pending) return null;
+    const snapshot = pending.snapshot;
+    // A superseded task can append a local system warning after restoration.
+    // Its suffix is safe; the authoritative history must still be the prefix.
+    const historyMatches = Array.isArray(snapshot.gameHistory) && rendered.gameHistory.length >= snapshot.gameHistory.length &&
+        snapshot.gameHistory.every((entry, index) => rendered.gameHistory[index] === entry) &&
+        rendered.gameHistory.slice(snapshot.gameHistory.length).every(entry => entry.sender === 'system');
+    return rendered.gameState === snapshot.gameState && rendered.currentGameState === rendered.gameState &&
+        historyMatches && rendered.gameLog === snapshot.gameLog &&
+        rendered.combatLog === snapshot.combatLog && rendered.lastJsonResponse === snapshot.lastJsonResponse &&
+        rendered.sceneImagePrompt === snapshot.sceneImagePrompt ? pending.stamp : null;
+}
+
+// Invalidate the usable grant before restoration. A grant is made usable only
+// by the React post-commit effect after all snapshot fields have rendered.
+export function stageHostFullSync(message: NetworkMessage, identity: { role: NetworkRole; myPeerId: string; hostPeerId: string }, props: Pick<MultiplayerManagerProps, 'observedHostStampRef' | 'clientTurnStampRef' | 'pendingClientSyncRef' | 'activeTurnRef' | 'abortControllerRef' | 'turnPhaseRef' | 'restoreFromSaveData' | 'setError' | 'setIsLoading' | 'scheduleClientSyncCommit' | 't'>): 'staged' | 'ignored' | 'failed' {
+    const decision = acceptHostStamp(props.observedHostStampRef.current, message.payload?.protocol);
+    if (decision === 'invalid') { props.setError(props.t('network_protocol_incompatible')); return 'failed'; }
+    if (decision !== 'accept') return 'ignored';
+    const previousObservedStamp = props.observedHostStampRef.current;
+    props.clientTurnStampRef.current = null;
+    props.pendingClientSyncRef.current = null;
+    if (props.activeTurnRef.current) props.abortControllerRef.current?.abort();
+    else props.turnPhaseRef.current = 'idle';
+    props.setIsLoading(true);
+    try {
+        const snapshot = props.restoreFromSaveData(message.payload.saveFile, true, identity);
+        const stamp = message.payload.protocol as TurnSyncStamp;
+        props.pendingClientSyncRef.current = { stamp, snapshot };
+        props.observedHostStampRef.current = stamp;
+        props.setIsLoading(true);
+        props.scheduleClientSyncCommit();
+        return 'staged';
+    } catch (error) {
+        // Restore can have partially scheduled updates. Keep the grant unusable,
+        // but do not advance the observed stamp: the same snapshot may be retried.
+        props.observedHostStampRef.current = previousObservedStamp;
+        props.pendingClientSyncRef.current = null;
+        props.setError(`${props.t('network_sync_restore_failed')}\n\n${formatError(error)}`);
+        props.setIsLoading(false);
+        return 'failed';
+    }
 }
 
 
@@ -94,6 +145,9 @@ export const createMultiplayerManager = (
         hostTurnAuthority,
         clientTurnStampRef,
         pendingNetworkTurnRef,
+        observedHostStampRef,
+        pendingClientSyncRef,
+        scheduleClientSyncCommit,
         syncNewPeerRef,
         sendMessageRef,
         gameStateRef,
@@ -120,6 +174,8 @@ export const createMultiplayerManager = (
     const startHost = (creationData: any) => {
         hostTurnAuthority.reset();
         clientTurnStampRef.current = null;
+        observedHostStampRef.current = null;
+        pendingClientSyncRef.current = null;
         pendingNetworkTurnRef.current = null;
         setIsLoading(true);
         setError(null);
@@ -250,6 +306,8 @@ export const createMultiplayerManager = (
 
     const joinGame = (hostPeerId: string, role: NetworkRole, playerName: string) => {
         clientTurnStampRef.current = null;
+        observedHostStampRef.current = null;
+        pendingClientSyncRef.current = null;
         pendingNetworkTurnRef.current = null;
         setIsLoading(true);
         setError(null);
@@ -281,53 +339,15 @@ export const createMultiplayerManager = (
                 console.log('Received data from host:', message.type);
                 
                 switch(message.type) {
-                    case 'full_sync':
-                        const stampDecision = acceptHostStamp(clientTurnStampRef.current, message.payload?.protocol);
-                        if (stampDecision === 'invalid') { setError(t('network_protocol_incompatible')); setIsLoading(false); break; }
-                        if (stampDecision !== 'accept') break;
-                        clientTurnStampRef.current = message.payload.protocol;
-                        console.log("Received full_sync, restoring state...");
-
-                        // ФИКС: Сначала восстанавливаем состояние
-                        restoreFromSaveData(message.payload.saveFile, true);
-                        // Superseded local work cannot be used. Abort relay polling or
-                        // stop waiting for an in-flight send; delivery may be unknown.
-                        if (activeTurnRef.current) abortControllerRef.current?.abort();
-                        else turnPhaseRef.current = 'idle';
-
-                        // ЗАТЕМ немедленно устанавливаем правильные сетевые параметры
-                        setGameState(prevState => {
-                            if (!prevState) return null;
-
-                            const needsCreation = role === 'player' && !prevState.players.some(p => p.playerId === id);
-
-                            // ФИКС: Принудительно устанавливаем корректную сетевую роль
-                            const correctedState = {
-                                ...prevState,
-                                networkRole: role,           // ПРИНУДИТЕЛЬНО устанавливаем роль
-                                myPeerId: id,               // ПРИНУДИТЕЛЬНО устанавливаем peer ID
-                                hostPeerId,
-                                isConnectedToHost: true,
-                                playerNeedsToCreateCharacter: needsCreation
-                            };
-
-                            // КРИТИЧЕСКИЙ ФИКС: Также обновляем gameContextRef немедленно
-                            if (gameContextRef.current) {
-                                gameContextRef.current.networkRole = role;
-                                gameContextRef.current.isConnectedToHost = true;
-                            }
-
-                            console.log(`ФИКС: Принудительно установлена роль ${role} для peer ${id}`);
-                            return correctedState;
+                    case 'full_sync': {
+                        if (hostConnectionRef.current !== conn) break;
+                        stageHostFullSync(message, { role, myPeerId: id, hostPeerId }, {
+                            observedHostStampRef, clientTurnStampRef, pendingClientSyncRef,
+                            activeTurnRef, abortControllerRef, turnPhaseRef, restoreFromSaveData,
+                            setError, setIsLoading, scheduleClientSyncCommit, t
                         });
-
-                        const connectedMessage: ChatMessage = { sender: 'system', content: t('connected_to_host', { hostId: hostPeerId }) };
-                        const syncedMessage: ChatMessage = { sender: 'system', content: t('game_state_synced') };
-                        setGameHistory(prev => [...prev, connectedMessage, syncedMessage]);
-                        // A sync can arrive while the local GM/send task is still running.
-                        // Keep submission locked until that task notices the new revision.
-                        setIsLoading(activeTurnRef.current !== null);
                         break;
+                    }
 
                     case 'turn_result_ack': {
                         const { turnId, status } = message.payload || {};
@@ -451,6 +471,8 @@ export const createMultiplayerManager = (
 
         hostTurnAuthority.reset();
         clientTurnStampRef.current = null;
+        observedHostStampRef.current = null;
+        pendingClientSyncRef.current = null;
         pendingNetworkTurnRef.current = null;
         setIsLoading(true);
         setError(null);
@@ -609,6 +631,8 @@ export const createMultiplayerManager = (
 
     const disconnect = () => {
         clientTurnStampRef.current = null;
+        observedHostStampRef.current = null;
+        pendingClientSyncRef.current = null;
         pendingNetworkTurnRef.current = null;
         hostTurnAuthority.reset();
         const role = gameStateRef.current?.networkRole;

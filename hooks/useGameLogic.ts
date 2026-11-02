@@ -16,7 +16,7 @@ import { createSaveLoadManager } from './logic/saveLoad';
 import { createInventoryActions } from './logic/inventoryActions';
 import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
-import { createMultiplayerManager } from './logic/multiplayer';
+import { createMultiplayerManager, commitClientSnapshot, type PendingClientSync } from './logic/multiplayer';
 import { processAndApplyResponse } from '../utils/responseProcessor';
 import { restorePlayerStats } from '../utils/restorePlayer';
 import { recalculateAllWeights } from '../utils/inventoryManager';
@@ -79,6 +79,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const hostTurnAuthorityRef = useRef<HostTurnAuthority | null>(null);
     if (!hostTurnAuthorityRef.current) hostTurnAuthorityRef.current = new HostTurnAuthority();
     const clientTurnStampRef = useRef<TurnSyncStamp | null>(null);
+    const observedHostStampRef = useRef<TurnSyncStamp | null>(null);
+    const pendingClientSyncRef = useRef<PendingClientSync | null>(null);
+    const [clientSyncEpoch, setClientSyncEpoch] = useState(0);
+    const scheduleClientSyncCommit = useCallback(() => setClientSyncEpoch(epoch => epoch + 1), []);
     const pendingNetworkTurnRef = useRef<string | null>(null);
 
     const setGameState = useCallback((action: React.SetStateAction<GameState | null>) => {
@@ -522,6 +526,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 loadedGameState.myPeerId = networkIdentityOverride.myPeerId;
                 loadedGameState.hostPeerId = networkIdentityOverride.hostPeerId;
                 loadedGameState.isConnectedToHost = true;
+                data.gameContext.networkRole = networkIdentityOverride.role;
+                data.gameContext.isConnectedToHost = true;
                 console.log(`🔧 OVERRIDE: Role=${loadedGameState.networkRole}, MyID=${loadedGameState.myPeerId}`);
             } else {
                 console.log("Network sync detected - preserving network role from current state");
@@ -749,7 +755,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setSuperInstructions(data.gameContext.superInstructions || '');
         setGameHistory(data.gameHistory as ChatMessage[]);
         setGameLog(finalGameLog);
-        setCombatLog(data.combatLog ?? []);
+        const restoredCombatLog = data.combatLog ?? [];
+        setCombatLog(restoredCombatLog);
         setLastJsonResponse(data.lastJsonResponse);
         setSceneImagePrompt(data.sceneImagePrompt);
         setWorldMap(data.gameContext.worldMap ?? {});
@@ -760,7 +767,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setError(null);
         // Return exactly what was restored; React state updates may not have
         // rendered when the multiplayer handler needs to broadcast it.
-        return { ...data, gameState: loadedGameState, gameLog: finalGameLog };
+        return { ...data, gameState: loadedGameState, gameLog: finalGameLog, combatLog: restoredCombatLog };
 
     }, [setLanguage, t, setGameState, setWorldState, setGameSettings, setSuperInstructions, setGameHistory, setGameLog, setCombatLog, setLastJsonResponse, setSceneImagePrompt, setWorldMap, setVisitedLocations, setTurnNumber, setIsLoading, setError, language]);
 
@@ -1180,6 +1187,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 hostTurnAuthority: hostTurnAuthorityRef.current!,
                 clientTurnStampRef,
                 pendingNetworkTurnRef,
+                observedHostStampRef,
+                pendingClientSyncRef,
+                scheduleClientSyncCommit,
                 syncNewPeerRef,
                 sendMessageRef,
                 gameStateRef,
@@ -1585,6 +1595,20 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const saveData = allManagers.packageSaveData(gameState, false);
         if (saveData) void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
     }, [gameState, snapshotEpoch, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt]);
+
+    // A grant is usable only after React has committed the entire snapshot,
+    // including the history/log closures used by the current turn manager.
+    useEffect(() => {
+        const stamp = commitClientSnapshot(pendingClientSyncRef.current, {
+            gameState, currentGameState: gameStateRef.current, gameHistory, gameLog,
+            combatLog, lastJsonResponse, sceneImagePrompt
+        });
+        if (!stamp) return;
+        clientTurnStampRef.current = stamp;
+        pendingClientSyncRef.current = null;
+        pendingNetworkTurnRef.current = null;
+        setIsLoading(activeTurnRef.current !== null);
+    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, clientSyncEpoch]);
 
     const forceSyncAll = useCallback(() => {
         if (gameState?.networkRole !== 'host') {
@@ -2113,16 +2137,26 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const beginTurnSubmission = useCallback(() => {
         if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current) return false;
         if (!gameStateRef.current || !gameContextRef.current) return false;
+        if (gameStateRef.current.networkRole === 'player' && !clientTurnStampRef.current) {
+            setError(t('network_sync_not_ready'));
+            return false;
+        }
 
         isTurnSubmitPendingRef.current = true;
         return true;
-    }, [isLoading]);
+    }, [isLoading, t]);
 
     const sendMessageWithStashClear = useCallback(async (message: string, image?: { data: string; mimeType: string; } | null) => {
         if (!beginTurnSubmission()) return;
 
+        const startingRevision = syncRevisionRef.current;
         try {
             await savePreActionCrashRecovery();
+            if (syncRevisionRef.current !== startingRevision) {
+                isTurnSubmitPendingRef.current = false;
+                setError(t('turn_sync_before_send'));
+                return;
+            }
 
             if (message.trim().toLowerCase() === '[system action] pass turn') {
                 passTurnManually();
@@ -2136,19 +2170,25 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             isTurnSubmitPendingRef.current = false;
             throw e;
         }
-    }, [allManagers, beginTurnSubmission, clearStashForNewTurn, passTurnManually, savePreActionCrashRecovery]);
+    }, [allManagers, beginTurnSubmission, clearStashForNewTurn, passTurnManually, savePreActionCrashRecovery, t]);
 
     const askQuestionWithRecovery = useCallback(async (question: string, image?: { data: string; mimeType: string; } | null) => {
         if (!beginTurnSubmission()) return;
 
+        const startingRevision = syncRevisionRef.current;
         try {
             await savePreActionCrashRecovery();
+            if (syncRevisionRef.current !== startingRevision) {
+                isTurnSubmitPendingRef.current = false;
+                setError(t('turn_sync_before_send'));
+                return;
+            }
             return await allManagers.askQuestion(question, image);
         } catch (e) {
             isTurnSubmitPendingRef.current = false;
             throw e;
         }
-    }, [allManagers, beginTurnSubmission, savePreActionCrashRecovery]);
+    }, [allManagers, beginTurnSubmission, savePreActionCrashRecovery, t]);
 
     useEffect(() => {
         (sendMessageRef as React.MutableRefObject<any>).current = sendMessageWithStashClear;

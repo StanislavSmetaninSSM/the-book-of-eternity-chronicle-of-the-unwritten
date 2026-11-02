@@ -118,3 +118,9 @@ and inspect the authoritative result before retrying. Do not repeat an action
 just because an ACK was not received. Protocol IDs and PeerJS connection IDs
 are concurrency checks, not authentication or protection against a malicious
 host/player. The accepted-ID registry is in memory for the hosting session.
+
+On the player, a received grant stays unusable until the corresponding state,
+context and history/log snapshot has been restored and rendered. If restoring
+fails, the grant remains blocked and the same revision can be retried; request
+another synchronization or reconnect. This avoids using a fresh revision with
+a previous client state while React updates are still pending.
