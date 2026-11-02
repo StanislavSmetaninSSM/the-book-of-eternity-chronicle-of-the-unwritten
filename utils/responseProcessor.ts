@@ -311,6 +311,16 @@ export const deepMergeResponses = (target: any, source: any): any => {
                 return;
             }
 
+            if (key === 'inventoryTransfers') {
+                // A bad top-level type is a malformed command, not a fragment
+                // that later stages can repair by replacing it with an array.
+                // Preserve it until final validation rejects the entire turn.
+                if (targetValue != null && !Array.isArray(targetValue)) output[key] = targetValue;
+                else if (!Array.isArray(sourceValue)) output[key] = sourceValue;
+                else output[key] = Array.isArray(targetValue) ? targetValue.concat(sourceValue) : sourceValue;
+                return;
+            }
+
             if (Array.isArray(sourceValue)) {
                 // Rule 13.7: an explicit empty combat roster ends the encounter;
                 // unlike other empty arrays it is a command, not a no-op.
@@ -319,10 +329,9 @@ export const deepMergeResponses = (target: any, source: any): any => {
                     return;
                 }
                 if (Array.isArray(targetValue)) {
-                    if (key === 'inventoryItemsData' || key === 'inventoryTransfers') {
+                    if (key === 'inventoryItemsData') {
                         // Preserve raw fragments until the complete turn is
-                        // available: later stages can reveal conflicting tags
-                        // or malformed transfer entries that must be rejected.
+                        // available: a later stage may reveal a conflicting tag.
                         output[key] = targetValue.concat(sourceValue);
                     } else if (key === 'newLocations') {
                         output[key] = mergeIdentifiedStageEntities(targetValue, sourceValue, 'locationId');

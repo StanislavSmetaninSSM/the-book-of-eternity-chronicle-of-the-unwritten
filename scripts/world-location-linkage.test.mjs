@@ -781,7 +781,7 @@ test('mixed, invalid and repeated transfers reject the whole turn, preserve hist
     if (url === '/__arena_gm/turn') { packets.push(JSON.parse(init.body)); return new Response('{}'); }
     if (String(url).startsWith('/__arena_gm/response')) {
       const packet = packets.at(-1);
-      const output = packet.stepName === 'Step0_AnalysisAndPlanning_TaskGuide' ? { _internal_flags_: { isSimpleTurn: true } } : {
+      const output = packet.stepName === 'Step0_AnalysisAndPlanning_TaskGuide' ? { _internal_flags_: { isSimpleTurn: true }, items_and_stat_calculations: ['Uncommitted: health +10 and transfer succeeds'] } : {
         response: 'The potion is consumed.', image_prompt: 'A false scene', dialogueOptions: ['False option'], currentHealthChange: 10,
         inventoryTransfers: [{ transferId: 't', source: { type: 'npc', id: 'n', itemId: 'gift' }, destination: { type: 'player', id: 'p' }, quantity: 1 }],
         ...(scenario === 'mixed' ? { inventoryItemsResources: [{ existedId: 'potion', resource: 0 }] } : scenario === 'invalid' ? { inventoryTransfers: [{ transferId: 't', source: { type: 'npc', id: 'n', itemId: 'missing' }, destination: { type: 'player', id: 'p' }, quantity: 1 }] } : {})
@@ -803,7 +803,9 @@ test('mixed, invalid and repeated transfers reject the whole turn, preserve hist
       if (scenario === 'replay') base.completedInventoryTransfers = { t: JSON.stringify(['npc', 'n', 'gift', 'player', 'p', 1]) };
       const snapshot = structuredClone(base); let state = base, error = null, loading = null, image = null, sync = null, sent = null, history = [];
       const contextRef = { current: context };
-      const noop = () => {}; const manager = createTurnManager({ gameState: base, setGameState: v => { state = typeof v === 'function' ? v(state) : v; }, gameHistory: [], setGameHistory: v => { history = typeof v === 'function' ? v(history) : v; }, isLoading: false, setIsLoading: v => { loading = v; }, setError: v => { error = v; }, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: noop, setCombatLog: noop, setSceneImagePrompt: v => { image = v; }, setSuggestedActions: noop, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef: contextRef, abortControllerRef: { current: null }, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: k => k, turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: { send: v => { sent = v; } } }, gameStateRef: { current: base }, broadcastFullSync: v => { sync = v; }, combatLog: [], gameLog: [] });
+      const savedGameLog = ['Previous committed calculation'], savedCombatLog = ['Previous committed combat'];
+      let displayedGameLog = savedGameLog, displayedCombatLog = savedCombatLog, sawTentative = false;
+      const noop = () => {}; const manager = createTurnManager({ gameState: base, setGameState: v => { state = typeof v === 'function' ? v(state) : v; }, gameHistory: [], setGameHistory: v => { history = typeof v === 'function' ? v(history) : v; }, isLoading: false, setIsLoading: v => { loading = v; }, setError: v => { error = v; }, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: v => { displayedGameLog = typeof v === 'function' ? v(displayedGameLog) : v; if (displayedGameLog.includes('Uncommitted: health +10 and transfer succeeds')) sawTentative = true; }, setCombatLog: v => { displayedCombatLog = typeof v === 'function' ? v(displayedCombatLog) : v; }, setSceneImagePrompt: v => { image = v; }, setSuggestedActions: noop, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef: contextRef, abortControllerRef: { current: null }, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: k => k, turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: { send: v => { sent = v; } } }, gameStateRef: { current: base }, broadcastFullSync: v => { sync = v; }, combatLog: savedCombatLog, gameLog: savedGameLog });
       await manager.resumeInterruptedTurn({ context, baseState: base, history: [] });
       assert.deepEqual(state, snapshot); assert.deepEqual(base, snapshot);
       const errorKey = scenario === 'mixed' ? 'warning_inventory_transfer_conflict' : scenario === 'replay' ? 'error_inventory_transfer_replayed' : 'error_inventory_transfer_rejected';
@@ -813,6 +815,8 @@ test('mixed, invalid and repeated transfers reject the whole turn, preserve hist
       assert.equal(contextRef.current.previousTurnResponse, null);
       assert.deepEqual(contextRef.current.responseHistory, context.responseHistory);
       assert.equal(loading, false); assert.equal(image, null); assert.equal(sync, null); assert.equal(sent, null);
+      assert.ok(sawTentative);
+      assert.deepEqual(displayedGameLog, savedGameLog); assert.deepEqual(displayedCombatLog, savedCombatLog);
       if (scenario !== 'mixed') {
         history = []; error = null;
         await manager.askQuestion('Trade?');
@@ -822,6 +826,7 @@ test('mixed, invalid and repeated transfers reject the whole turn, preserve hist
         assert.ok(history.some(message => message.sender === 'system' && message.content.includes(errorKey)));
         assert.equal(contextRef.current.previousTurnResponse, null);
         assert.equal(loading, false); assert.equal(sync, null); assert.equal(sent, null);
+        assert.deepEqual(displayedGameLog, savedGameLog); assert.deepEqual(displayedCombatLog, savedCombatLog);
       }
     }
   } finally { globalThis.fetch = oldFetch; if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; await server.close(); }

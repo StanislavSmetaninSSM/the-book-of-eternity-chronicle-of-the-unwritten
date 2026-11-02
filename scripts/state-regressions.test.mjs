@@ -1052,8 +1052,26 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
       assert.throws(() => apply(reversed), /error_inventory_transfer_rejected/);
       assert.deepEqual(base, before);
     }
+    for (const malformed of [42, 'bad', false, { source: 'invalid' }]) {
+      const context = { encounteredNPCs: base.encounteredNPCs };
+      for (const stages of [
+        [{ inventoryTransfers: malformed }, { inventoryTransfers: [transfer], currentHealthChange: 10 }],
+        [{ inventoryTransfers: [transfer] }, { inventoryTransfers: malformed, currentHealthChange: 10 }],
+        [{ inventoryTransfers: malformed }, { inventoryTransfers: [] }, { inventoryTransfers: [transfer] }],
+        [{ inventoryTransfers: null }, { inventoryTransfers: malformed }, { inventoryTransfers: [transfer] }],
+      ]) {
+        const originalStages = structuredClone(stages);
+        const merged = stages.reduce((previous, next) => mergeStageResponses(previous, next, context), {});
+        assert.deepEqual(merged.inventoryTransfers, malformed);
+        assert.throws(() => apply(merged), /error_inventory_transfer_rejected/);
+        assert.deepEqual(stages, originalStages);
+        assert.deepEqual(base, before);
+      }
+    }
     const noNewTransfer = mergeStageResponses({ inventoryTransfers: [transfer] }, { inventoryTransfers: [] }, { encounteredNPCs: base.encounteredNPCs });
     assert.deepEqual(noNewTransfer.inventoryTransfers, [transfer]);
+    const optionalNull = mergeStageResponses({ inventoryTransfers: [transfer] }, { inventoryTransfers: null }, { encounteredNPCs: base.encounteredNPCs });
+    assert.deepEqual(optionalNull.inventoryTransfers, [transfer]);
     const mixed = { inventoryTransfers: [transfer], NPCInventoryRemovals: [{ NPCId: 'a', itemId: 'potion' }], inventoryItemsData: [fullItem({ existedId: 'new' })], currentHealthChange: -1 };
     const mixedBefore = structuredClone(mixed);
     assert.throws(() => apply(mixed), /warning_inventory_transfer_conflict/);

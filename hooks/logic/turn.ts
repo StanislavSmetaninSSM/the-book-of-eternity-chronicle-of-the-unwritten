@@ -254,6 +254,10 @@ export const createTurnManager = (
             }
           
         } catch (err: any) {
+          // Discard tentative calculations and restore logs from the last
+          // committed state; streamed output may describe a rejected turn.
+          setGameLog(gameLog);
+          setCombatLog(combatLog);
           // Failed turns do not receive the host sync that clears loading.
           setIsLoading(false);
           if (err.name !== 'AbortError') {
@@ -522,6 +526,10 @@ export const createTurnManager = (
             }
           
         } catch (err: any) {
+          // Discard tentative calculations and restore logs from the last
+          // committed state; streamed output may describe a rejected turn.
+          setGameLog(gameLog);
+          setCombatLog(combatLog);
           // Failed turns do not receive the host sync that clears loading.
           setIsLoading(false);
           if (err.name !== 'AbortError') {
