@@ -20,7 +20,7 @@ interface MultiplayerManagerProps {
     initializeAndRunFirstTurn: (creationData: any, networkConfig?: { role: NetworkRole; peerId?: string }) => void;
     restoreFromSaveData: (data: SaveFile, isNetworkSync?: boolean, identity?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => SaveFile;
     packageSaveData: (gameState: GameState | null) => SaveFile | null;
-    broadcastFullSync: (saveData: SaveFile) => void | Promise<void>;
+    broadcastFullSync: (saveData: SaveFile, syncRequestId?: string) => void | Promise<void>;
     addPlayer: (creationData: any) => void;
     removePlayer: (playerId: string) => void;
     passTurnToPlayer: (playerIndex: number) => void;
@@ -37,6 +37,7 @@ interface MultiplayerManagerProps {
     pendingNetworkTurnRef: React.MutableRefObject<string | null>;
     observedHostStampRef: React.MutableRefObject<TurnSyncStamp | null>;
     pendingClientSyncRef: React.MutableRefObject<PendingClientSync | null>;
+    pendingSyncRequestRef?: React.MutableRefObject<string | null>;
     scheduleClientSyncCommit: () => void;
     clearHostRestorePending: () => void;
     syncNewPeerRef: React.MutableRefObject<(conn: DataConnection) => void>;
@@ -78,9 +79,17 @@ export function commitClientSnapshot(pending: PendingClientSync | null, rendered
 
 // Invalidate the usable grant before restoration. A grant is made usable only
 // by the React post-commit effect after all snapshot fields have rendered.
-export function stageHostFullSync(message: NetworkMessage, identity: { role: NetworkRole; myPeerId: string; hostPeerId: string }, props: Pick<MultiplayerManagerProps, 'observedHostStampRef' | 'clientTurnStampRef' | 'pendingClientSyncRef' | 'activeTurnRef' | 'abortControllerRef' | 'turnPhaseRef' | 'restoreFromSaveData' | 'setError' | 'setIsLoading' | 'scheduleClientSyncCommit' | 't'>): 'staged' | 'ignored' | 'failed' {
+export function stageHostFullSync(message: NetworkMessage, identity: { role: NetworkRole; myPeerId: string; hostPeerId: string }, props: Pick<MultiplayerManagerProps, 'observedHostStampRef' | 'clientTurnStampRef' | 'pendingClientSyncRef' | 'activeTurnRef' | 'abortControllerRef' | 'turnPhaseRef' | 'restoreFromSaveData' | 'setError' | 'setIsLoading' | 'scheduleClientSyncCommit' | 'pendingSyncRequestRef' | 't'>): 'staged' | 'ignored' | 'failed' {
     const decision = acceptHostStamp(props.observedHostStampRef.current, message.payload?.protocol);
     if (decision === 'invalid') { props.setError(props.t('network_protocol_incompatible')); return 'failed'; }
+    // A host may answer several queued requests with the same committed grant.
+    // A duplicate can satisfy this request only if that snapshot is still staged.
+    if (decision === 'duplicate' && props.pendingClientSyncRef.current &&
+        props.pendingSyncRequestRef?.current && message.payload?.syncRequestId === props.pendingSyncRequestRef.current) {
+        props.pendingSyncRequestRef.current = null;
+        props.scheduleClientSyncCommit();
+        return 'ignored';
+    }
     if (decision !== 'accept') return 'ignored';
     const previousObservedStamp = props.observedHostStampRef.current;
     props.clientTurnStampRef.current = null;
@@ -93,6 +102,9 @@ export function stageHostFullSync(message: NetworkMessage, identity: { role: Net
         const stamp = message.payload.protocol as TurnSyncStamp;
         props.pendingClientSyncRef.current = { stamp, snapshot };
         props.observedHostStampRef.current = stamp;
+        if (props.pendingSyncRequestRef?.current && message.payload.syncRequestId === props.pendingSyncRequestRef.current) {
+            props.pendingSyncRequestRef.current = null;
+        }
         props.setIsLoading(true);
         props.scheduleClientSyncCommit();
         return 'staged';
@@ -164,6 +176,7 @@ export const createMultiplayerManager = (
         pendingNetworkTurnRef,
         observedHostStampRef,
         pendingClientSyncRef,
+        pendingSyncRequestRef,
         scheduleClientSyncCommit,
         clearHostRestorePending,
         syncNewPeerRef,
@@ -178,9 +191,11 @@ export const createMultiplayerManager = (
         if (!currentGameState || currentGameState.networkRole !== 'player' || !hostConnectionRef.current) {
             return;
         }
+        const requestId = crypto.randomUUID();
+        if (pendingSyncRequestRef) pendingSyncRequestRef.current = requestId;
         const message: NetworkMessage = {
             type: 'request_full_sync',
-            payload: {},
+            payload: { syncRequestId: requestId },
             // FIX: Corrected property 'myPlayerId' to 'myPeerId' as defined in the GameState interface.
             senderId: currentGameState.myPeerId!,
         };
@@ -238,7 +253,7 @@ export const createMultiplayerManager = (
                         hostTurnAuthority.revoke();
                         const saveData = packageSaveData(gameStateRef.current);
                         if (saveData) {
-                            Promise.resolve(broadcastFullSync(saveData)).then(() => {
+                            Promise.resolve(broadcastFullSync(saveData, typeof message.payload?.syncRequestId === 'string' ? message.payload.syncRequestId : undefined)).then(() => {
                                 const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
                                 setGameHistory(prev => [...prev, systemMessage]);
                             }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
@@ -364,7 +379,7 @@ export const createMultiplayerManager = (
                     case 'full_sync': {
                         if (hostConnectionRef.current !== conn) break;
                         stageHostFullSync(message, { role, myPeerId: id, hostPeerId }, {
-                            observedHostStampRef, clientTurnStampRef, pendingClientSyncRef,
+                            observedHostStampRef, clientTurnStampRef, pendingClientSyncRef, pendingSyncRequestRef,
                             activeTurnRef, abortControllerRef, turnPhaseRef, restoreFromSaveData,
                             setError, setIsLoading, scheduleClientSyncCommit, t
                         });
@@ -574,7 +589,7 @@ export const createMultiplayerManager = (
                         hostTurnAuthority.revoke();
                         const saveData = packageSaveData(gameStateRef.current);
                         if (saveData) {
-                            Promise.resolve(broadcastFullSync(saveData)).then(() => {
+                            Promise.resolve(broadcastFullSync(saveData, typeof message.payload?.syncRequestId === 'string' ? message.payload.syncRequestId : undefined)).then(() => {
                                 const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
                                 setGameHistory(prev => [...prev, systemMessage]);
                             }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));

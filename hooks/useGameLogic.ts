@@ -84,7 +84,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const historyMutationRevisionRef = useRef(0), historyMutationAppliedRef = useRef(0);
     const gameplayMutationPendingRef = useRef(false);
     const [gameplayMutationEpoch, setGameplayMutationEpoch] = useState(0);
-    const mutationMessageRef = useRef({ delivery: '' });
+    const mutationMessageRef = useRef({ delivery: '', host: '' });
+    const hostHistoryHoldRef = useRef<(() => void) | null>(null);
     const hostTurnAuthorityRef = useRef<HostTurnAuthority | null>(null);
     if (!hostTurnAuthorityRef.current) hostTurnAuthorityRef.current = new HostTurnAuthority();
     const clientTurnStampRef = useRef<TurnSyncStamp | null>(null);
@@ -93,11 +94,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [clientSyncEpoch, setClientSyncEpoch] = useState(0);
     const scheduleClientSyncCommit = useCallback(() => setClientSyncEpoch(epoch => epoch + 1), []);
     const pendingNetworkTurnRef = useRef<string | null>(null);
+    const pendingSyncRequestRef = useRef<string | null>(null);
+    const queuedHostSyncRequestsRef = useRef(new Set<string>());
     const presentationJournalRef = useRef(new PresentationJournal());
     const hostRestorePendingRef = useRef<{ snapshot: SaveFile | null; release: () => void } | null>(null);
     const [hostRestoreEpoch, setHostRestoreEpoch] = useState(0);
     const clearHostRestorePending = useCallback(() => {
         hostRestorePendingRef.current = null;
+        hostHistoryHoldRef.current?.();
+        hostHistoryHoldRef.current = null;
+        pendingSyncRequestRef.current = null;
+        queuedHostSyncRequestsRef.current.clear();
         presentationJournalRef.current.clear();
     }, []);
 
@@ -137,6 +144,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const setGameState = useCallback((action: React.SetStateAction<GameState | null>) => {
         // Once a player result is in flight, changing its base cannot undo the
         // send. Reject the edit until the authoritative sync is received.
+        if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
+            setError(mutationMessageRef.current.host); return;
+        }
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
             gameStateRef.current?.networkRole, turnPhaseRef.current,
             pendingClientSyncRef.current !== null || pendingNetworkTurnRef.current !== null || !clientTurnStampRef.current);
@@ -178,11 +188,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
     }, []);
     const setUserGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
+        if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
+            setError(mutationMessageRef.current.host); return;
+        }
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
             gameStateRef.current?.networkRole, turnPhaseRef.current,
             pendingClientSyncRef.current !== null || pendingNetworkTurnRef.current !== null || !clientTurnStampRef.current);
         if (revision === null) { setError(mutationMessageRef.current.delivery); return; }
         historyMutationRevisionRef.current = revision;
+        if (gameStateRef.current?.networkRole === 'host' && !hostHistoryHoldRef.current) {
+            hostHistoryHoldRef.current = hostTurnAuthorityRef.current!.beginMutation();
+        }
         setGameHistory(previous => {
             try { return typeof action === 'function' ? action(previous) : action; }
             finally {
@@ -260,15 +276,21 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [isLoading]);
 
     const { t } = useLocalization();
-    mutationMessageRef.current = { delivery: t('game_edit_blocked_delivery') };
+    mutationMessageRef.current = { delivery: t('game_edit_blocked_delivery'), host: t('host_sync_not_ready') };
     const gameContextRef = useRef<GameContext | null>(null);
 
     useEffect(() => {
         if (gameHistoryRef.current === gameHistory &&
             stateMutationAppliedRef.current === stateMutationRevisionRef.current &&
             historyMutationAppliedRef.current === historyMutationRevisionRef.current) {
-            gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
-                gameplayMutationRevisionRef, gameState, gameStateRef.current);
+            if (gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
+                gameplayMutationRevisionRef, gameState, gameStateRef.current)) {
+                if (hostHistoryHoldRef.current) {
+                    hostHistoryHoldRef.current();
+                    hostHistoryHoldRef.current = null;
+                    setSnapshotEpoch(epoch => epoch + 1);
+                }
+            }
         }
     }, [gameState, gameHistory, gameplayMutationEpoch]);
 
@@ -370,6 +392,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             pendingClientSyncRef.current = null;
             clientTurnStampRef.current = null;
             pendingNetworkTurnRef.current = null;
+            pendingSyncRequestRef.current = null;
         }
         if (!isNetworkSync && hostRestorePendingRef.current) {
             clearHostRestorePending();
@@ -1190,7 +1213,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
     }, []);
 
-    const broadcastFullSync = useCallback((saveData: SaveFile) => {
+    const broadcastFullSync = useCallback((saveData: SaveFile, syncRequestId?: string) => {
         console.log("Broadcasting full sync to all clients...");
         const currentGameState = gameStateRef.current;
 
@@ -1199,14 +1222,23 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return Promise.reject(new Error("Only the host can broadcast a full sync."));
         }
 
+        // Keep requests received during a React mutation until a committed
+        // snapshot can be published. A request is never acknowledged by an
+        // unrelated in-flight snapshot.
+        if (syncRequestId) queuedHostSyncRequestsRef.current.add(syncRequestId);
         // An asynchronously retained snapshot must never receive a fresh grant.
         if (saveData.gameState !== currentGameState) return Promise.resolve();
         const stamp = hostTurnAuthorityRef.current!.issue();
         // A pending React mutation means this snapshot might be stale. The
         // state-change effect publishes the committed snapshot after render.
         if (!stamp) return Promise.resolve();
-        const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: saveData, protocol: stamp } };
-        return broadcastToConnections(connectionsRef.current.values(), syncMessage);
+        const requests = [...queuedHostSyncRequestsRef.current];
+        queuedHostSyncRequestsRef.current.clear();
+        const ids: (string | undefined)[] = requests.length ? requests : [undefined];
+        return Promise.all(ids.map(id => {
+            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: saveData, protocol: stamp, ...(id ? { syncRequestId: id } : {}) } };
+            return broadcastToConnections(connectionsRef.current.values(), syncMessage);
+        })).then(() => undefined);
     }, []);
 
     // Peer event handlers outlive the render in which they were registered.
@@ -1298,6 +1330,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 pendingNetworkTurnRef,
                 observedHostStampRef,
                 pendingClientSyncRef,
+                pendingSyncRequestRef,
                 scheduleClientSyncCommit,
                 clearHostRestorePending,
                 syncNewPeerRef,
@@ -1704,7 +1737,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             gameState, currentGameState: gameStateRef.current, gameHistory, gameLog,
             combatLog, lastJsonResponse, sceneImagePrompt
         });
-        if (!stamp || !pending || !gameState) return;
+        if (!stamp || !pending || !gameState || pendingSyncRequestRef.current) return;
         const journal = presentationJournalRef.current;
         journal.acknowledge(pending.snapshot.gameState);
         if (!journal.matches(gameState)) {
