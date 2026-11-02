@@ -26,6 +26,7 @@ interface MultiplayerManagerProps {
     connectionsRef: React.MutableRefObject<Map<string, DataConnection>>;
     hostConnectionRef: React.MutableRefObject<DataConnection | null>;
     setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
+    activeTurnRef: React.MutableRefObject<symbol | null>;
     syncNewPeerRef: React.MutableRefObject<(conn: DataConnection) => void>;
     sendMessageRef: React.MutableRefObject<(message: string, image?: { data: string; mimeType: string; } | null) => void>;
     gameStateRef: React.RefObject<GameState | null>;
@@ -75,6 +76,7 @@ export const createMultiplayerManager = (
         connectionsRef,
         hostConnectionRef,
         setIsLoading,
+        activeTurnRef,
         syncNewPeerRef,
         sendMessageRef,
         gameStateRef,
@@ -291,7 +293,9 @@ export const createMultiplayerManager = (
                         const connectedMessage: ChatMessage = { sender: 'system', content: t('connected_to_host', { hostId: hostPeerId }) };
                         const syncedMessage: ChatMessage = { sender: 'system', content: t('game_state_synced') };
                         setGameHistory(prev => [...prev, connectedMessage, syncedMessage]);
-                        setIsLoading(false);
+                        // A sync can arrive while the local GM/send task is still running.
+                        // Keep submission locked until that task notices the new revision.
+                        setIsLoading(activeTurnRef.current !== null);
                         break;
 
                     case 'chat_message':
@@ -305,14 +309,14 @@ export const createMultiplayerManager = (
                 hostConnectionRef.current = null;
                 console.log('Connection to host lost.');
                 setError(t('connection_lost'));
-                setIsLoading(false);
+                setIsLoading(activeTurnRef.current !== null);
                 setGameState(prev => prev ? ({ ...prev, isConnectedToHost: false }) : null);
             });
 
             (conn as any).on('error', (err: any) => {
                  console.error('PeerJS connection error:', err);
                 setError(`Connection error: ${err.message}`);
-                setIsLoading(false);
+                setIsLoading(activeTurnRef.current !== null);
             });
         });
 

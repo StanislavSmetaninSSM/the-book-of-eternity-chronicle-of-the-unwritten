@@ -29,6 +29,7 @@ export const createTurnManager = (
         setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions,
         setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
         gameContextRef, abortControllerRef,
+        syncRevisionRef = { current: 0 }, activeTurnRef = { current: null },
         setSuperInstructions, setGameSettings,
         setLanguage,
         t,
@@ -62,6 +63,8 @@ export const createTurnManager = (
         setTurnNumber: React.Dispatch<React.SetStateAction<number | null>>,
         gameContextRef: React.MutableRefObject<GameContext | null>,
         abortControllerRef: React.MutableRefObject<AbortController | null>,
+        syncRevisionRef?: React.MutableRefObject<number>,
+        activeTurnRef?: React.MutableRefObject<symbol | null>,
         setSuperInstructions: React.Dispatch<React.SetStateAction<string>>,
         setGameSettings: React.Dispatch<React.SetStateAction<any>>,
         setLanguage: (lang: any) => void,
@@ -87,6 +90,12 @@ export const createTurnManager = (
         state.temporaryStash?.length ? { ...state, temporaryStash: [] } : state;
 
     const handleTurn = async (context: GameContext, fullHistoryForTurn: ChatMessage[], baseStateOverride?: GameState) => {
+        if (activeTurnRef.current) return;
+        const turnToken = Symbol('turn');
+        activeTurnRef.current = turnToken;
+        const startingRevision = syncRevisionRef.current;
+        const isPlayerTurn = (baseStateOverride || gameStateRef.current)?.networkRole === 'player';
+        const wasSuperseded = () => isPlayerTurn && syncRevisionRef.current !== startingRevision;
         setIsLoading(true);
         setError(null);
         const startingCombatLog = context.enemiesDataForCurrentTurn?.length ? combatLog : [];
@@ -101,19 +110,28 @@ export const createTurnManager = (
         // roll back its logs or suggest that the user repeat the action.
         let stateCommitted = false;
         let playerSendAttempted = false;
+        const reportSuperseded = () => {
+            const warning = t(playerSendAttempted ? 'turn_sync_during_send' : 'turn_sync_before_send');
+            setError(warning);
+            setGameHistory(prev => [...prev, { sender: 'system', content: warning }]);
+            setIsLoading(false);
+        };
 
         try {
             const onPartialResponse = (response: any, stepName: string, modelName: string) => {
+                if (wasSuperseded()) return;
                 setLastJsonResponse(JSON.stringify(response, null, 2));
                 if (response.items_and_stat_calculations) {
                     setGameLog(response.items_and_stat_calculations);
                 }
             };
             const onStepStart = (stepName: string, modelName: string) => {
+                if (wasSuperseded()) return;
                 setCurrentStep(stepName);
                 setCurrentModel(getModelForStep(stepName, context));
             };
             const onStreamingChunk = (text: string) => {
+                if (wasSuperseded()) return;
                 setLastJsonResponse(text);
             };
 
@@ -148,6 +166,7 @@ export const createTurnManager = (
                 onStepStart
             );
             
+            if (wasSuperseded()) { reportSuperseded(); return; }
             const finalResponse = deepStripModerationSymbols(finalResponseRaw);
           
             if (context.gameSettings.allowHistoryManipulation !== true && finalResponse.playerBehaviorAssessment?.historyManipulationCoefficient >= 0.8) {
@@ -203,6 +222,7 @@ export const createTurnManager = (
                     };
                     playerSendAttempted = true;
                     await sendOnOpenConnection(hostConnectionRef.current, message);
+                    if (wasSuperseded()) { reportSuperseded(); return; }
                     
                     // Optimistic update for UI responsiveness
                     applyResponsePresentation();
@@ -267,6 +287,7 @@ export const createTurnManager = (
             }
           
         } catch (err: any) {
+          if (wasSuperseded()) { reportSuperseded(); return; }
           // Roll back streamed calculations only if the state was not applied.
           // A post-commit sync error must retain the committed logs and story.
           if (!stateCommitted) {
@@ -282,6 +303,7 @@ export const createTurnManager = (
             setGameHistory(prev => [...prev, systemMessage]);
           }
         } finally {
+            if (activeTurnRef.current === turnToken) activeTurnRef.current = null;
             if (gameStateRef.current?.networkRole !== 'player') {
                 setIsLoading(false);
                 if (turnStartTimeRef.current) {
@@ -298,7 +320,7 @@ export const createTurnManager = (
     };
     
     const sendMessage = (message: string, image?: { data: string; mimeType: string; } | null) => {
-        if (isLoading) return;
+        if (isLoading || activeTurnRef.current) return;
 
         if (packageSaveDataForTurn && setLastTurnSaveFile) {
             const saveData = packageSaveDataForTurn();
@@ -384,7 +406,7 @@ export const createTurnManager = (
 
     const askQuestion = async (question: string, image?: { data: string; mimeType: string; } | null) => {
         const baseState: GameState | null = gameStateRef.current;
-        if (!gameContextRef.current || isLoading || !baseState) return;
+        if (!gameContextRef.current || isLoading || !baseState || activeTurnRef.current) return;
     
         if (packageSaveDataForTurn && setLastTurnSaveFile) {
             const saveData = packageSaveDataForTurn();
@@ -421,19 +443,33 @@ export const createTurnManager = (
             previousThoughtSignature: baseState.thoughtSignature
         };
         setLastRequestJson(JSON.stringify(context, null, 2));
+        const turnToken = Symbol('question');
+        activeTurnRef.current = turnToken;
+        const startingRevision = syncRevisionRef.current;
+        const isPlayerTurn = baseState.networkRole === 'player';
+        const wasSuperseded = () => isPlayerTurn && syncRevisionRef.current !== startingRevision;
         let stateCommitted = false;
         let playerSendAttempted = false;
+        const reportSuperseded = () => {
+            const warning = t(playerSendAttempted ? 'turn_sync_during_send' : 'turn_sync_before_send');
+            setError(warning);
+            setGameHistory(prev => [...prev, { sender: 'system', content: warning }]);
+            setIsLoading(false);
+        };
 
         try {
             const onStepStart = (stepName: string, modelName: string) => {
+              if (wasSuperseded()) return;
               setCurrentStep(stepName);
               setCurrentModel(getModelForStep(stepName, context));
             };
             const onStreamingChunk = (text: string) => {
+              if (wasSuperseded()) return;
               setLastJsonResponse(text);
             };
     
             const finalResponseRaw: GameResponse = await executeGmQuestion(context, abortControllerRef.current.signal, onStreamingChunk, onStepStart);
+            if (wasSuperseded()) { reportSuperseded(); return; }
             const finalResponse = deepStripModerationSymbols(finalResponseRaw);
             
             let finalMergedResponse = finalResponse;
@@ -441,7 +477,7 @@ export const createTurnManager = (
     
             if (shouldRunWorldProgression(finalResponse.generateWorldProgression, context.gameSettings)) {
                 const wpContext = { ...context, responseHistory: [...historyWithQuestion, gmMessage] };
-                const wpResponseRaw = await executeWorldProgression(wpContext, abortControllerRef.current!.signal, onStreamingChunk, (r, s, m) => setLastJsonResponse(JSON.stringify(r, null, 2)), onStepStart);
+                const wpResponseRaw = await executeWorldProgression(wpContext, abortControllerRef.current!.signal, onStreamingChunk, (r, s, m) => { if (!wasSuperseded()) setLastJsonResponse(JSON.stringify(r, null, 2)); }, onStepStart);
                 const wpResponse = deepStripModerationSymbols(wpResponseRaw);
                 finalMergedResponse = deepMergeResponses(finalResponse, wpResponse);
                 
@@ -453,6 +489,7 @@ export const createTurnManager = (
                 }
             }
             
+            if (wasSuperseded()) { reportSuperseded(); return; }
             setLastJsonResponse(JSON.stringify(finalMergedResponse, null, 2));
     
             // FIX: Passing context.worldMap instead of visitedLocations
@@ -492,6 +529,7 @@ export const createTurnManager = (
                     };
                     playerSendAttempted = true;
                     await sendOnOpenConnection(hostConnectionRef.current, message);
+                    if (wasSuperseded()) { reportSuperseded(); return; }
                     
                     // Optimistic update for UI responsiveness
                     setGameHistory(newHistoryWithAnswer);
@@ -547,6 +585,7 @@ export const createTurnManager = (
             }
           
         } catch (err: any) {
+          if (wasSuperseded()) { reportSuperseded(); return; }
           if (!stateCommitted) {
             setGameLog(gameLog);
             setCombatLog(combatLog);
@@ -561,6 +600,7 @@ export const createTurnManager = (
             else setGameHistory([...historyWithQuestion, systemMessage]);
           }
         } finally {
+            if (activeTurnRef.current === turnToken) activeTurnRef.current = null;
             if (gameStateRef.current?.networkRole !== 'player') {
                 setIsLoading(false);
                 if (turnStartTimeRef.current) {

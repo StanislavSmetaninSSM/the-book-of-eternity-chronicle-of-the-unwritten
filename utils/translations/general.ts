@@ -1,5 +1,7 @@
 export const general = {
   en: {
+    "turn_sync_before_send": "The host synchronized the game while your action was being generated. The old result was discarded and was not sent. Review the synchronized state before taking another action.",
+    "turn_sync_during_send": "The host synchronized the game while your result was being sent. The synchronized state was preserved, but delivery of your result is not confirmed. Check the host history and synchronize again if necessary before repeating the action.",
     "error_turn_delivery_unknown": "The result was not applied locally because sending failed. The host may still have received it. Do not repeat the action until you reconnect and synchronize with the host.",
     "error_sync_failed": "Synchronization could not be sent to every player. Do not repeat the last action; reconnect and synchronize before continuing. Delivery is not guaranteed.",
     "error_turn_applied_followup": "The turn was already applied, but a subsequent operation failed. Do not repeat the action. In multiplayer, reconnect and synchronize before continuing; other players may not have received the result.",
@@ -225,6 +227,8 @@ export const general = {
     "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.": "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.",
   },
   ru: {
+    "turn_sync_before_send": "Хост синхронизировал игру во время подготовки действия. Старый результат отброшен и не отправлен. Перед следующим действием проверьте синхронизированное состояние.",
+    "turn_sync_during_send": "Хост синхронизировал игру во время отправки результата. Синхронизированное состояние сохранено, но доставка результата не подтверждена. Перед повтором проверьте историю хоста и при необходимости синхронизируйте игру ещё раз.",
     "error_turn_delivery_unknown": "Результат не применён локально из-за ошибки отправки. Хост всё же мог его получить. Не повторяйте действие, пока не восстановите соединение и синхронизацию с хостом.",
     "error_sync_failed": "Не удалось отправить синхронизацию всем игрокам. Не повторяйте последнее действие; восстановите соединение и синхронизацию перед продолжением. Доставка не гарантирована.",
     "error_turn_applied_followup": "Ход уже применён, но последующее действие завершилось ошибкой. Не повторяйте ход. В мультиплеере восстановите соединение и синхронизацию перед продолжением: другие игроки могли не получить результат.",
