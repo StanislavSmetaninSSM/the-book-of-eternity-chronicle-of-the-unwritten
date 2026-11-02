@@ -16,6 +16,7 @@ export const createPlayerActionsManager = (
     {
         setGameState,
         setGameHistory,
+        setUserGameHistory = setGameHistory,
         setGameLog,
         setCombatLog,
         setVisitedLocations,
@@ -27,6 +28,7 @@ export const createPlayerActionsManager = (
     }: {
         setGameState: React.Dispatch<React.SetStateAction<GameState | null>>,
         setGameHistory: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+        setUserGameHistory?: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
         setGameLog: React.Dispatch<React.SetStateAction<string[]>>,
         setCombatLog: React.Dispatch<React.SetStateAction<string[]>>,
         setVisitedLocations: React.Dispatch<React.SetStateAction<Location[]>>,
@@ -74,7 +76,7 @@ export const createPlayerActionsManager = (
 
     const editChatMessage = (indexToEdit: number, newContent: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
-        setGameHistory(prevHistory => {
+        setUserGameHistory(prevHistory => {
             const newHistory = [...prevHistory];
             if (newHistory[indexToEdit]) {
                 newHistory[indexToEdit] = { ...newHistory[indexToEdit], content: newContent };
@@ -269,11 +271,11 @@ export const createPlayerActionsManager = (
     };
 
     const deleteMessage = (indexToDelete: number) => {
-        setGameHistory(prevHistory => deleteMessageUtil(indexToDelete, prevHistory));
+        setUserGameHistory(prevHistory => deleteMessageUtil(indexToDelete, prevHistory));
     };
 
     const clearHalfHistory = () => {
-        setGameHistory(prevHistory => clearHalfHistoryUtil(prevHistory));
+        setUserGameHistory(prevHistory => clearHalfHistoryUtil(prevHistory));
     };
 
     const deleteLogs = () => {

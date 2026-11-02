@@ -46,7 +46,7 @@ interface MultiplayerManagerProps {
 }
 
 
-export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; }
+export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; }
 
 export function snapshotMatchesRendered(snapshot: SaveFile, rendered: { gameState: GameState | null; currentGameState: GameState | null; gameHistory: ChatMessage[]; gameLog: string[]; combatLog: string[]; lastJsonResponse: string | null; sceneImagePrompt: string | null }): boolean {
     // A superseded task can append a local system warning after restoration.
@@ -184,7 +184,9 @@ export const createMultiplayerManager = (
             // FIX: Corrected property 'myPlayerId' to 'myPeerId' as defined in the GameState interface.
             senderId: currentGameState.myPeerId!,
         };
-        hostConnectionRef.current.send(message);
+        clientTurnStampRef.current = null;
+        void sendOnOpenConnection(hostConnectionRef.current, message).catch(error =>
+            setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
         const systemMessage: ChatMessage = { sender: 'system', content: t('requesting_sync_from_host') };
         setGameHistory(prev => [...prev, systemMessage]);
     };

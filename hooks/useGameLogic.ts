@@ -1,3 +1,4 @@
+import { PresentationJournal } from '../utils/presentationJournal';
 import { beginGameplayMutation, gameplayMutationCommitted } from '../utils/gameplayMutationGate';
 import { HostTurnAuthority, type TurnSyncStamp } from '../utils/networkTurnProtocol';
 import { broadcastToConnections } from '../utils/peerSend';
@@ -79,6 +80,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [snapshotEpoch, setSnapshotEpoch] = useState(0);
     const gameplayMutationRevisionRef = useRef(0);
     const gameplayMutationAppliedRef = useRef(0);
+    const stateMutationRevisionRef = useRef(0), stateMutationAppliedRef = useRef(0);
+    const historyMutationRevisionRef = useRef(0), historyMutationAppliedRef = useRef(0);
     const gameplayMutationPendingRef = useRef(false);
     const [gameplayMutationEpoch, setGameplayMutationEpoch] = useState(0);
     const mutationMessageRef = useRef({ delivery: '' });
@@ -90,10 +93,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [clientSyncEpoch, setClientSyncEpoch] = useState(0);
     const scheduleClientSyncCommit = useCallback(() => setClientSyncEpoch(epoch => epoch + 1), []);
     const pendingNetworkTurnRef = useRef<string | null>(null);
+    const presentationJournalRef = useRef(new PresentationJournal());
     const hostRestorePendingRef = useRef<{ snapshot: SaveFile | null; release: () => void } | null>(null);
     const [hostRestoreEpoch, setHostRestoreEpoch] = useState(0);
     const clearHostRestorePending = useCallback(() => {
         hostRestorePendingRef.current = null;
+        presentationJournalRef.current.clear();
     }, []);
 
 
@@ -133,23 +138,61 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         // Once a player result is in flight, changing its base cannot undo the
         // send. Reject the edit until the authoritative sync is received.
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
-            gameStateRef.current?.networkRole, turnPhaseRef.current);
+            gameStateRef.current?.networkRole, turnPhaseRef.current,
+            pendingClientSyncRef.current !== null || pendingNetworkTurnRef.current !== null || !clientTurnStampRef.current);
         if (revision === null) {
             setError(mutationMessageRef.current.delivery);
             return;
         }
+        stateMutationRevisionRef.current = revision;
         setGameStateInternal(previous => {
             try { return typeof action === 'function' ? action(previous) : action; }
-            finally { gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, revision); }
+            finally {
+                stateMutationAppliedRef.current = Math.max(stateMutationAppliedRef.current, revision);
+                gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, revision);
+            }
         });
         setGameplayMutationEpoch(epoch => epoch + 1);
         if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
     }, [setGameStateInternal]);
 
+    const setPresentationState = useCallback((action: React.SetStateAction<GameState | null>) => {
+        const record = gameStateRef.current?.networkRole === 'player';
+        setGameStateInternal(previous => {
+            const next = typeof action === 'function' ? action(previous) : action;
+            if (record) presentationJournalRef.current.record(previous, next);
+            return next;
+        });
+    }, [setGameStateInternal]);
+
     const [worldState, setWorldState] = useState<WorldState | null>(null);
     const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
     const [superInstructions, setSuperInstructions] = useState<string>('');
-    const [gameHistory, setGameHistory] = useState<ChatMessage[]>([]);
+    const [gameHistory, _setGameHistory] = useState<ChatMessage[]>([]);
+    const gameHistoryRef = useRef(gameHistory);
+    const setGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
+        _setGameHistory(previous => {
+            const next = typeof action === 'function' ? action(previous) : action;
+            gameHistoryRef.current = next;
+            return next;
+        });
+    }, []);
+    const setUserGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
+            gameStateRef.current?.networkRole, turnPhaseRef.current,
+            pendingClientSyncRef.current !== null || pendingNetworkTurnRef.current !== null || !clientTurnStampRef.current);
+        if (revision === null) { setError(mutationMessageRef.current.delivery); return; }
+        historyMutationRevisionRef.current = revision;
+        setGameHistory(previous => {
+            try { return typeof action === 'function' ? action(previous) : action; }
+            finally {
+                historyMutationAppliedRef.current = Math.max(historyMutationAppliedRef.current, revision);
+                gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, revision);
+            }
+        });
+        setGameplayMutationEpoch(epoch => epoch + 1);
+        if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
+    }, [setGameHistory]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [lastJsonResponse, setLastJsonResponse] = useState<string | null>(null);
@@ -221,9 +264,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const gameContextRef = useRef<GameContext | null>(null);
 
     useEffect(() => {
-        gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
-            gameplayMutationRevisionRef, gameState, gameStateRef.current);
-    }, [gameState, gameplayMutationEpoch]);
+        if (gameHistoryRef.current === gameHistory &&
+            stateMutationAppliedRef.current === stateMutationRevisionRef.current &&
+            historyMutationAppliedRef.current === historyMutationRevisionRef.current) {
+            gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
+                gameplayMutationRevisionRef, gameState, gameStateRef.current);
+        }
+    }, [gameState, gameHistory, gameplayMutationEpoch]);
 
     useEffect(() => {
         if (gameState) {
@@ -318,6 +365,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const restoreFromSaveData = useCallback((data: SaveFile, isNetworkSync: boolean = false, networkIdentityOverride?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => {
         syncRevisionRef.current += 1;
+        if (!isNetworkSync) {
+            presentationJournalRef.current.clear();
+            pendingClientSyncRef.current = null;
+            clientTurnStampRef.current = null;
+            pendingNetworkTurnRef.current = null;
+        }
         if (!isNetworkSync && hostRestorePendingRef.current) {
             clearHostRestorePending();
             hostTurnAuthorityRef.current!.reset();
@@ -831,13 +884,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const prevPlayersLengthRef = useRef<number | undefined>(undefined);
 
     const onImageGenerated = useCallback((cacheKey: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => {
-        setGameStateInternal(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             const newCacheEntry: ImageCacheEntry = { src, sourceProvider, sourceModel };
             const newCache = { ...(prev.imageCache || {}), [cacheKey]: newCacheEntry };
             return { ...prev, imageCache: newCache };
         });
-    }, [setGameStateInternal]);
+    }, [setPresentationState]);
 
     useEffect(() => {
         const fetchInitialData = async () => {
@@ -1206,7 +1259,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setGameState, gameContextRef, t, gameState
             }),
             ...createPlayerActionsManager({
-                setGameState, setGameHistory, setGameLog, setCombatLog, setVisitedLocations,
+                setGameState, setGameHistory, setUserGameHistory, setGameLog, setCombatLog, setVisitedLocations,
                 setWorldMap, setWorldState, gameSettings, gameContextRef, t
             }),
             ...createMusicManager({
@@ -1541,7 +1594,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     
     // FIX: Added deleteImageFromCache function to manage the image cache.
     const deleteImageFromCache = useCallback((prompt: string) => {
-        setGameStateInternal(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             const newCache = { ...prev.imageCache };
             if (newCache[prompt]) {
@@ -1557,15 +1610,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             return { ...prev, imageCache: newCache };
         });
-    }, [setGameStateInternal]);
+    }, [setPresentationState]);
 
     // FIX: Added clearImageCache function and exported it from the useGameLogic hook.
     const clearImageCache = useCallback(() => {
-        setGameStateInternal(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             return { ...prev, imageCache: {} };
         });
-    }, [setGameStateInternal]);
+    }, [setPresentationState]);
 
     const regenerateLastResponse = useCallback(async (): Promise<boolean> => {
         const turnSaveToUse = lastTurnSaveFile;
@@ -1646,11 +1699,25 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // A grant is usable only after React has committed the entire snapshot,
     // including the history/log closures used by the current turn manager.
     useEffect(() => {
-        const stamp = commitClientSnapshot(pendingClientSyncRef.current, {
+        const pending = pendingClientSyncRef.current;
+        const stamp = commitClientSnapshot(pending, {
             gameState, currentGameState: gameStateRef.current, gameHistory, gameLog,
             combatLog, lastJsonResponse, sceneImagePrompt
         });
-        if (!stamp) return;
+        if (!stamp || !pending || !gameState) return;
+        const journal = presentationJournalRef.current;
+        journal.acknowledge(pending.snapshot.gameState);
+        if (!journal.matches(gameState)) {
+            if (!pending.presentationReplayRequested) {
+                pending.presentationReplayRequested = true;
+                setGameStateInternal(previous => {
+                    pending.presentationReplayRequested = false;
+                    return previous ? journal.apply(previous) : previous;
+                });
+                setClientSyncEpoch(epoch => epoch + 1);
+            }
+            return;
+        }
         clientTurnStampRef.current = stamp;
         pendingClientSyncRef.current = null;
         pendingNetworkTurnRef.current = null;
@@ -2542,7 +2609,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             
             if (cinemaController.signal.aborted) return;
-            setGameStateInternal(prev => {
+            setPresentationState(prev => {
                 if (!prev) return null;
                 const cinematics = [...(prev.cinematics || []), newCinematic];
                 return { ...prev, cinematics };
@@ -2561,7 +2628,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setIsGeneratingCinema(false);
             }
         }
-    }, [gameSettings, superInstructions, t, setError, setGameStateInternal]);
+    }, [gameSettings, superInstructions, t, setError, setPresentationState]);
 
     const continueFilmTrailer = useCallback(async (cinematicId: string) => {
         if (!gameContextRef.current || !gameSettings) return;
@@ -2613,7 +2680,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
 
             if (cinemaController.signal.aborted) return;
-            setGameStateInternal(prev => {
+            setPresentationState(prev => {
                 if (!prev) return null;
                 const newCinematics = (prev.cinematics || []).map(c => {
                     if (c.id === cinematicId) {
@@ -2638,7 +2705,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setExtendingCinematicId(null);
             }
         }
-    }, [gameSettings, superInstructions, t, setError, setGameStateInternal, gameStateRef]);
+    }, [gameSettings, superInstructions, t, setError, setPresentationState, gameStateRef]);
 
     const playCinematic = useCallback((cinematicId: string) => {
         const cinematic = gameStateRef.current?.cinematics?.find(c => c.id === cinematicId);
@@ -2675,7 +2742,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         const content = re.target?.result as string;
                         const cinematic = JSON.parse(content) as Cinematic;
                         if (cinematic.id && cinematic.title && cinematic.frames) {
-                            setGameStateInternal(prev => {
+                            setPresentationState(prev => {
                                 if (!prev) return null;
                                 const existing = (prev.cinematics || []).find(c => c.id === cinematic.id);
                                 if (existing) {
@@ -2698,19 +2765,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
         };
         input.click();
-    }, [t, setError, setGameLog, setGameStateInternal]);
+    }, [t, setError, setGameLog, setPresentationState]);
 
     const deleteCinematic = useCallback((cinematicId: string) => {
-        setGameStateInternal(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             const cinematics = (prev.cinematics || []).filter(c => c.id !== cinematicId);
             setGameLog(p => [t('CinematicDeleted'), ...p]);
             return { ...prev, cinematics };
         });
-    }, [setGameStateInternal, setGameLog, t]);
+    }, [setPresentationState, setGameLog, t]);
 
     const updateCinematic = useCallback((cinematicId: string, updates: Partial<Omit<Cinematic, 'id'>>) => {
-        setGameStateInternal(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             const newCinematics = (prev.cinematics || []).map(c => {
                 if (c.id === cinematicId) {
@@ -2721,14 +2788,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setGameLog(p => [t('CinematicUpdated'), ...p]);
             return { ...prev, cinematics: newCinematics };
         });
-    }, [setGameStateInternal, setGameLog, t]);
+    }, [setPresentationState, setGameLog, t]);
 
     const regenerateCinemaFrame = useCallback(async (cinematicId: string, frameIndex: number, newPrompt: string): Promise<boolean> => {
         if (gameSettings?.disableImageGeneration || gameContextRef.current?.gameSettings?.disableImageGeneration) return false;
         try {
             const imageUrl = await requestArenaGmImage(newPrompt, 1024, 1024);
             if (imageUrl) {
-                setGameStateInternal(prev => {
+                setPresentationState(prev => {
                     if (!prev) return null;
                     const newCinematics = (prev.cinematics || []).map(c => {
                         if (c.id === cinematicId) {
@@ -2759,7 +2826,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(formatError(e));
             return false;
         }
-    }, [gameSettings, gameContextRef, setGameStateInternal, setError]);
+    }, [gameSettings, gameContextRef, setPresentationState, setError]);
 
     const generateCinematicAudio = useCallback(async (cinematicId: string, voice: string) => {
         setIsGeneratingCinema(true);

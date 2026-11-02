@@ -3,9 +3,9 @@ import type { NetworkRole } from '../types';
 /** Starting a local edit while a result is in flight cannot revoke that send. */
 export function beginGameplayMutation(
     revision: { current: number }, pending: { current: boolean },
-    role: NetworkRole | undefined, phase: string
+    role: NetworkRole | undefined, phase: string, syncPending = false
 ): number | null {
-    if (role === 'player' && (phase === 'sending' || phase === 'awaiting-sync')) return null;
+    if (role === 'player' && (syncPending || phase === 'sending' || phase === 'awaiting-sync')) return null;
     pending.current = true;
     return ++revision.current;
 }
