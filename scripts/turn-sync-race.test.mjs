@@ -33,6 +33,7 @@ test('authoritative sync wins over pending player turn and question before or du
     assert.match(hook, /restoreFromSaveData = useCallback\([^]*?syncRevisionRef\.current \+= 1/);
     assert.match(hook, /gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef/);
     assert.match(network, /setIsLoading\(activeTurnRef\.current !== null\)/);
+    assert.match(network, /if \(activeTurnRef\.current\) abortControllerRef\.current\?\.abort\(\)/);
     for (const phase of ['before-send', 'send-success', 'send-reject']) for (const question of [false, true]) {
       const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
       context.currentTurnNumber = 2;

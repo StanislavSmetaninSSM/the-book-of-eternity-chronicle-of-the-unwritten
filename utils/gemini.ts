@@ -134,6 +134,7 @@ async function attemptCorrection(
     invalidJson: string,
     context: GameContext,
     error: Error,
+    abortSignal: AbortSignal,
 ): Promise<any> {
     const correctionContext = {
         ...context,
@@ -144,7 +145,7 @@ async function attemptCorrection(
     const correctionText = await callGenerativeApiRaw(
         getCorrectionPrompt(invalidJson, context, error),
         correctionContext,
-        new AbortController().signal,
+        abortSignal,
     );
     return JSON.parse(cleanJsonString(correctionText));
 }
@@ -253,6 +254,7 @@ export async function executeStepWithCorrection(
                             err.rawText, 
                             stepContext, 
                             err,
+                            abortSignal,
                         );
 
                         if (correctionResult.regenerationRequired) {
@@ -267,6 +269,7 @@ export async function executeStepWithCorrection(
                         break;
 
                     } catch (correctionError: any) {
+                        if (abortSignal.aborted) throw correctionError;
                         console.warn(`Correction attempt ${correctionAttempt} failed. Error: ${correctionError.message}`);
                     }
                 }

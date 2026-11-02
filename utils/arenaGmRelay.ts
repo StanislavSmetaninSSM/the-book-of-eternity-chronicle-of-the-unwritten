@@ -219,9 +219,22 @@ function pumpRelayJobs(): void {
 }
 
 /** Hold images while the full staged game turn is in progress. */
-export function acquireArenaGmTurnLease(): Promise<() => void> {
-  return new Promise(resolve => {
-    waitingTurnLeases.push(resolve);
+export function acquireArenaGmTurnLease(signal?: AbortSignal): Promise<() => void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException('Turn cancelled.', 'AbortError')); return; }
+    const granted = (release: () => void) => {
+      signal?.removeEventListener('abort', abort);
+      resolve(release);
+    };
+    const abort = () => {
+      const index = waitingTurnLeases.indexOf(granted);
+      if (index >= 0) waitingTurnLeases.splice(index, 1);
+      signal?.removeEventListener('abort', abort);
+      reject(new DOMException('Turn cancelled.', 'AbortError'));
+      pumpRelayJobs();
+    };
+    waitingTurnLeases.push(granted);
+    signal?.addEventListener('abort', abort, { once: true });
     // A portrait may already be generating during cold start. Cancel only that image
     // attempt, retain its job, and retry it after every waiting turn lease is released.
     if (activeImageJob && !activeImageJob.signal?.aborted) {

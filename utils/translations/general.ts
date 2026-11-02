@@ -1,5 +1,6 @@
 export const general = {
   en: {
+    "cancel_waiting_sync": "The result was already sent and applied locally. The host may or may not have received it. Do not repeat the action; reconnect and synchronize with the host first.",
     "turn_sync_before_send": "The host synchronized the game while your action was being generated. The old result was discarded and was not sent. Review the synchronized state before taking another action.",
     "turn_sync_during_send": "The host synchronized the game while your result was being sent. The synchronized state was preserved, but delivery of your result is not confirmed. Check the host history and synchronize again if necessary before repeating the action.",
     "error_turn_delivery_unknown": "The result was not applied locally because sending failed. The host may still have received it. Do not repeat the action until you reconnect and synchronize with the host.",
@@ -227,6 +228,7 @@ export const general = {
     "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.": "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.",
   },
   ru: {
+    "cancel_waiting_sync": "Результат уже отправлен и применён локально. Хост мог его получить или не получить. Не повторяйте действие; сначала восстановите соединение и синхронизацию с хостом.",
     "turn_sync_before_send": "Хост синхронизировал игру во время подготовки действия. Старый результат отброшен и не отправлен. Перед следующим действием проверьте синхронизированное состояние.",
     "turn_sync_during_send": "Хост синхронизировал игру во время отправки результата. Синхронизированное состояние сохранено, но доставка результата не подтверждена. Перед повтором проверьте историю хоста и при необходимости синхронизируйте игру ещё раз.",
     "error_turn_delivery_unknown": "Результат не применён локально из-за ошибки отправки. Хост всё же мог его получить. Не повторяйте действие, пока не восстановите соединение и синхронизацию с хостом.",

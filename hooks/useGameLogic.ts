@@ -137,6 +137,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // Increment synchronously before restoring a snapshot, even before React renders.
     const syncRevisionRef = useRef(0);
     const activeTurnRef = useRef<symbol | null>(null);
+    const turnPhaseRef = useRef<'idle' | 'generating' | 'sending' | 'committed' | 'awaiting-sync'>('idle');
     const lastBroadcastedStateRef = useRef<{ turn: number; playerIndex: number } | null>(null);
     const lastBroadcastedCoopState = useRef<string | null>(null);
 
@@ -1090,7 +1091,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setLastJsonResponse, setLastRequestJson,
             setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions,
             setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
-            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef,
+            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef,
             setSuperInstructions, setGameSettings,
             setLanguage,
             t,
@@ -1139,7 +1140,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     const initialContext = createInitialContext(creationData, language);
                     gameContextRef.current = initialContext;
 
-                    const firstTurnManager = createTurnManager({ gameState: null, setGameState, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
+                    const firstTurnManager = createTurnManager({ gameState: null, setGameState, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
                     firstTurnManager.initializeAndRunFirstTurn(creationData, networkConfig);
                 },
                 restoreFromSaveData,
@@ -1154,6 +1155,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 hostConnectionRef,
                 setIsLoading,
                 activeTurnRef,
+                abortControllerRef,
+                turnPhaseRef,
                 syncNewPeerRef,
                 sendMessageRef,
                 gameStateRef,

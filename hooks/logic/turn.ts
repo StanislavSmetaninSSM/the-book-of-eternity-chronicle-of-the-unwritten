@@ -21,6 +21,14 @@ const asArray = <T>(value: T | T[] | null | undefined): T[] => {
 };
 const isObject = (item: any): item is object => (item && typeof item === 'object' && !Array.isArray(item));
 
+// Stopping the wait does not cancel a network send or prove non-delivery.
+const waitForSendOrAbort = (send: Promise<void>, signal: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
+    const onAbort = () => { signal.removeEventListener('abort', onAbort); reject(new DOMException('Turn cancelled.', 'AbortError')); };
+    send.then(() => { signal.removeEventListener('abort', onAbort); resolve(); }, error => { signal.removeEventListener('abort', onAbort); reject(error); });
+    if (signal.aborted) { onAbort(); return; }
+    signal.addEventListener('abort', onAbort, { once: true });
+});
+
 export const createTurnManager = (
     {
         gameState, setGameState, gameHistory, setGameHistory,
@@ -29,7 +37,7 @@ export const createTurnManager = (
         setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions,
         setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
         gameContextRef, abortControllerRef,
-        syncRevisionRef = { current: 0 }, activeTurnRef = { current: null },
+        syncRevisionRef = { current: 0 }, activeTurnRef = { current: null }, turnPhaseRef = { current: 'idle' },
         setSuperInstructions, setGameSettings,
         setLanguage,
         t,
@@ -65,6 +73,7 @@ export const createTurnManager = (
         abortControllerRef: React.MutableRefObject<AbortController | null>,
         syncRevisionRef?: React.MutableRefObject<number>,
         activeTurnRef?: React.MutableRefObject<symbol | null>,
+        turnPhaseRef?: React.MutableRefObject<'idle' | 'generating' | 'sending' | 'committed' | 'awaiting-sync'>,
         setSuperInstructions: React.Dispatch<React.SetStateAction<string>>,
         setGameSettings: React.Dispatch<React.SetStateAction<any>>,
         setLanguage: (lang: any) => void,
@@ -93,6 +102,7 @@ export const createTurnManager = (
         if (activeTurnRef.current) return;
         const turnToken = Symbol('turn');
         activeTurnRef.current = turnToken;
+        turnPhaseRef.current = 'generating';
         const startingRevision = syncRevisionRef.current;
         const isPlayerTurn = (baseStateOverride || gameStateRef.current)?.networkRole === 'player';
         const wasSuperseded = () => isPlayerTurn && syncRevisionRef.current !== startingRevision;
@@ -103,7 +113,8 @@ export const createTurnManager = (
         setGameLog([]);
         setLastJsonResponse('');
         setSuggestedActions([]);
-        abortControllerRef.current = new AbortController();
+        const turnController = new AbortController();
+        abortControllerRef.current = turnController;
         // Each turn owns its lease; never share it with the separate Ask GM flow.
         let releaseArenaGmTurn: (() => void) | null = null;
         // Errors after committing the state (e.g. broadcasting it) must not
@@ -157,16 +168,17 @@ export const createTurnManager = (
             }
 
             // Keep automatic/optional image jobs out of the mailbox for the entire staged turn.
-            releaseArenaGmTurn = await acquireArenaGmTurnLease();
+            releaseArenaGmTurn = await acquireArenaGmTurnLease(turnController.signal);
             const finalResponseRaw = await executeTurn(
                 context,
-                abortControllerRef.current.signal,
+                turnController.signal,
                 onPartialResponse,
                 onStreamingChunk,
                 onStepStart
             );
             
             if (wasSuperseded()) { reportSuperseded(); return; }
+            if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
             const finalResponse = deepStripModerationSymbols(finalResponseRaw);
           
             if (context.gameSettings.allowHistoryManipulation !== true && finalResponse.playerBehaviorAssessment?.historyManipulationCoefficient >= 0.8) {
@@ -220,9 +232,12 @@ export const createTurnManager = (
                         payload: { saveFile: newSaveData },
                         senderId: baseState.myPeerId!,
                     };
+                    if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
                     playerSendAttempted = true;
-                    await sendOnOpenConnection(hostConnectionRef.current, message);
+                    turnPhaseRef.current = 'sending';
+                    await waitForSendOrAbort(sendOnOpenConnection(hostConnectionRef.current, message), turnController.signal);
                     if (wasSuperseded()) { reportSuperseded(); return; }
+                    if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
                     
                     // Optimistic update for UI responsiveness
                     applyResponsePresentation();
@@ -238,6 +253,7 @@ export const createTurnManager = (
                     setTurnNumber(nextContext.currentTurnNumber);
                     setGameState(newState);
                     stateCommitted = true;
+                    turnPhaseRef.current = 'awaiting-sync';
                     // isLoading remains true until sync from host
                 } else {
                     setGameLog(gameLog);
@@ -267,6 +283,7 @@ export const createTurnManager = (
 
                 setGameState(newState);
                 stateCommitted = true;
+                turnPhaseRef.current = 'committed';
 
                 if (currentRole === 'host') {
                     const newSaveData: SaveFile = {
@@ -303,7 +320,10 @@ export const createTurnManager = (
             setGameHistory(prev => [...prev, systemMessage]);
           }
         } finally {
-            if (activeTurnRef.current === turnToken) activeTurnRef.current = null;
+            if (activeTurnRef.current === turnToken) {
+                activeTurnRef.current = null;
+                if (turnPhaseRef.current !== 'awaiting-sync') turnPhaseRef.current = 'idle';
+            }
             if (gameStateRef.current?.networkRole !== 'player') {
                 setIsLoading(false);
                 if (turnStartTimeRef.current) {
@@ -425,7 +445,8 @@ export const createTurnManager = (
         if (startingCombatLog !== combatLog) setCombatLog([]);
         setLastJsonResponse('');
         setSuggestedActions([]);
-        abortControllerRef.current = new AbortController();
+        const turnController = new AbortController();
+        abortControllerRef.current = turnController;
     
         const questionMessage: ChatMessage = { sender: 'player', content: `[Question] ${question}` };
         const historyWithQuestion = [...gameHistory, questionMessage];
@@ -445,6 +466,7 @@ export const createTurnManager = (
         setLastRequestJson(JSON.stringify(context, null, 2));
         const turnToken = Symbol('question');
         activeTurnRef.current = turnToken;
+        turnPhaseRef.current = 'generating';
         const startingRevision = syncRevisionRef.current;
         const isPlayerTurn = baseState.networkRole === 'player';
         const wasSuperseded = () => isPlayerTurn && syncRevisionRef.current !== startingRevision;
@@ -468,8 +490,9 @@ export const createTurnManager = (
               setLastJsonResponse(text);
             };
     
-            const finalResponseRaw: GameResponse = await executeGmQuestion(context, abortControllerRef.current.signal, onStreamingChunk, onStepStart);
+            const finalResponseRaw: GameResponse = await executeGmQuestion(context, turnController.signal, onStreamingChunk, onStepStart);
             if (wasSuperseded()) { reportSuperseded(); return; }
+            if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
             const finalResponse = deepStripModerationSymbols(finalResponseRaw);
             
             let finalMergedResponse = finalResponse;
@@ -477,7 +500,7 @@ export const createTurnManager = (
     
             if (shouldRunWorldProgression(finalResponse.generateWorldProgression, context.gameSettings)) {
                 const wpContext = { ...context, responseHistory: [...historyWithQuestion, gmMessage] };
-                const wpResponseRaw = await executeWorldProgression(wpContext, abortControllerRef.current!.signal, onStreamingChunk, (r, s, m) => { if (!wasSuperseded()) setLastJsonResponse(JSON.stringify(r, null, 2)); }, onStepStart);
+                const wpResponseRaw = await executeWorldProgression(wpContext, turnController.signal, onStreamingChunk, (r, s, m) => { if (!wasSuperseded()) setLastJsonResponse(JSON.stringify(r, null, 2)); }, onStepStart);
                 const wpResponse = deepStripModerationSymbols(wpResponseRaw);
                 finalMergedResponse = deepMergeResponses(finalResponse, wpResponse);
                 
@@ -490,6 +513,7 @@ export const createTurnManager = (
             }
             
             if (wasSuperseded()) { reportSuperseded(); return; }
+            if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
             setLastJsonResponse(JSON.stringify(finalMergedResponse, null, 2));
     
             // FIX: Passing context.worldMap instead of visitedLocations
@@ -527,9 +551,12 @@ export const createTurnManager = (
                         payload: { saveFile: newSaveData },
                         senderId: baseState.myPeerId!,
                     };
+                    if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
                     playerSendAttempted = true;
-                    await sendOnOpenConnection(hostConnectionRef.current, message);
+                    turnPhaseRef.current = 'sending';
+                    await waitForSendOrAbort(sendOnOpenConnection(hostConnectionRef.current, message), turnController.signal);
                     if (wasSuperseded()) { reportSuperseded(); return; }
+                    if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
                     
                     // Optimistic update for UI responsiveness
                     setGameHistory(newHistoryWithAnswer);
@@ -544,6 +571,7 @@ export const createTurnManager = (
                     setTurnNumber(nextContext.currentTurnNumber);
                     setGameState(newState);
                     stateCommitted = true;
+                    turnPhaseRef.current = 'awaiting-sync';
                     // isLoading remains true until sync from host
                 } else {
                     setGameLog(gameLog);
@@ -568,6 +596,7 @@ export const createTurnManager = (
                 
                 setGameState(newState);
                 stateCommitted = true;
+                turnPhaseRef.current = 'committed';
     
                 if (currentRole === 'host') {
                     const newSaveData: SaveFile = {
@@ -600,7 +629,10 @@ export const createTurnManager = (
             else setGameHistory([...historyWithQuestion, systemMessage]);
           }
         } finally {
-            if (activeTurnRef.current === turnToken) activeTurnRef.current = null;
+            if (activeTurnRef.current === turnToken) {
+                activeTurnRef.current = null;
+                if (turnPhaseRef.current !== 'awaiting-sync') turnPhaseRef.current = 'idle';
+            }
             if (gameStateRef.current?.networkRole !== 'player') {
                 setIsLoading(false);
                 if (turnStartTimeRef.current) {
@@ -614,11 +646,20 @@ export const createTurnManager = (
     };
     
     const cancelRequest = () => {
-        if (abortControllerRef.current) {
+        if (turnPhaseRef.current === 'committed' || turnPhaseRef.current === 'awaiting-sync') {
+            const warning = t(turnPhaseRef.current === 'committed' ? 'error_turn_applied_followup' : 'cancel_waiting_sync');
+            setError(warning);
+            setGameHistory(prev => [...prev, { sender: 'system', content: warning }]);
+            if (!activeTurnRef.current) setIsLoading(false);
+            return;
+        }
+        if (abortControllerRef.current && activeTurnRef.current) {
+            const sending = turnPhaseRef.current === 'sending';
             abortControllerRef.current.abort();
             void clearInterruptedTurnRecovery().catch(error => console.error('Could not clear cancelled-turn checkpoint:', error));
-            setIsLoading(false);
-            setError("Request cancelled by user.");
+            // Keep the submission lock until the task's catch/finally has run.
+            setIsLoading(true);
+            setError(t(sending ? 'error_turn_delivery_unknown' : 'requestCancelledByUser'));
             setSuggestedActions([]);
         }
     };

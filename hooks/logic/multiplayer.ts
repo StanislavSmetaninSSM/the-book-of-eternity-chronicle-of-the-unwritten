@@ -27,6 +27,8 @@ interface MultiplayerManagerProps {
     hostConnectionRef: React.MutableRefObject<DataConnection | null>;
     setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
     activeTurnRef: React.MutableRefObject<symbol | null>;
+    abortControllerRef: React.MutableRefObject<AbortController | null>;
+    turnPhaseRef: React.MutableRefObject<'idle' | 'generating' | 'sending' | 'committed' | 'awaiting-sync'>;
     syncNewPeerRef: React.MutableRefObject<(conn: DataConnection) => void>;
     sendMessageRef: React.MutableRefObject<(message: string, image?: { data: string; mimeType: string; } | null) => void>;
     gameStateRef: React.RefObject<GameState | null>;
@@ -77,6 +79,8 @@ export const createMultiplayerManager = (
         hostConnectionRef,
         setIsLoading,
         activeTurnRef,
+        abortControllerRef,
+        turnPhaseRef,
         syncNewPeerRef,
         sendMessageRef,
         gameStateRef,
@@ -263,6 +267,10 @@ export const createMultiplayerManager = (
 
                         // ФИКС: Сначала восстанавливаем состояние
                         restoreFromSaveData(message.payload.saveFile, true);
+                        // Superseded local work cannot be used. Abort relay polling or
+                        // stop waiting for an in-flight send; delivery may be unknown.
+                        if (activeTurnRef.current) abortControllerRef.current?.abort();
+                        else turnPhaseRef.current = 'idle';
 
                         // ЗАТЕМ немедленно устанавливаем правильные сетевые параметры
                         setGameState(prevState => {
