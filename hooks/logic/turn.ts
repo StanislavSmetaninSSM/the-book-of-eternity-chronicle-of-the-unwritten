@@ -364,7 +364,7 @@ export const createTurnManager = (
         }
     };
     
-    const sendMessage = (message: string, image?: { data: string; mimeType: string; } | null) => {
+    const sendMessage = (message: string, image?: { data: string; mimeType: string; } | null, clearCollective = false) => {
         if (isLoading || activeTurnRef.current) return;
         if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
         if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
@@ -390,6 +390,10 @@ export const createTurnManager = (
         setGameHistory(newHistory);
 
         const newContext = { ...gameContextRef.current! };
+        const baseState = clearCollective && gameStateRef.current
+            ? { ...gameStateRef.current, collectiveActionState: null }
+            : undefined;
+        if (clearCollective) (newContext as any).collectiveActionState = null;
         newContext.message = message;
         newContext.image = image || null;
         newContext.responseHistory = newHistory.slice(-15);
@@ -399,7 +403,7 @@ export const createTurnManager = (
         }
         setLastRequestJson(JSON.stringify(newContext, null, 2));
         
-        handleTurn(newContext, newHistory);
+        handleTurn(newContext, newHistory, baseState);
     };
 
     const initializeAndRunFirstTurn = (creationData: any, networkConfig: { role: NetworkRole, peerId?: string } = { role: 'none' }) => {

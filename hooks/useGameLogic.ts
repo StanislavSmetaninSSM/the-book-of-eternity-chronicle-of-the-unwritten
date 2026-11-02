@@ -180,7 +180,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, []);
 
     const setPresentationState = useCallback((action: React.SetStateAction<GameState | null>) => {
-        const record = gameStateRef.current?.networkRole === 'player';
+        const record = clientLocalEditBlocked(gameStateRef.current?.networkRole);
         setGameStateInternal(previous => {
             const next = typeof action === 'function' ? action(previous) : action;
             if (record) presentationJournalRef.current.record(previous, next);
@@ -2361,7 +2361,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         return true;
     }, [isLoading, t]);
 
-    const sendMessageWithStashClear = useCallback(async (message: string, image?: { data: string; mimeType: string; } | null) => {
+    const sendMessageWithStashClear = useCallback(async (message: string, image?: { data: string; mimeType: string; } | null, clearCollective = false) => {
         if (!beginTurnSubmission()) return;
 
         const startingRevision = syncRevisionRef.current;
@@ -2381,7 +2381,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return;
             }
 
-            allManagers.sendMessage(message, image);
+            allManagers.sendMessage(message, image, clearCollective);
         } catch (e) {
             isTurnSubmitPendingRef.current = false;
             throw e;
@@ -2498,7 +2498,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const processCollectiveActions = useCallback(() => {
         const currentState = gameStateRef.current;
         if (!currentState || !currentState.collectiveActionState?.isActive) return;
-        if (clientLocalEditBlocked(currentState.networkRole)) { setError(t('client_edit_host_only')); return; }
+        if (userGameplayActionBlocked()) return;
 
         const { prompt, actions, initiatorName } = currentState.collectiveActionState;
         let combinedMessage = `[${t('Collective Action requested by {name}', { name: initiatorName })}: ${prompt}]\n`;
@@ -2509,18 +2509,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
         });
 
-        if (gameContextRef.current) {
-            (gameContextRef.current as any).collectiveActionState = null;
-        }
-
-        if (gameStateRef.current) {
-            gameStateRef.current.collectiveActionState = null;
-        }
-
-        sendMessageWithStashClear(combinedMessage.trim());
-
-        setGameState(prev => prev ? { ...prev, collectiveActionState: null } : null);
-    }, [t, setGameState, sendMessageWithStashClear]);
+        // Keep the pending collective action intact until the resulting turn
+        // commits. Clearing it here would invalidate the async pre-turn
+        // recovery barrier and lose the gathered actions without a GM turn.
+        void sendMessageWithStashClear(combinedMessage.trim(), undefined, true);
+    }, [t, sendMessageWithStashClear, userGameplayActionBlocked]);
 
     const cancelCollectiveAction = useCallback(() => {
         setGameState(prevState => {
