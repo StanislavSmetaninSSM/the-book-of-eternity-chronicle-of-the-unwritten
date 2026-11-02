@@ -319,9 +319,10 @@ export const deepMergeResponses = (target: any, source: any): any => {
                     return;
                 }
                 if (Array.isArray(targetValue)) {
-                    if (key === 'inventoryItemsData') {
+                    if (key === 'inventoryItemsData' || key === 'inventoryTransfers') {
                         // Preserve raw fragments until the complete turn is
-                        // available: a later stage may reveal a conflicting tag.
+                        // available: later stages can reveal conflicting tags
+                        // or malformed transfer entries that must be rejected.
                         output[key] = targetValue.concat(sourceValue);
                     } else if (key === 'newLocations') {
                         output[key] = mergeIdentifiedStageEntities(targetValue, sourceValue, 'locationId');
@@ -1902,6 +1903,13 @@ export const processAndApplyResponse = (
             // are on the candidate clone and are discarded by the caller.
             const reject = (): never => { throw new Error(t('error_inventory_transfer_rejected', { subject: typeof id === 'string' && id.trim() ? id : '?' })); };
             if (typeof id !== 'string' || !id.trim() || id !== id.trim() || (fingerprints.get(id)?.size || 0) !== 1) { reject(); continue; }
+            // A transfer committed in an earlier turn cannot be safely skipped:
+            // the repeated response could also repeat money, HP, or narrative.
+            // Duplicates within this response remain safe to deduplicate below.
+            if (baseState.completedInventoryTransfers && Object.prototype.hasOwnProperty.call(baseState.completedInventoryTransfers, id)) {
+                if (baseState.completedInventoryTransfers[id] !== signature) reject();
+                throw new Error(t('error_inventory_transfer_replayed', { subject: id }));
+            }
             const previous = newState.completedInventoryTransfers && Object.prototype.hasOwnProperty.call(newState.completedInventoryTransfers, id)
                 ? newState.completedInventoryTransfers[id] : undefined;
             if (previous !== undefined) { if (previous !== signature) reject(); continue; }

@@ -1553,7 +1553,7 @@ export const getStep4 = () => {
 export const getStep5 = () => {
     return `
         <InstructionBlock id="Step5_Inventory_TaskGuide">
-            <TransferOverride>Output inventoryTransfers for transfers between any players or NPCs, with permanent actor/item IDs, positive integer quantity and unique transferId. Do not output any legacy inventory/equipment/resource commands or inline new-NPC inventory in the same response. Never reproduce Step 4 legacy inventory commands. Equipped items and containers cannot be transferred. If any transfer is invalid, the entire turn is rejected; verify all IDs, amounts and actors for every command. Perform the applicable weight and acceptance checks before requesting the transfer.</TransferOverride>
+            <TransferOverride>Output inventoryTransfers for transfers between any players or NPCs, with permanent actor/item IDs, positive integer quantity and unique transferId. Do not output any legacy inventory/equipment/resource commands or inline new-NPC inventory in the same response. Never reproduce Step 4 legacy inventory commands. Equipped items and containers cannot be transferred. If any transfer is invalid or already committed, the entire turn is rejected; verify all IDs, amounts and actors for every command. Reuse an ID only for an uncommitted retry, never for a new transfer. Perform the applicable weight and acceptance checks before requesting the transfer.</TransferOverride>
             <Title>Step 5 Task: Inventory and Item Processing</Title>
             <OutputMandate>
                 <Description>

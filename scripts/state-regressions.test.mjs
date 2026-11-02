@@ -967,7 +967,7 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
-    const { processAndApplyResponse, deepMergeResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
+    const { processAndApplyResponse, deepMergeResponses, mergeStageResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const p = { ...ctx.playerCharacter, playerId: 'p', inventory: [] };
     const second = { ...structuredClone(p), playerId: 'p2' };
@@ -985,10 +985,18 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
     assert.equal(result.newState.temporaryStash?.length || 0, 0);
     assert.deepEqual(response, original); assert.deepEqual(base, before);
     const restored = JSON.parse(JSON.stringify(result.newState));
-    const replay = apply(response, restored);
-    assert.equal(replay.newState.encounteredNPCs[0].inventory[0].count, 2);
-    assert.equal(replay.newState.players[1].inventory.length, 1);
     const restoredBefore = structuredClone(restored);
+    // An earlier committed ID means the whole response may be a replay: no
+    // money, health, narrative, other transfers or new ledger entries commit.
+    assert.throws(() => apply({ ...response, currentHealthChange: 10, moneyChange: -20 }, restored), /error_inventory_transfer_replayed/);
+    assert.deepEqual(restored, restoredBefore);
+    assert.throws(() => apply(response, restored), /error_inventory_transfer_replayed/);
+    assert.deepEqual(restored, restoredBefore);
+    const fresh = { ...transfer, transferId: 'fresh-after-replay', quantity: 1 };
+    for (const commands of [[transfer, fresh], [fresh, transfer]]) {
+      assert.throws(() => apply({ inventoryTransfers: commands, currentHealthChange: 10 }, restored), /error_inventory_transfer_replayed/);
+      assert.deepEqual(restored, restoredBefore);
+    }
     assert.throws(() => apply({ inventoryTransfers: [{ ...transfer, quantity: 1 }] }, restored), /error_inventory_transfer_rejected/);
     assert.deepEqual(restored, restoredBefore);
     const full = apply({ inventoryTransfers: [{ ...transfer, transferId: 't2', quantity: 4, destination: { type: 'npc', id: 'b' } }] });
@@ -1035,6 +1043,17 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
     const duplicate = apply(deepMergeResponses({ inventoryTransfers: [transfer] }, { inventoryTransfers: [transfer] }));
     assert.equal(duplicate.newState.encounteredNPCs[0].inventory[0].count, 2);
     assert.equal(duplicate.newState.players[1].inventory.length, 1);
+    for (const badEntry of [null, 3, 'bad']) {
+      const merged = mergeStageResponses({ inventoryTransfers: [transfer] }, { inventoryTransfers: [badEntry], currentHealthChange: 10 }, { encounteredNPCs: base.encounteredNPCs });
+      assert.deepEqual(merged.inventoryTransfers, [transfer, badEntry]);
+      assert.throws(() => apply(merged), /error_inventory_transfer_rejected/);
+      const reversed = mergeStageResponses({ inventoryTransfers: [badEntry] }, { inventoryTransfers: [transfer] }, { encounteredNPCs: base.encounteredNPCs });
+      assert.deepEqual(reversed.inventoryTransfers, [badEntry, transfer]);
+      assert.throws(() => apply(reversed), /error_inventory_transfer_rejected/);
+      assert.deepEqual(base, before);
+    }
+    const noNewTransfer = mergeStageResponses({ inventoryTransfers: [transfer] }, { inventoryTransfers: [] }, { encounteredNPCs: base.encounteredNPCs });
+    assert.deepEqual(noNewTransfer.inventoryTransfers, [transfer]);
     const mixed = { inventoryTransfers: [transfer], NPCInventoryRemovals: [{ NPCId: 'a', itemId: 'potion' }], inventoryItemsData: [fullItem({ existedId: 'new' })], currentHealthChange: -1 };
     const mixedBefore = structuredClone(mixed);
     assert.throws(() => apply(mixed), /warning_inventory_transfer_conflict/);

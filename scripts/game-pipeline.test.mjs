@@ -407,6 +407,7 @@ test('inventory processing overrides contradictory simple-turn routing for trans
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   const packets = [], storage = new Map();
+  let malformedFinal = false;
   const transfer = { transferId: 't1', source: { type: 'npc', id: 'n', itemId: 'i' }, destination: { type: 'player', id: 'p' }, quantity: 1 };
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k, v) => storage.set(k, v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
   globalThis.fetch = async (url, init) => {
@@ -415,7 +416,8 @@ test('inventory processing overrides contradictory simple-turn routing for trans
       const p = packets.at(-1);
       const output = p.stepName === 'Step0_AnalysisAndPlanning_TaskGuide'
         ? { _internal_flags_: { isSimpleTurn: true, needsInventoryProcessing: true, needsWorldProgression: false, needsFactionProgression: false } }
-        : p.stepName === 'Step5_Inventory_TaskGuide' ? { inventoryTransfers: [transfer] } : {};
+        : p.stepName === 'Step5_Inventory_TaskGuide' ? { inventoryTransfers: [transfer] }
+        : malformedFinal && p.stepName === 'Step7_Finalization_TaskGuide' ? { inventoryTransfers: [null], currentHealthChange: 10 } : {};
       return Response.json({ kind: 'arena-gm-step-response', protocolVersion: 1, correlationId: p.correlationId, output });
     }
     throw new Error(`Unexpected fetch ${url}`);
@@ -430,6 +432,15 @@ test('inventory processing overrides contradictory simple-turn routing for trans
     assert.ok(!packets.some(p => p.stepName === 'StepSimpleFullResponse_TaskGuide'));
     assert.deepEqual(result.inventoryTransfers, [transfer]);
     assert.equal(result._internal_flags_.isSimpleTurn, false);
+    malformedFinal = true;
+    const invalid = await executeTurn(context, new AbortController().signal, () => {}, () => {}, () => {});
+    assert.deepEqual(invalid.inventoryTransfers, [transfer, null]);
+    const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
+    const pc = context.playerCharacter;
+    const base = { playerCharacter: pc, players: [pc], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const snapshot = structuredClone(base);
+    assert.throws(() => processAndApplyResponse(invalid, base, context.gameSettings, k => k, true, 2, context.worldMap), /error_inventory_transfer_rejected/);
+    assert.deepEqual(base, snapshot);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow;
