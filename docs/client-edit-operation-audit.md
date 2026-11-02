@@ -1,0 +1,62 @@
+# Аудит операций перед авторитетными клиентскими командами
+
+**Состояние аудита:** начат; это перечень и предварительная классификация, не доказательство полного покрытия всех обходных путей и не утверждение о проверке безопасности сети. Основан на коде ветки после `52835fd`. Подробные требования и критерии: [спецификация](client-authoritative-edits-spec.md), задачи 0.3 и 1.1–1.5.
+
+Обозначения: **G** — общий игровой state/контекст; **H** — история/журналы; **P** — локальная презентация/предпочтения; **N** — существующая сетевая операция, отдельно требующая проверки; **B** — временно блокируется клиенту/зрителю; **D** — решение о допустимых правах и условиях ещё требуется. Имена ниже — фактические публичные entry points. Их группировка не означает, что реализация находится на стороне хоста или что существуют команды для клиента.
+
+## Инвентарь и экипировка (`createInventoryActions`)
+
+| Действия | Данные, цель и побочные эффекты | Временный статус и дальнейшие требования |
+| --- | --- | --- |
+| `equipItem`, `unequipItem` | G: свой `playerCharacter.equippedItems`, `inventory.contentsPath`, связанные слоты и пересчёты веса/характеристик; зависит от item ID, слота, состояния и двуручности. | B; первые кандидаты на явные команды. Хост обязан работать с однозначным персонажем и предметом, а не с объектом из payload. Проверка совместимости слота и прав не следует автоматически из локального helper. |
+| `dropItem`, `moveItem`, `splitItemStack`, `mergeItemStacks` | G: инвентарь, контейнеры/пути, количество, экипировка, временный stash и производные величины. | B; нужна атомарность всех затронутых записей, проверка количества, уникальности ID, вложенности и конфликтов. |
+| `disassembleItem`, `disassembleNpcItem`, `craftItem` | G: расход и создание предметов, количество, рецепты, характеристики/вес; цель — игрок или NPC. | B; D: права к NPC и доступные рецепты; генерация ID только на авторитетной стороне, отсутствие частичного расхода. |
+| `moveFromStashToInventory`, `dropItemFromStash` | G: stash и инвентарь/контейнеры. | B; валидировать источник, объект, количество и актуальный контекст. |
+| `handleTransferItem`, `handleEquipItemForNpc`, `handleUnequipItemForNpc`, `handleMoveItemForNpc`, `handleSplitItemForNpc`, `handleMergeItemsForNpc` | G: предметы игрока и/или NPC и связанные пересчёты. | B; D: полномочия на конкретного NPC/получателя; не считать существующий локальный helper проверкой согласия или полноценной транзакцией. |
+| `forgetHealedWound`, `forgetActiveWound`, `clearAllHealedWounds` | G: раны игрока/NPC и история. | B; D: политика редактирования. Рана самостоятельна; не считать отсутствие дублирующего эффекта ошибкой и не удалять эффекты другой раны. Сохранение истории заживления — действующее требование. |
+
+## Действия и редакторы (`createPlayerActionsManager`)
+
+| Действия | Данные и эффекты | Статус / проверки |
+| --- | --- | --- |
+| `spendAttributePoint`, `setAutoCombatSkill`, `editPlayerData`, `editItemData` | G: персонаж, очки, навыки, предметы и контекст. | B; D: доступность и права; обязательны уникальные владельцы/ID, согласованный пересчёт. |
+| `editChatMessage`, `deleteMessage`, `clearHalfHistory` | H: пользовательская история; редактирование также пишет `responseHistory` в контекст. | B; требуются стабильная идентичность или строгая ревизия истории, обработка системных сообщений и одновременного ГМ. |
+| `deleteLogs` | H: game/combat logs. | B; D: являются ли журналы общими и должна ли такая операция быть доступна клиенту. |
+| `editNpcData`, `editFactionData`, `editQuestData`, `editWorldStateFlagData`, `editLocationData`, `editWorldState`, `editWeather` | G: NPC/фракции/квесты/флаги, текущая и посещённые локации, мир/дата и контекст; некоторые методы вызывают отдельные setters. | B до выполнения целиком; D: права и идентичность. Проверить все дубликаты локаций и соответствие между state/worldMap/context. |
+| `onEditNpcMemory`, `onDeleteNpcMemory`, `clearNpcJournal`, `deleteNpcJournalEntry`, `deleteOldestNpcJournalEntries`, `clearNpcJournalsNow` | G/H: память и журналы NPC; некоторые цели сейчас адресуются индексом. | B; D: права; защита от устаревшего индекса и одноимённых NPC. |
+| `forgetNpc`, `forgetFaction`, `forgetLocation`, `forgetQuest` | G: сущности и связи, в частности карта и посещённые локации. | B; требуется определение каскадов/необратимости и атомарности. |
+| `deleteCustomState`, `deleteNpcCustomState`, `deleteWorldStateFlag`, `deleteWorldEvent`, `deleteWorldEventsByTurnRange` | G: состояния, события и контекст. | B; проверять владельца, стабильные ID и допустимость диапазона. |
+| `onRegenerateId` | G: замена ID разных типов, включая дополнительные записи для локации. | B; D: разрешать ли сетевой команде вообще; межсущностные ссылки нельзя оставлять наполовину обновлёнными. |
+| `updateNpcSortOrder`, `updateItemSortOrder`, `updateItemSortSettings`, `updateNpcItemSortOrder`, `updateNpcItemSortSettings`, `updateActiveSkillSortOrder`, `updatePassiveSkillSortOrder` | G/P: настройки порядка в сохранённом state/персонаже/NPC. | Сейчас B; D: отделить по-настоящему локальную сортировку от общего состояния перед разблокировкой. |
+| `clearAllCompletedFactionProjects`, `clearAllCompletedNpcActivities` | G: архивы завершённых проектов/занятий. | B; D: права и необратимость; не изменять активные записи. |
+| `placeAsStorage`, `moveToLocationStorage`, `retrieveFromLocationStorage`, `shareStorageAccess`, `revokeStorageAccess` | G: инвентарь, хранилища локации, владельцы и разрешённые участники. | B; атомарность источника и приёмника, ID и количеств; D: права на хранилище и согласие участников. |
+
+В обоих менеджерах блокировка в `guardGameplayActions` вызывается до запуска функций, включая операции, использующие отдельные state setters. Это относится к фактическим вызовам через `useGameLogic`; прямое создание менеджера где-либо ещё нужно отдельно проверять.
+
+## Дополнительные экспортируемые действия (`useGameLogic`)
+
+| Действия | Классификация и текущий путь |
+| --- | --- |
+| `editLocationData`, `deleteLocationThreat` | G/B; имеют несколько независимых setters, поэтому entry guard должен срабатывать **до** всех записей. |
+| `updatePlayerPortrait`, `updateNpcPortrait` | G/B: меняют entity и image cache вместе; нельзя относить весь запрос к чисто презентационным записям. |
+| `deleteActiveSkill`, `deletePassiveSkill`, `onEditNpcMemory`, `onDeleteNpcMemory`, `clearAllCompletedFactionProjects`, `clearAllCompletedNpcActivities`, `onDeleteCurrentActivity`, `onDeleteCompletedActivity`, `deleteFactionProject`, `deleteFactionCustomState`, `deleteActiveEffect`, `forgetHealedWound`, `forgetActiveWound`, `clearAllHealedWounds`, `deleteCustomState`, `deleteNpcCustomState`, `deleteFactionBonus`, `clearNpcJournalsNow` | G/B: в основном отдельные callbacks через защищённый `setGameState`; некоторые имена перекрывают экспорт менеджера. Нужно проверять именно итоговый экспорт hook и сопутствующие записи, а не только менеджер. |
+| `addPlayer`, `removePlayer`, `passTurnToPlayer`, `passTurnManually` | G/H/N; часть вызывается внутренними сетевыми путями. `addPlayer` ранее добавлял system history после отказа setter; исправление охватывает этот путь, но отложенное создание нового персонажа при host restore требует отдельного проектирования. |
+| `updateGameSettings`, `updateSuperInstructions` | G/P: инструкции и правила общие, некоторые UI/медиа настройки локальны. Общие обновления блокируются, локальный allowlist и сохранность после full sync требуют отдельной проверки. |
+| `onImageGenerated`, `deleteImageFromCache`, `clearImageCache`, `generateFilmTrailer`, `continueFilmTrailer`, `importCinematic`, `deleteCinematic`, `updateCinematic`, `regenerateCinemaFrame`, `generateCinematicAudio`, `exportCinematic`, `playCinematic`, `stopPlayingCinematic`, `cancelCinemaGeneration` | P: отдельный setter и `PresentationJournal` для роли player; наличие записей в game log и поведение зрителя/смены сессии следует проверить. Не считать эти данные основанием автоматически смешивать игровые правки. |
+| `initiateCollectiveAction`, `submitCollectiveAction`, `processCollectiveActions`, `cancelCollectiveAction`, `initiateSimultaneousAction`, `submitSimultaneousAction`, `cancelSimultaneousAction` | N/G: отдельные сетевые сообщения и host state. Это не новые команды с revision/ID; порядок, права, доступность, валидность автора и потерю доставки надо проверить отдельно. |
+| `sendMessage`, `askQuestion`, `regenerateLastResponse`, `resumeInterruptedGameTurn` | N/G/H: существующий отдельный turn pipeline и восстановление, не пользовательская команда экипировки. Регенерация прежнего ответа теперь отклоняется в сетевой сессии: локальный restore иначе закрывал соединения. Проверить разграничение авторитетных данных, отмену и взаимодействие с ожидающими намерениями. |
+| `loadCrashRecovery`, `discardInterruptedGameTurn`, `recordCrash`, save/load менеджеры | локальное восстановление/сохранение с последствиями для соединения и состояния; намерения нового протокола требуют отдельной устойчивой модели. |
+| `generateMusicPrompt`, `generateSurpriseMusicPrompt`, `closeMusicPlayer`, `updateMusicPrompt`, `handlePrimaryMusicClick`, `sendNetworkChatMessage` | P/N: музыка и сетевой чат; отдельно проверить данные/предпочтения и отправку, не подменять их игровыми командами. |
+
+## Существующие сетевые входы и известные открытые риски
+
+- `turn_result_from_player` проверяет `HostTurnAuthority`, соединение/активного игрока и ревизию, но передаёт хосту клиентский `saveFile` для восстановления. Это существующий путь результата ГМ, не утверждение о валидации каждого поля или границе безопасности против изменённого клиента. Требуется отдельный аудит и контракт полномочий.
+- `new_player_character_data` и четыре co-op сообщения обрабатываются отдельно от нового командного протокола. В текущем обработчике некоторые поля берутся непосредственно из `message.senderId` или payload; не считать идентичность и разрешения доказанными. Сетевую логику и оба идентичных host-пути нужно тестировать без предположения, что UI является защитой.
+- `full_sync`, `turn_result_ack`, `request_full_sync`, `chat_message` используют отдельную семантику доставки; новый command ACK нельзя считать эквивалентом подтверждённого React commit. Нужны тесты reorder, дублей и неопределённого исхода.
+
+## Приоритет реализации
+
+1. Закончить аудит stage 0/1 и обособить вопросы о правах; подтвердить все entry points и отсутствие побочных записей до блокировки.
+2. Спроектировать и проверить контракт version/session/revision/ID/ledger и commit барьер, не снимая guard.
+3. Первые поддерживаемые команды — экипировка/снятие; затем устойчивые намерения, конфликты и сверка.
+4. Дальше — остальные группы по отдельности; история требует устойчивой идентичности или CAS. Не объявлять всю таблицу реализованной после первой операции.

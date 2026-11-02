@@ -991,7 +991,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [t, setNetworkChatHistory]);
 
     const addPlayer = useCallback((creationData: PlayerCharacter | any) => {
-        if (!gameSettings) return;
+        if (!gameSettings || userGameplayActionBlocked()) return;
 
         const currentPartyLevel = gameStateRef.current?.playerCharacter.level || 1;
 
@@ -1021,7 +1021,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return [...prevHistory, systemMessage];
         });
 
-    }, [gameSettings, t, setGameState, setGameHistory]);
+    }, [gameSettings, t, setGameState, setGameHistory, userGameplayActionBlocked]);
 
     const removePlayer = useCallback((playerIdToRemove: string) => {
         setGameState(prevState => {
@@ -1677,6 +1677,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [setPresentationState]);
 
     const regenerateLastResponse = useCallback(async (): Promise<boolean> => {
+        // The local restore tears down network connections and rewinds the
+        // whole snapshot. It cannot safely regenerate a shared network turn.
+        if (gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none') {
+            setError(t('network_regeneration_unsupported'));
+            return false;
+        }
         const turnSaveToUse = lastTurnSaveFile;
 
         if (!turnSaveToUse) {
