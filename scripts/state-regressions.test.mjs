@@ -988,9 +988,9 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
     const replay = apply(response, restored);
     assert.equal(replay.newState.encounteredNPCs[0].inventory[0].count, 2);
     assert.equal(replay.newState.players[1].inventory.length, 1);
-    const mismatch = apply({ inventoryTransfers: [{ ...transfer, quantity: 1 }] }, restored);
-    assert.ok(mismatch.logsToAdd.includes('warning_inventory_transfer_invalid'));
-    assert.equal(mismatch.newState.encounteredNPCs[0].inventory[0].count, 2);
+    const restoredBefore = structuredClone(restored);
+    assert.throws(() => apply({ inventoryTransfers: [{ ...transfer, quantity: 1 }] }, restored), /error_inventory_transfer_rejected/);
+    assert.deepEqual(restored, restoredBefore);
     const full = apply({ inventoryTransfers: [{ ...transfer, transferId: 't2', quantity: 4, destination: { type: 'npc', id: 'b' } }] });
     assert.equal(full.newState.encounteredNPCs[0].inventory.length, 0);
     assert.equal(full.newState.encounteredNPCs[1].inventory[0].existedId, 'potion');
@@ -1007,15 +1007,31 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
       { ...transfer, destination: { type: 'npc', id: 'a' } },
       { ...transfer, transferId: '' },
     ]) {
-      const failed = apply({ inventoryTransfers: [bad], currentHealthChange: -1 });
-      assert.equal(failed.newState.encounteredNPCs[0].inventory[0].count, 4);
-      assert.equal(failed.newState.players[1].inventory.length, 0);
-      assert.equal(failed.newState.playerCharacter.currentHealth, p.currentHealth - 1);
-      assert.ok(failed.logsToAdd.includes('warning_inventory_transfer_invalid'));
+      const rejected = { inventoryTransfers: [bad], currentHealthChange: -1, moneyChange: -10 };
+      const inputBefore = structuredClone(rejected);
+      assert.throws(() => apply(rejected), /error_inventory_transfer_rejected/);
+      assert.deepEqual(base, before); assert.deepEqual(rejected, inputBefore);
     }
-    const collision = apply({ inventoryTransfers: [transfer, { ...transfer, quantity: 1 }] });
-    assert.equal(collision.newState.encounteredNPCs[0].inventory[0].count, 4);
-    assert.equal(collision.newState.players[1].inventory.length, 0);
+    assert.throws(() => apply({ inventoryTransfers: [transfer, { ...transfer, quantity: 1 }] }), /error_inventory_transfer_rejected/);
+    for (const malformed of [[null], [transfer, null], [4], transfer, 'bad']) {
+      assert.throws(() => apply({ inventoryTransfers: malformed, currentHealthChange: 10 }), /error_inventory_transfer_rejected/);
+      assert.deepEqual(base, before);
+    }
+    const payment = { transferId: 'payment', source: { type: 'player', id: 'p', itemId: 'payment' }, destination: { type: 'npc', id: 'b' }, quantity: 1 };
+    const purchase = { transferId: 'purchase', source: { type: 'npc', id: 'b', itemId: 'relic' }, destination: { type: 'player', id: 'p' }, quantity: 1 };
+    const tradeBase = structuredClone(base);
+    tradeBase.playerCharacter.inventory.push(fullItem({ existedId: 'payment', name: 'Payment' }));
+    tradeBase.players[0] = structuredClone(tradeBase.playerCharacter);
+    const tradeBefore = structuredClone(tradeBase);
+    for (const commands of [[payment, purchase], [purchase, payment]]) {
+      assert.throws(() => apply({ inventoryTransfers: commands, currentHealthChange: 10, moneyChange: -10 }, tradeBase), /error_inventory_transfer_rejected/);
+      assert.deepEqual(tradeBase, tradeBefore);
+    }
+    tradeBase.encounteredNPCs[1].inventory.push(fullItem({ existedId: 'relic', name: 'Relic' }));
+    const tradeSuccess = apply({ inventoryTransfers: [payment, purchase] }, tradeBase).newState;
+    assert.equal(tradeSuccess.players[0].inventory[0].existedId, 'relic');
+    assert.equal(tradeSuccess.encounteredNPCs[1].inventory[0].existedId, 'payment');
+    assert.deepEqual(Object.keys(tradeSuccess.completedInventoryTransfers).sort(), ['payment', 'purchase']);
     const duplicate = apply(deepMergeResponses({ inventoryTransfers: [transfer] }, { inventoryTransfers: [transfer] }));
     assert.equal(duplicate.newState.encounteredNPCs[0].inventory[0].count, 2);
     assert.equal(duplicate.newState.players[1].inventory.length, 1);
@@ -1050,13 +1066,13 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
     assert.ok(invalidCount.logsToAdd.includes('warning_npc_item_transfer'));
     for (const unsupported of [{ isContainer: true }, { isSentient: true }]) {
       const state = structuredClone(base); Object.assign(state.encounteredNPCs[0].inventory[0], unsupported);
-      const failed = apply({ inventoryTransfers: [transfer] }, state);
-      assert.equal(failed.newState.encounteredNPCs[0].inventory[0].count, 4);
-      assert.ok(failed.logsToAdd.includes('warning_inventory_transfer_invalid'));
+      const beforeUnsupported = structuredClone(state);
+      assert.throws(() => apply({ inventoryTransfers: [transfer] }, state), /error_inventory_transfer_rejected/);
+      assert.deepEqual(state, beforeUnsupported);
     }
     const equipped = structuredClone(base); equipped.encounteredNPCs[0].equippedItems.MainHand = 'potion';
-    assert.ok(apply({ inventoryTransfers: [transfer] }, equipped).logsToAdd.includes('warning_inventory_transfer_invalid'));
+    assert.throws(() => apply({ inventoryTransfers: [transfer] }, equipped), /error_inventory_transfer_rejected/);
     const { general } = await server.ssrLoadModule('/utils/translations/general.ts');
-    assert.match(general.en.warning_inventory_transfer_invalid, /Warning/); assert.match(general.ru.warning_inventory_transfer_invalid, /Предупреждение/);
+    assert.match(general.en.error_inventory_transfer_rejected, /Turn rejected/); assert.match(general.ru.error_inventory_transfer_rejected, /Ход отклонён/);
   } finally { await server.close(); }
 });

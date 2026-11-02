@@ -1235,6 +1235,11 @@ export const processAndApplyResponse = (
     const logsToAdd: string[] = [];
     const rejectedPlayerItems: Partial<Item>[] = [...ambiguousTopItems];
     const acceptedPlayerItems: Partial<Item>[] = [];
+    // A malformed list or null entry is not an empty transfer batch: silently
+    // ignoring it could commit dependent payment, health or story changes.
+    if (changes.inventoryTransfers != null && (!Array.isArray(changes.inventoryTransfers) || changes.inventoryTransfers.some(transfer => !isObject(transfer)))) {
+        throw new Error(t('error_inventory_transfer_rejected', { subject: '?' }));
+    }
     // An explicit transfer must not be combined with legacy inventory commands:
     // without linkage they may represent a second copy of the same operation.
     const legacyInventoryKeys = ['inventoryItemsData', 'removeInventoryItems', 'updateItemTextContents', 'itemBondLevelChanges', 'itemFateCardUnlocks', 'equipmentChanges', 'inventoryItemsResources', 'moveInventoryItems'];
@@ -1891,7 +1896,11 @@ export const processAndApplyResponse = (
         for (const transfer of transfers) {
             const id = transfer?.transferId;
             const signature = fingerprint(transfer);
-            const reject = () => logsToAdd.push(t('warning_inventory_transfer_invalid', { subject: typeof id === 'string' ? id : '?' }));
+            // A rejected transfer may be coupled to other transfers or to
+            // health, money and story consequences. Without causal IDs, none
+            // of this response can be committed safely. All mutations so far
+            // are on the candidate clone and are discarded by the caller.
+            const reject = (): never => { throw new Error(t('error_inventory_transfer_rejected', { subject: typeof id === 'string' && id.trim() ? id : '?' })); };
             if (typeof id !== 'string' || !id.trim() || id !== id.trim() || (fingerprints.get(id)?.size || 0) !== 1) { reject(); continue; }
             const previous = newState.completedInventoryTransfers && Object.prototype.hasOwnProperty.call(newState.completedInventoryTransfers, id)
                 ? newState.completedInventoryTransfers[id] : undefined;

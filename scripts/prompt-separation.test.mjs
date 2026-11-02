@@ -22,7 +22,7 @@ test('the entire guide is invariant across different turn contexts', () => {
   assert.match(guide, /\{\{context\.regenerationReason\}\}/);
   // Intentional guide edits require an explicit snapshot update and review.
   // Updated for the explicit inventory-transfer protocol.
-  assert.equal(sha256(guide), 'ca9bb224cef4d4733f018f76958a2119155ae2439a065e5aa72cb5bdeb35228f');
+  assert.equal(sha256(guide), 'ac7790bcd5a44540f3bd9cf3e11c5e4d44d177247a337a5aab1f9eb5fbc74d46');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);
@@ -127,4 +127,5 @@ test('explicit transfer protocol is available in the inventory stage and superse
   assert.match(getStep4(), /Step 5 exclusively emits inventoryTransfers/);
   assert.match(getStep5(), /<Key>inventoryTransfers<\/Key>/);
   assert.match(getStep5(), /Do not output any legacy inventory/);
+  assert.match(getGameMasterGuideRules(), /client rejects the entire turn, including all other transfers/);
 });
