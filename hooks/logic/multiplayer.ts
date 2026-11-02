@@ -6,6 +6,7 @@ import { createNewPlayerCharacter } from '../../utils/characterManager';
 import { formatError } from '../../utils/errorUtils';
 import { acceptHostStamp, HostTurnAuthority, type TurnSyncStamp } from '../../utils/networkTurnProtocol';
 import { sendOnOpenConnection } from '../../utils/peerSend';
+import { isLocalPreferenceKey } from '../../utils/localGamePreferences';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -50,7 +51,9 @@ interface MultiplayerManagerProps {
 
 export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; }
 
-export function snapshotMatchesRendered(snapshot: SaveFile, rendered: { gameState: GameState | null; currentGameState: GameState | null; gameHistory: ChatMessage[]; gameLog: string[]; combatLog: string[]; lastJsonResponse: string | null; sceneImagePrompt: string | null }): boolean {
+type GameContextWorldState = SaveFile['gameContext']['worldState'] | null;
+
+export function snapshotMatchesRendered(snapshot: SaveFile, rendered: { gameState: GameState | null; currentGameState: GameState | null; gameHistory: ChatMessage[]; gameLog: string[]; combatLog: string[]; lastJsonResponse: string | null; sceneImagePrompt: string | null; worldState: GameContextWorldState; gameSettings: GameSettings | null; superInstructions: string; worldMap: SaveFile['gameContext']['worldMap']; visitedLocations: SaveFile['gameContext']['visitedLocations']; turnNumber: number | null }): boolean {
     // A superseded task can append a local system warning after restoration.
     // Its suffix is safe; the authoritative history must still be the prefix.
     const historyMatches = Array.isArray(snapshot.gameHistory) && rendered.gameHistory.length >= snapshot.gameHistory.length &&
@@ -68,7 +71,20 @@ export function snapshotMatchesRendered(snapshot: SaveFile, rendered: { gameStat
         Object.keys(expected).every(key => key === 'cinematics' || key === 'imageCache' ||
             ((key === 'encounteredNPCs' || key === 'encounteredFactions') && sameEntries((actual as any)[key], (expected as any)[key])) ||
             (actual as any)[key] === (expected as any)[key]);
-    return stateMatches && rendered.currentGameState === rendered.gameState &&
+    const context = snapshot.gameContext;
+    const expectedSettings = context?.gameSettings;
+    const actualSettings = rendered.gameSettings;
+    // UI preferences may change while the snapshot is staged. Shared rules
+    // must match in both directions, including absence of removed fields.
+    const sharedKeys = (settings: GameSettings) => Object.keys(settings).filter(key => !isLocalPreferenceKey(key));
+    const sharedSettingsMatch = !!expectedSettings && !!actualSettings &&
+        sharedKeys(expectedSettings).length === sharedKeys(actualSettings).length &&
+        sharedKeys(expectedSettings).every(key => Object.prototype.hasOwnProperty.call(actualSettings, key) &&
+            (expectedSettings as any)[key] === (actualSettings as any)[key]);
+    const contextMatches = !!context && sharedSettingsMatch && rendered.worldState === context.worldState &&
+        rendered.superInstructions === context.superInstructions && rendered.worldMap === context.worldMap &&
+        rendered.visitedLocations === context.visitedLocations && rendered.turnNumber === context.currentTurnNumber;
+    return contextMatches && stateMatches && rendered.currentGameState === rendered.gameState &&
         historyMatches && rendered.gameLog === snapshot.gameLog &&
         rendered.combatLog === snapshot.combatLog && rendered.lastJsonResponse === snapshot.lastJsonResponse &&
         rendered.sceneImagePrompt === snapshot.sceneImagePrompt;

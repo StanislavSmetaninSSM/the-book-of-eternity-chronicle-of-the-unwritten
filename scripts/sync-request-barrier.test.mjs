@@ -9,12 +9,13 @@ test('only the matching host response releases a sync request barrier', async ()
     const {createMultiplayerManager, stageHostFullSync, commitClientSnapshot} = await server.ssrLoadModule('/hooks/logic/multiplayer.ts');
     const {HostTurnAuthority} = await server.ssrLoadModule('/utils/networkTurnProtocol.ts');
     const noop=()=>{}, state={networkRole:'player',myPeerId:'p'}, history=[{sender:'gm',content:'host'}], logs=[], battles=[];
-    const snapshot={gameState:state,gameHistory:history,gameLog:logs,combatLog:battles,lastJsonResponse:null,sceneImagePrompt:null};
+    const context={gameSettings:{hardMode:true},worldState:{},superInstructions:"",worldMap:{},visitedLocations:[],currentTurnNumber:1};
+    const snapshot={gameContext:context,gameState:state,gameHistory:history,gameLog:logs,combatLog:battles,lastJsonResponse:null,sceneImagePrompt:null};
     const authority=new HostTurnAuthority(()=> 'session'); const first=authority.issue(), observed={current:first}, pending={current:{stamp:first,snapshot}}, stamp={current:null}, request={current:null}, sent=[]; let renderedHistory=history, scheduled=0;
     const connection={open:true,on:noop,off:noop,send:msg=>sent.push(msg)};
     const manager=createMultiplayerManager({gameStateRef:{current:state},hostConnectionRef:{current:connection},clientTurnStampRef:stamp,pendingClientSyncRef:pending,pendingSyncRequestRef:request,setGameHistory:update=>{renderedHistory=update(renderedHistory)},setError:noop,t:k=>k});
     manager.requestSyncFromHost(); const id=sent[0].payload.syncRequestId; assert.ok(id); assert.equal(request.current,id);
-    const render={gameState:state,currentGameState:state,gameHistory:renderedHistory,gameLog:logs,combatLog:battles,lastJsonResponse:null,sceneImagePrompt:null};
+    const render={gameState:state,currentGameState:state,gameHistory:renderedHistory,gameLog:logs,combatLog:battles,lastJsonResponse:null,sceneImagePrompt:null,worldState:context.worldState,gameSettings:context.gameSettings,superInstructions:context.superInstructions,worldMap:context.worldMap,visitedLocations:context.visitedLocations,turnNumber:context.currentTurnNumber};
     assert.deepEqual(commitClientSnapshot(pending.current,render),first); assert.equal(request.current,id); // effect must not publish this old grant
     const props={observedHostStampRef:observed,clientTurnStampRef:stamp,pendingClientSyncRef:pending,pendingSyncRequestRef:request,activeTurnRef:{current:null},abortControllerRef:{current:null},turnPhaseRef:{current:'idle'},restoreFromSaveData:file=>file,setError:noop,setIsLoading:noop,scheduleClientSyncCommit:()=>scheduled++,t:k=>k};
     authority.revoke(); const fresh=authority.issue(); const identity={role:'player',myPeerId:'p',hostPeerId:'host'};

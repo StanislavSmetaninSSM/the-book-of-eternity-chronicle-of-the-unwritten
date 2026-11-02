@@ -50,7 +50,7 @@ test('host cannot start a turn or question until an accepted player snapshot com
       const authority = new HostTurnAuthority(() => 'host-session'); const stamp = authority.issue();
       const hostState = { ...base, playerCharacter: { ...p, currentHealth: 70 } };
       const freshHistory = [{sender:'gm',content:'Remote authoritative'}];
-      const snapshot = {gameState:hostState, gameHistory:freshHistory, gameLog:['New log'], combatLog:['New battle'], lastJsonResponse:null, sceneImagePrompt:null};
+      const snapshot = {gameContext:context, gameState:hostState, gameHistory:freshHistory, gameLog:['New log'], combatLog:['New battle'], lastJsonResponse:null, sceneImagePrompt:null};
       const incoming = {type:'turn_result_from_player',senderId:'p',payload:{submission:{turnId:'remote-result-0000000001',base:stamp},saveFile:snapshot}};
       let ack, restores = 0;
       const props={gameStateRef:hostRef,hostTurnAuthority:authority,activeTurnRef:active,restoreFromSaveData:save=>{restores++; revision.current++; hostPending.current={snapshot:save, release:authority.beginMutation()}; contextRef.current={...context,playerCharacter:hostState.playerCharacter}; return save;},broadcastFullSync:noop,setError:noop,setGameHistory:noop,t:k=>k};
@@ -62,7 +62,7 @@ test('host cannot start a turn or question until an accepted player snapshot com
       assert.equal(error,translate('en','host_sync_not_ready')); assert.equal(active.current,null); assert.equal(state.playerCharacter.currentHealth,40);
       // Model React committing the previously queued state and logs.
       hostRef.current=hostState; state=hostState; history=freshHistory; gameLog=snapshot.gameLog; combatLog=snapshot.combatLog; image=null;
-      assert.equal(snapshotMatchesRendered(snapshot,{gameState:state,currentGameState:hostRef.current,gameHistory:history,gameLog,combatLog,lastJsonResponse:null,sceneImagePrompt:image}),true);
+      assert.equal(snapshotMatchesRendered(snapshot,{gameState:state,currentGameState:hostRef.current,gameHistory:history,gameLog,combatLog,lastJsonResponse:null,sceneImagePrompt:image,worldState:context.worldState,gameSettings:context.gameSettings,superInstructions:context.superInstructions,worldMap:context.worldMap,visitedLocations:context.visitedLocations,turnNumber:context.currentTurnNumber}),true);
       hostPending.current.release(); hostPending.current=null; assert.ok(authority.issue());
       const after=buildManager(hostState,freshHistory);
       const pending = question ? after.askQuestion('Heal?') : after.sendMessage('Heal');

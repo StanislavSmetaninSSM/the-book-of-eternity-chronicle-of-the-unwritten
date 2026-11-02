@@ -927,15 +927,22 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setCombatLog(restoredCombatLog);
         setLastJsonResponse(data.lastJsonResponse);
         setSceneImagePrompt(data.sceneImagePrompt);
-        setWorldMap(data.gameContext.worldMap ?? {});
-        setVisitedLocations(data.gameContext.visitedLocations ?? []);
+        const restoredWorldMap = data.gameContext.worldMap ?? {};
+        const restoredVisitedLocations = data.gameContext.visitedLocations ?? [];
+        setWorldMap(restoredWorldMap);
+        setVisitedLocations(restoredVisitedLocations);
         setTurnNumber(data.gameContext.currentTurnNumber);
 
         setIsLoading(false);
         setError(null);
         // Return exactly what was restored; React state updates may not have
         // rendered when the multiplayer handler needs to broadcast it.
-        const restored = { ...data, gameState: loadedGameState, gameLog: finalGameLog, combatLog: restoredCombatLog };
+        const restored = { ...data, gameState: loadedGameState, gameLog: finalGameLog, combatLog: restoredCombatLog,
+            // The live context ref is synchronized by effects and must not
+            // mutate the commit barrier's expected values before comparison.
+            gameContext: { ...data.gameContext, gameSettings: { ...loadedSettings },
+                superInstructions: data.gameContext.superInstructions || '', worldMap: restoredWorldMap,
+                visitedLocations: restoredVisitedLocations } };
         if (hostRestore) {
             hostRestore.snapshot = restored;
             setHostRestoreEpoch(epoch => epoch + 1);
@@ -1834,7 +1841,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const pending = pendingClientSyncRef.current;
         const stamp = commitClientSnapshot(pending, {
             gameState, currentGameState: gameStateRef.current, gameHistory, gameLog,
-            combatLog, lastJsonResponse, sceneImagePrompt
+            combatLog, lastJsonResponse, sceneImagePrompt, worldState, gameSettings, superInstructions,
+            worldMap, visitedLocations, turnNumber
         });
         if (!stamp || !pending || !gameState || pendingSyncRequestRef.current) return;
         const journal = presentationJournalRef.current;
@@ -1855,14 +1863,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         pendingNetworkTurnRef.current = null;
         setError(prev => prev === t('network_sync_stalled') ? null : prev);
         setIsLoading(activeTurnRef.current !== null);
-    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, clientSyncEpoch, t]);
+    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, worldState, gameSettings, superInstructions, worldMap, visitedLocations, turnNumber, clientSyncEpoch, t]);
 
     useEffect(() => {
         const pending = hostRestorePendingRef.current;
         if (!pending?.snapshot) return;
         if (!snapshotMatchesRendered(pending.snapshot, {
             gameState, currentGameState: gameStateRef.current, gameHistory, gameLog,
-            combatLog, lastJsonResponse, sceneImagePrompt
+            combatLog, lastJsonResponse, sceneImagePrompt, worldState, gameSettings, superInstructions,
+            worldMap, visitedLocations, turnNumber
         })) return;
         hostRestorePendingRef.current = null;
         pending.release();
@@ -1889,7 +1898,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setError(prev => prev === t('host_sync_not_ready') ? null : prev);
         // Re-render to publish a snapshot after the authority hold is released.
         setSnapshotEpoch(epoch => epoch + 1);
-    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, hostRestoreEpoch, t]);
+    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, worldState, gameSettings, superInstructions, worldMap, visitedLocations, turnNumber, hostRestoreEpoch, t]);
 
     // A divergent local update must not leave the player silently waiting
     // forever. Keep the grant blocked and offer an explicit recovery path.
