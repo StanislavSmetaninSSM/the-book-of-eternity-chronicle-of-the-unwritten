@@ -88,9 +88,8 @@ export const createTurnManager = (
     const handleTurn = async (context: GameContext, fullHistoryForTurn: ChatMessage[], baseStateOverride?: GameState) => {
         setIsLoading(true);
         setError(null);
-        if (!context.enemiesDataForCurrentTurn || context.enemiesDataForCurrentTurn.length === 0) {
-          setCombatLog([]);
-        }
+        const startingCombatLog = context.enemiesDataForCurrentTurn?.length ? combatLog : [];
+        if (startingCombatLog !== combatLog) setCombatLog([]);
         setGameLog([]);
         setLastJsonResponse('');
         setSuggestedActions([]);
@@ -162,10 +161,12 @@ export const createTurnManager = (
 
             // FIX: Passing context.worldMap to processAndApplyResponse to prevent data bleeding
             const { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalResponse, withoutPreviousStash(baseState), context.gameSettings, t, true, context.currentTurnNumber, context.worldMap);
-            if (finalResponse.image_prompt !== undefined && finalResponse.image_prompt !== null) {
-                setSceneImagePrompt(finalResponse.image_prompt);
-            }
-            setSuggestedActions(finalResponse.dialogueOptions || []);
+            const applyResponsePresentation = () => {
+                if (finalResponse.image_prompt !== undefined && finalResponse.image_prompt !== null) {
+                    setSceneImagePrompt(finalResponse.image_prompt);
+                }
+                setSuggestedActions(finalResponse.dialogueOptions || []);
+            };
 
             // Save the thought signature to the game state for the next turn
             if (finalResponse.thoughtSignature) {
@@ -186,7 +187,7 @@ export const createTurnManager = (
                     gameState: newState,
                     gameHistory: newHistoryWithAnswer,
                     gameLog: [...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd],
-                    combatLog: combatLog.concat(combatLogsToAdd),
+                    combatLog: startingCombatLog.concat(combatLogsToAdd),
                     lastJsonResponse: JSON.stringify(finalResponse, null, 2),
                     sceneImagePrompt: finalResponse.image_prompt || null,
                     timestamp: new Date().toISOString()
@@ -201,6 +202,7 @@ export const createTurnManager = (
                     hostConnectionRef.current.send(message);
                     
                     // Optimistic update for UI responsiveness
+                    applyResponsePresentation();
                     setGameHistory(newHistoryWithAnswer);
                     setGameLog([...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd]);
                     if (combatLogsToAdd.length > 0) {
@@ -215,11 +217,14 @@ export const createTurnManager = (
                     stateCommitted = true;
                     // isLoading remains true until sync from host
                 } else {
+                    setGameLog(gameLog);
+                    setCombatLog(combatLog);
                     setError(t("connection_lost"));
                     setIsLoading(false);
                 }
             } else { // Host or local
                 const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, true, onWorldMapWarning);
+                applyResponsePresentation();
 
                 setGameLog([...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd]);
                 if (combatLogsToAdd.length > 0) {
@@ -246,7 +251,7 @@ export const createTurnManager = (
                         gameState: newState,
                         gameHistory: newHistoryWithAnswer,
                         gameLog: [...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd],
-                        combatLog: combatLog.concat(combatLogsToAdd),
+                        combatLog: startingCombatLog.concat(combatLogsToAdd),
                         lastJsonResponse: JSON.stringify(finalResponse, null, 2),
                         sceneImagePrompt: finalResponse.image_prompt || null,
                         timestamp: new Date().toISOString()
@@ -391,9 +396,8 @@ export const createTurnManager = (
         setCurrentModel(null);
         setIsLoading(true);
         setError(null);
-        if (!gameContextRef.current?.enemiesDataForCurrentTurn || gameContextRef.current.enemiesDataForCurrentTurn.length === 0) {
-            setCombatLog([]);
-        }
+        const startingCombatLog = gameContextRef.current?.enemiesDataForCurrentTurn?.length ? combatLog : [];
+        if (startingCombatLog !== combatLog) setCombatLog([]);
         setLastJsonResponse('');
         setSuggestedActions([]);
         abortControllerRef.current = new AbortController();
@@ -470,7 +474,7 @@ export const createTurnManager = (
                     gameState: newState,
                     gameHistory: newHistoryWithAnswer,
                     gameLog: [...gameLog, ...newLogsForThisTurn],
-                    combatLog: [...combatLog, ...combatLogsToAdd],
+                    combatLog: [...startingCombatLog, ...combatLogsToAdd],
                     lastJsonResponse: JSON.stringify(finalMergedResponse, null, 2),
                     sceneImagePrompt: finalMergedResponse.image_prompt || null,
                     timestamp: new Date().toISOString()
@@ -499,6 +503,8 @@ export const createTurnManager = (
                     stateCommitted = true;
                     // isLoading remains true until sync from host
                 } else {
+                    setGameLog(gameLog);
+                    setCombatLog(combatLog);
                     setError(t("connection_lost"));
                     setIsLoading(false);
                 }
@@ -526,7 +532,7 @@ export const createTurnManager = (
                         gameState: newState,
                         gameHistory: newHistoryWithAnswer,
                         gameLog: [...gameLog, ...newLogsForThisTurn],
-                        combatLog: [...combatLog, ...combatLogsToAdd],
+                        combatLog: [...startingCombatLog, ...combatLogsToAdd],
                         lastJsonResponse: JSON.stringify(finalMergedResponse, null, 2),
                         sceneImagePrompt: finalMergedResponse.image_prompt || null,
                         timestamp: new Date().toISOString()

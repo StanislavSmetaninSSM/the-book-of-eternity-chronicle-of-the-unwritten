@@ -734,6 +734,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         setIsLoading(false);
         setError(null);
+        // Return exactly what was restored; React state updates may not have
+        // rendered when the multiplayer handler needs to broadcast it.
+        return { ...data, gameState: loadedGameState, gameLog: finalGameLog };
 
     }, [setLanguage, t, setGameState, setWorldState, setGameSettings, setSuperInstructions, setGameHistory, setGameLog, setCombatLog, setLastJsonResponse, setSceneImagePrompt, setWorldMap, setVisitedLocations, setTurnNumber, setIsLoading, setError, language]);
 
@@ -1068,6 +1071,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
     }, []);
 
+    // Peer event handlers outlive the render in which they were registered.
+    const packageSaveDataRef = useRef<((state: GameState | null) => SaveFile | null) | null>(null);
     const allManagers = useMemo(() => {
         const saveLoadManager = createSaveLoadManager({
             gameContextRef, gameStateRef, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt,
@@ -1075,6 +1080,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
 
         const { packageSaveData } = saveLoadManager;
+        packageSaveDataRef.current = state => state ? packageSaveData(state) : null;
 
         const turnManager = createTurnManager({
             gameState, setGameState, gameHistory, setGameHistory,
@@ -1135,7 +1141,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     firstTurnManager.initializeAndRunFirstTurn(creationData, networkConfig);
                 },
                 restoreFromSaveData,
-                packageSaveData,
+                packageSaveData: state => packageSaveDataRef.current?.(state) ?? null,
                 broadcastFullSync,
                 addPlayer,
                 removePlayer,

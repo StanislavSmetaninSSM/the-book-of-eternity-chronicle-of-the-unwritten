@@ -3,6 +3,7 @@ import React from 'react';
 import { GameState, SaveFile, NetworkMessage, NetworkRole, PeerInfo, PlayerCharacter, GameSettings, ChatMessage, CollectiveActionState, SimultaneousActionState, NetworkChatMessage } from '../../types';
 import Peer, { DataConnection } from 'peerjs';
 import { createNewPlayerCharacter } from '../../utils/characterManager';
+import { formatError } from '../../utils/errorUtils';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -14,7 +15,7 @@ interface MultiplayerManagerProps {
     setError: React.Dispatch<React.SetStateAction<string | null>>;
     t: TFunction;
     initializeAndRunFirstTurn: (creationData: any, networkConfig?: { role: NetworkRole; peerId?: string }) => void;
-    restoreFromSaveData: (data: SaveFile, isNetworkSync?: boolean) => void;
+    restoreFromSaveData: (data: SaveFile, isNetworkSync?: boolean) => SaveFile;
     packageSaveData: (gameState: GameState | null) => SaveFile | null;
     broadcastFullSync: (saveData: SaveFile) => void;
     addPlayer: (creationData: any) => void;
@@ -31,6 +32,30 @@ interface MultiplayerManagerProps {
     onChatMessage: (message: NetworkChatMessage) => void;
 }
 
+
+export const applyPlayerTurnResult = (message: NetworkMessage, {
+    gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t
+}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't'>) => {
+    if (!message.payload?.saveFile) {
+        console.error("Received turn_result_from_player without saveFile payload.");
+        return;
+    }
+    const current = gameStateRef.current;
+    if (!current || current.players[current.activePlayerIndex]?.playerId !== message.senderId) {
+        console.warn(`Turn result from non-active player ${message.senderId}. Ignoring.`);
+        return;
+    }
+    // The returned snapshot contains the exact state and logs restored on
+    // the host, without relying on pending React state or stale closures.
+    const restored = restoreFromSaveData(message.payload.saveFile, true);
+    try {
+        broadcastFullSync(restored);
+    } catch (err) {
+        const error = `${t('error_turn_applied_followup')}\n\n${formatError(err)}`;
+        setError(error);
+        setGameHistory(prev => [...prev, { sender: 'system', content: `Error: ${error}` }]);
+    }
+};
 
 export const createMultiplayerManager = (
     {
@@ -102,28 +127,7 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
-                        if (!message.payload.saveFile) {
-                            console.error("Received turn_result_from_player without saveFile payload.");
-                            return;
-                        }
-                        const currentGameState = gameStateRef.current;
-                        if (currentGameState && currentGameState.players[currentGameState.activePlayerIndex]?.playerId === message.senderId) {
-                            console.log(`✅ HOST: Received and applying turn result from player ${message.senderId}`);
-                            // The host MUST update its own state with the result from the active player.
-                            restoreFromSaveData(message.payload.saveFile, true);
-                            
-                            // After updating its own state, it broadcasts the new canonical state to all clients.
-                            const updatedSaveData = packageSaveData(gameStateRef.current);
-                            if (updatedSaveData) {
-                                console.log(`📡 HOST: Broadcasting updated state to all clients after player turn.`);
-                                broadcastFullSync(updatedSaveData);
-                            } else {
-                                console.error("Host failed to package save data after applying player turn.");
-                            }
-                        } else {
-                            const activePlayerInfo = currentGameState ? `Expected turn from: ${currentGameState.players[currentGameState.activePlayerIndex]?.playerId}` : "No game state.";
-                            console.warn(`Turn result from non-active player ${message.senderId}. Ignoring. ${activePlayerInfo}`);
-                        }
+                        applyPlayerTurnResult(message, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t });
                         break;
                     }
                     case 'new_player_character_data': {
@@ -449,28 +453,7 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
-                        if (!message.payload.saveFile) {
-                            console.error("Received turn_result_from_player without saveFile payload.");
-                            return;
-                        }
-                        const currentGameState = gameStateRef.current;
-                        if (currentGameState && currentGameState.players[currentGameState.activePlayerIndex]?.playerId === message.senderId) {
-                            console.log(`✅ HOST: Received and applying turn result from player ${message.senderId}`);
-                            // The host MUST update its own state with the result from the active player.
-                            restoreFromSaveData(message.payload.saveFile, true);
-                            
-                            // After updating its own state, it broadcasts the new canonical state to all clients.
-                            const updatedSaveData = packageSaveData(gameStateRef.current);
-                            if (updatedSaveData) {
-                                console.log(`📡 HOST: Broadcasting updated state to all clients after player turn.`);
-                                broadcastFullSync(updatedSaveData);
-                            } else {
-                                console.error("Host failed to package save data after applying player turn.");
-                            }
-                        } else {
-                            const activePlayerInfo = currentGameState ? `Expected turn from: ${currentGameState.players[currentGameState.activePlayerIndex]?.playerId}` : "No game state.";
-                            console.warn(`Turn result from non-active player ${message.senderId}. Ignoring. ${activePlayerInfo}`);
-                        }
+                        applyPlayerTurnResult(message, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t });
                         break;
                     }
                     case 'new_player_character_data': {
