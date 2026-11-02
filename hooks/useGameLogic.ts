@@ -1,3 +1,4 @@
+import { beginGameplayMutation, gameplayMutationCommitted } from '../utils/gameplayMutationGate';
 import { HostTurnAuthority, type TurnSyncStamp } from '../utils/networkTurnProtocol';
 import { broadcastToConnections } from '../utils/peerSend';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
@@ -76,6 +77,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [gameState, _setGameState] = useState<GameState | null>(null);
     const gameStateRef = useRef(gameState);
     const [snapshotEpoch, setSnapshotEpoch] = useState(0);
+    const gameplayMutationRevisionRef = useRef(0);
+    const gameplayMutationAppliedRef = useRef(0);
+    const gameplayMutationPendingRef = useRef(false);
+    const [gameplayMutationEpoch, setGameplayMutationEpoch] = useState(0);
+    const mutationMessageRef = useRef({ delivery: '' });
     const hostTurnAuthorityRef = useRef<HostTurnAuthority | null>(null);
     if (!hostTurnAuthorityRef.current) hostTurnAuthorityRef.current = new HostTurnAuthority();
     const clientTurnStampRef = useRef<TurnSyncStamp | null>(null);
@@ -91,7 +97,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, []);
 
 
-    const setGameState = useCallback((action: React.SetStateAction<GameState | null>) => {
+    // Internal state updates (turn commits, restores, and presentation assets)
+    // do not represent competing player edits.
+    const setGameStateInternal = useCallback((action: React.SetStateAction<GameState | null>) => {
         const finishMutation = hostTurnAuthorityRef.current!.beginMutation();
         _setGameState(prevState => {
           let changed = true;
@@ -120,6 +128,23 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
           }
         });
     }, []);
+
+    const setGameState = useCallback((action: React.SetStateAction<GameState | null>) => {
+        // Once a player result is in flight, changing its base cannot undo the
+        // send. Reject the edit until the authoritative sync is received.
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
+            gameStateRef.current?.networkRole, turnPhaseRef.current);
+        if (revision === null) {
+            setError(mutationMessageRef.current.delivery);
+            return;
+        }
+        setGameStateInternal(previous => {
+            try { return typeof action === 'function' ? action(previous) : action; }
+            finally { gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, revision); }
+        });
+        setGameplayMutationEpoch(epoch => epoch + 1);
+        if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
+    }, [setGameStateInternal]);
 
     const [worldState, setWorldState] = useState<WorldState | null>(null);
     const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
@@ -192,7 +217,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [isLoading]);
 
     const { t } = useLocalization();
+    mutationMessageRef.current = { delivery: t('game_edit_blocked_delivery') };
     const gameContextRef = useRef<GameContext | null>(null);
+
+    useEffect(() => {
+        gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
+            gameplayMutationRevisionRef, gameState, gameStateRef.current);
+    }, [gameState, gameplayMutationEpoch]);
 
     useEffect(() => {
         if (gameState) {
@@ -768,7 +799,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             console.log("🌐 NETWORK SYNC: Preserving network connections");
         }
 
-        setGameState(loadedGameState);
+        setGameStateInternal(loadedGameState);
         setWorldState(data.gameContext.worldState);
         setGameSettings(loadedSettings);
         setSuperInstructions(data.gameContext.superInstructions || '');
@@ -800,13 +831,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const prevPlayersLengthRef = useRef<number | undefined>(undefined);
 
     const onImageGenerated = useCallback((cacheKey: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => {
-        setGameState(prev => {
+        setGameStateInternal(prev => {
             if (!prev) return null;
             const newCacheEntry: ImageCacheEntry = { src, sourceProvider, sourceModel };
             const newCache = { ...(prev.imageCache || {}), [cacheKey]: newCacheEntry };
             return { ...prev, imageCache: newCache };
         });
-    }, [setGameState]);
+    }, [setGameStateInternal]);
 
     useEffect(() => {
         const fetchInitialData = async () => {
@@ -1137,12 +1168,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         packageSaveDataRef.current = state => state ? packageSaveData(state) : null;
 
         const turnManager = createTurnManager({
-            gameState, setGameState, gameHistory, setGameHistory,
+            gameState, setGameState: setGameStateInternal, gameHistory, setGameHistory,
             isLoading, setIsLoading, setError,
             setLastJsonResponse, setLastRequestJson,
             setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions,
             setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
-            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef,
+            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef, gameplayMutationRevisionRef, gameplayMutationPendingRef,
             setSuperInstructions, setGameSettings,
             setLanguage,
             t,
@@ -1184,6 +1215,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }),
             ...createMultiplayerManager({
                 setGameState,
+                setGameStateForConnection: setGameStateInternal,
                 setGameHistory,
                 setError,
                 t,
@@ -1191,7 +1223,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     const initialContext = createInitialContext(creationData, language);
                     gameContextRef.current = initialContext;
 
-                    const firstTurnManager = createTurnManager({ gameState: null, setGameState, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
+                    const firstTurnManager = createTurnManager({ gameState: null, setGameState: setGameStateInternal, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef, gameplayMutationRevisionRef, gameplayMutationPendingRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
                     firstTurnManager.initializeAndRunFirstTurn(creationData, networkConfig);
                 },
                 restoreFromSaveData,
@@ -1251,16 +1283,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         await clearInterruptedTurnRecovery();
         setInterruptedTurnRecovery(null);
     }, []);
-
-    const clearStashForNewTurn = useCallback(() => {
-        setGameState(prev => {
-            if (!prev) return null;
-            if (prev.temporaryStash && prev.temporaryStash.length > 0) {
-                return { ...prev, temporaryStash: [] };
-            }
-            return prev;
-        });
-    }, [setGameState]);
 
     const recordCrash = useCallback((source: string, errorToRecord: unknown, componentStack?: string) => {
         const marker = markCrashDetected(source, errorToRecord, componentStack);
@@ -1519,7 +1541,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     
     // FIX: Added deleteImageFromCache function to manage the image cache.
     const deleteImageFromCache = useCallback((prompt: string) => {
-        setGameState(prev => {
+        setGameStateInternal(prev => {
             if (!prev) return null;
             const newCache = { ...prev.imageCache };
             if (newCache[prompt]) {
@@ -1535,15 +1557,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             return { ...prev, imageCache: newCache };
         });
-    }, [setGameState]);
+    }, [setGameStateInternal]);
 
     // FIX: Added clearImageCache function and exported it from the useGameLogic hook.
     const clearImageCache = useCallback(() => {
-        setGameState(prev => {
+        setGameStateInternal(prev => {
             if (!prev) return null;
             return { ...prev, imageCache: {} };
         });
-    }, [setGameState]);
+    }, [setGameStateInternal]);
 
     const regenerateLastResponse = useCallback(async (): Promise<boolean> => {
         const turnSaveToUse = lastTurnSaveFile;
@@ -2200,6 +2222,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current) return false;
         if (!gameStateRef.current || !gameContextRef.current) return false;
         if (hostRestorePendingRef.current) { setError(t('host_sync_not_ready')); return false; }
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return false; }
         if (gameStateRef.current.networkRole === 'player' && !clientTurnStampRef.current) {
             setError(t('network_sync_not_ready'));
             return false;
@@ -2213,9 +2236,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!beginTurnSubmission()) return;
 
         const startingRevision = syncRevisionRef.current;
+        const startingGameplayRevision = gameplayMutationRevisionRef.current;
         try {
             await savePreActionCrashRecovery();
-            if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current) {
+            if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
+                gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
                 isTurnSubmitPendingRef.current = false;
                 setError(t('turn_sync_before_send'));
                 return;
@@ -2227,21 +2252,22 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return;
             }
 
-            clearStashForNewTurn();
             allManagers.sendMessage(message, image);
         } catch (e) {
             isTurnSubmitPendingRef.current = false;
             throw e;
         }
-    }, [allManagers, beginTurnSubmission, clearStashForNewTurn, passTurnManually, savePreActionCrashRecovery, t]);
+    }, [allManagers, beginTurnSubmission, passTurnManually, savePreActionCrashRecovery, t]);
 
     const askQuestionWithRecovery = useCallback(async (question: string, image?: { data: string; mimeType: string; } | null) => {
         if (!beginTurnSubmission()) return;
 
         const startingRevision = syncRevisionRef.current;
+        const startingGameplayRevision = gameplayMutationRevisionRef.current;
         try {
             await savePreActionCrashRecovery();
-            if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current) {
+            if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
+                gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
                 isTurnSubmitPendingRef.current = false;
                 setError(t('turn_sync_before_send'));
                 return;
@@ -2516,7 +2542,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             
             if (cinemaController.signal.aborted) return;
-            setGameState(prev => {
+            setGameStateInternal(prev => {
                 if (!prev) return null;
                 const cinematics = [...(prev.cinematics || []), newCinematic];
                 return { ...prev, cinematics };
@@ -2535,7 +2561,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setIsGeneratingCinema(false);
             }
         }
-    }, [gameSettings, superInstructions, t, setError, setGameState]);
+    }, [gameSettings, superInstructions, t, setError, setGameStateInternal]);
 
     const continueFilmTrailer = useCallback(async (cinematicId: string) => {
         if (!gameContextRef.current || !gameSettings) return;
@@ -2587,7 +2613,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
 
             if (cinemaController.signal.aborted) return;
-            setGameState(prev => {
+            setGameStateInternal(prev => {
                 if (!prev) return null;
                 const newCinematics = (prev.cinematics || []).map(c => {
                     if (c.id === cinematicId) {
@@ -2612,7 +2638,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setExtendingCinematicId(null);
             }
         }
-    }, [gameSettings, superInstructions, t, setError, setGameState, gameStateRef]);
+    }, [gameSettings, superInstructions, t, setError, setGameStateInternal, gameStateRef]);
 
     const playCinematic = useCallback((cinematicId: string) => {
         const cinematic = gameStateRef.current?.cinematics?.find(c => c.id === cinematicId);
@@ -2649,7 +2675,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         const content = re.target?.result as string;
                         const cinematic = JSON.parse(content) as Cinematic;
                         if (cinematic.id && cinematic.title && cinematic.frames) {
-                            setGameState(prev => {
+                            setGameStateInternal(prev => {
                                 if (!prev) return null;
                                 const existing = (prev.cinematics || []).find(c => c.id === cinematic.id);
                                 if (existing) {
@@ -2672,19 +2698,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
         };
         input.click();
-    }, [t, setError, setGameLog, setGameState]);
+    }, [t, setError, setGameLog, setGameStateInternal]);
 
     const deleteCinematic = useCallback((cinematicId: string) => {
-        setGameState(prev => {
+        setGameStateInternal(prev => {
             if (!prev) return null;
             const cinematics = (prev.cinematics || []).filter(c => c.id !== cinematicId);
             setGameLog(p => [t('CinematicDeleted'), ...p]);
             return { ...prev, cinematics };
         });
-    }, [setGameState, setGameLog, t]);
+    }, [setGameStateInternal, setGameLog, t]);
 
     const updateCinematic = useCallback((cinematicId: string, updates: Partial<Omit<Cinematic, 'id'>>) => {
-        setGameState(prev => {
+        setGameStateInternal(prev => {
             if (!prev) return null;
             const newCinematics = (prev.cinematics || []).map(c => {
                 if (c.id === cinematicId) {
@@ -2695,14 +2721,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setGameLog(p => [t('CinematicUpdated'), ...p]);
             return { ...prev, cinematics: newCinematics };
         });
-    }, [setGameState, setGameLog, t]);
+    }, [setGameStateInternal, setGameLog, t]);
 
     const regenerateCinemaFrame = useCallback(async (cinematicId: string, frameIndex: number, newPrompt: string): Promise<boolean> => {
         if (gameSettings?.disableImageGeneration || gameContextRef.current?.gameSettings?.disableImageGeneration) return false;
         try {
             const imageUrl = await requestArenaGmImage(newPrompt, 1024, 1024);
             if (imageUrl) {
-                setGameState(prev => {
+                setGameStateInternal(prev => {
                     if (!prev) return null;
                     const newCinematics = (prev.cinematics || []).map(c => {
                         if (c.id === cinematicId) {
@@ -2733,7 +2759,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(formatError(e));
             return false;
         }
-    }, [gameSettings, gameContextRef, setGameState, setError]);
+    }, [gameSettings, gameContextRef, setGameStateInternal, setError]);
 
     const generateCinematicAudio = useCallback(async (cinematicId: string, voice: string) => {
         setIsGeneratingCinema(true);

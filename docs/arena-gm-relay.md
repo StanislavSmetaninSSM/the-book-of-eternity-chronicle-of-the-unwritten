@@ -132,3 +132,10 @@ remain blocked until its restored snapshot has committed. Independent cinema
 and image-cache updates can complete during snapshot commit; other gameplay
 changes keep the grant blocked. If a client snapshot cannot commit, a warning
 instructs the player to request another sync or reconnect.
+
+Gameplay edits made while a turn or question is being generated invalidate and
+cancel that generation before its result can be applied. New submissions wait
+until queued gameplay updates have committed. On a player, gameplay edits are
+blocked while a result is being sent or while waiting for authoritative sync:
+a send already in flight cannot be revoked safely. Cinema and image-cache
+updates use separate presentation paths and do not cancel the turn.

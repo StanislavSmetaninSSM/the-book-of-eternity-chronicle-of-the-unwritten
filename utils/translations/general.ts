@@ -1,5 +1,8 @@
 export const general = {
   en: {
+    "game_state_updating": "A game change is still being applied. Wait for it to finish before starting a turn.",
+    "game_edit_blocked_delivery": "The turn is being sent or synchronized. Wait for the host before changing game state.",
+    "turn_game_state_changed": "The game state changed while the response was being generated. The old response was discarded; review the change before trying again.",
     "network_sync_stalled": "Synchronization has not completed. Do not act; request another sync from the Network panel, or reconnect.",
     "host_sync_not_ready": "The host is still applying a synchronized state. Wait before acting; if it does not finish, reconnect or reload the game.",
     "network_sync_not_ready": "The host snapshot is not ready. Synchronize and wait for it to finish before acting.",
@@ -235,6 +238,9 @@ export const general = {
     "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.": "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.",
   },
   ru: {
+    "game_state_updating": "Изменение игрового состояния ещё применяется. Дождитесь его завершения перед ходом.",
+    "game_edit_blocked_delivery": "Ход отправляется или синхронизируется. Дождитесь хоста, прежде чем менять игровое состояние.",
+    "turn_game_state_changed": "Игровое состояние изменилось во время генерации. Старый ответ отброшен; проверьте изменение перед повтором хода.",
     "network_sync_stalled": "Синхронизация не завершилась. Не выполняйте действий; запросите синхронизацию ещё раз в сетевой панели или подключитесь заново.",
     "host_sync_not_ready": "Хост ещё применяет синхронизированное состояние. Дождитесь завершения; если оно не наступит, переподключитесь или загрузите игру заново.",
     "network_sync_not_ready": "Состояние хоста ещё не готово. Синхронизируйте игру и дождитесь завершения перед действием.",

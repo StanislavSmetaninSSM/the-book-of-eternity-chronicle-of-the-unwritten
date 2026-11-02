@@ -13,6 +13,7 @@ type TFunction = (key: string, replacements?: Record<string, string | number>) =
 
 interface MultiplayerManagerProps {
     setGameState: React.Dispatch<React.SetStateAction<GameState | null>>;
+    setGameStateForConnection: React.Dispatch<React.SetStateAction<GameState | null>>;
     setGameHistory: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
     setError: React.Dispatch<React.SetStateAction<string | null>>;
     t: TFunction;
@@ -139,6 +140,7 @@ export const applyPlayerTurnResult = async (message: NetworkMessage, connectionI
 export const createMultiplayerManager = (
     {
         setGameState,
+        setGameStateForConnection,
         setGameHistory,
         setError,
         t,
@@ -393,7 +395,8 @@ export const createMultiplayerManager = (
                 console.log('Connection to host lost.');
                 setError(t('connection_lost'));
                 setIsLoading(activeTurnRef.current !== null);
-                setGameState(prev => prev ? ({ ...prev, isConnectedToHost: false }) : null);
+                if (activeTurnRef.current) abortControllerRef.current?.abort();
+                setGameStateForConnection(prev => prev ? ({ ...prev, isConnectedToHost: false }) : null);
             });
 
             (conn as any).on('error', (err: any) => {
@@ -673,8 +676,9 @@ export const createMultiplayerManager = (
         setIsLoading(false);
         setError(null);
 
+        if (activeTurnRef.current) abortControllerRef.current?.abort();
         if (role === 'player' || role === 'spectator' || role === 'host') {
-            setGameState(prev => {
+            setGameStateForConnection(prev => {
                 if (!prev) return null;
                 const newState: GameState = {
                     ...prev,

@@ -40,6 +40,7 @@ export const createTurnManager = (
         gameContextRef, abortControllerRef,
         syncRevisionRef = { current: 0 }, activeTurnRef = { current: null }, turnPhaseRef = { current: 'idle' },
         clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef,
+        gameplayMutationRevisionRef = { current: 0 }, gameplayMutationPendingRef = { current: false },
         setSuperInstructions, setGameSettings,
         setLanguage,
         t,
@@ -79,6 +80,8 @@ export const createTurnManager = (
         clientTurnStampRef?: React.MutableRefObject<TurnSyncStamp | null>,
         pendingNetworkTurnRef?: React.MutableRefObject<string | null>,
         hostRestorePendingRef?: React.MutableRefObject<unknown | null>,
+        gameplayMutationRevisionRef?: React.MutableRefObject<number>,
+        gameplayMutationPendingRef?: React.MutableRefObject<boolean>,
         setSuperInstructions: React.Dispatch<React.SetStateAction<string>>,
         setGameSettings: React.Dispatch<React.SetStateAction<any>>,
         setLanguage: (lang: any) => void,
@@ -103,13 +106,21 @@ export const createTurnManager = (
     const withoutPreviousStash = (state: GameState): GameState =>
         state.temporaryStash?.length ? { ...state, temporaryStash: [] } : state;
 
+    const retainPresentation = (state: GameState, latest: GameState | null): GameState => ({
+        ...state,
+        ...(latest?.imageCache !== undefined ? { imageCache: latest.imageCache } : {}),
+        ...(latest?.cinematics !== undefined ? { cinematics: latest.cinematics } : {})
+    });
+
     const handleTurn = async (context: GameContext, fullHistoryForTurn: ChatMessage[], baseStateOverride?: GameState) => {
         if (activeTurnRef.current) return;
         if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
         const turnToken = Symbol('turn');
         activeTurnRef.current = turnToken;
         turnPhaseRef.current = 'generating';
         const startingRevision = syncRevisionRef.current;
+        const startingGameplayRevision = gameplayMutationRevisionRef.current;
         const isPlayerTurn = (baseStateOverride || gameStateRef.current)?.networkRole === 'player';
         const startingStamp = clientTurnStampRef?.current ? { ...clientTurnStampRef.current } : null;
         if (isPlayerTurn && clientTurnStampRef && !startingStamp) {
@@ -117,7 +128,7 @@ export const createTurnManager = (
             setIsLoading(false); setError(t('network_sync_not_ready'));
             return;
         }
-        const wasSuperseded = () => syncRevisionRef.current !== startingRevision;
+        const wasSuperseded = () => syncRevisionRef.current !== startingRevision || gameplayMutationRevisionRef.current !== startingGameplayRevision;
         setIsLoading(true);
         setError(null);
         const startingCombatLog = context.enemiesDataForCurrentTurn?.length ? combatLog : [];
@@ -134,7 +145,7 @@ export const createTurnManager = (
         let stateCommitted = false;
         let playerSendAttempted = false;
         const reportSuperseded = () => {
-            const warning = t(playerSendAttempted ? 'turn_sync_during_send' : 'turn_sync_before_send');
+            const warning = t(syncRevisionRef.current !== startingRevision ? (playerSendAttempted ? 'turn_sync_during_send' : 'turn_sync_before_send') : 'turn_game_state_changed');
             setError(warning);
             setGameHistory(prev => [...prev, { sender: 'system', content: warning }]);
             setIsLoading(false);
@@ -205,7 +216,8 @@ export const createTurnManager = (
             const gmMessage: ChatMessage = { sender: 'gm', content: finalResponse.response || '' };
 
             // FIX: Passing context.worldMap to processAndApplyResponse to prevent data bleeding
-            const { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalResponse, withoutPreviousStash(baseState), context.gameSettings, t, true, context.currentTurnNumber, context.worldMap);
+            let { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalResponse, withoutPreviousStash(baseState), context.gameSettings, t, true, context.currentTurnNumber, context.worldMap);
+            newState = retainPresentation(newState, gameStateRef.current);
             const applyResponsePresentation = () => {
                 if (finalResponse.image_prompt !== undefined && finalResponse.image_prompt !== null) {
                     setSceneImagePrompt(finalResponse.image_prompt);
@@ -264,7 +276,7 @@ export const createTurnManager = (
                     setVisitedLocations(nextContext.visitedLocations);
                     setWorldState(nextContext.worldState);
                     setTurnNumber(nextContext.currentTurnNumber);
-                    setGameState(newState);
+                    setGameState(previous => retainPresentation(newState, previous));
                     stateCommitted = true;
                     turnPhaseRef.current = 'awaiting-sync';
                     // isLoading remains true until sync from host
@@ -294,7 +306,7 @@ export const createTurnManager = (
                     playNotificationSound();
                 }
 
-                setGameState(newState);
+                setGameState(previous => retainPresentation(newState, previous));
                 stateCommitted = true;
                 turnPhaseRef.current = 'committed';
 
@@ -355,6 +367,7 @@ export const createTurnManager = (
     const sendMessage = (message: string, image?: { data: string; mimeType: string; } | null) => {
         if (isLoading || activeTurnRef.current) return;
         if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
         if (gameStateRef.current?.networkRole === 'player' && clientTurnStampRef && !clientTurnStampRef.current) {
             setError(t('network_sync_not_ready')); return;
         }
@@ -445,6 +458,7 @@ export const createTurnManager = (
         const baseState: GameState | null = gameStateRef.current;
         if (!gameContextRef.current || isLoading || !baseState || activeTurnRef.current) return;
         if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
         const startingStamp = clientTurnStampRef?.current ? { ...clientTurnStampRef.current } : null;
         if (baseState.networkRole === 'player' && clientTurnStampRef && !startingStamp) {
             setError(t('network_sync_not_ready'));
@@ -491,11 +505,12 @@ export const createTurnManager = (
         activeTurnRef.current = turnToken;
         turnPhaseRef.current = 'generating';
         const startingRevision = syncRevisionRef.current;
-        const wasSuperseded = () => syncRevisionRef.current !== startingRevision;
+        const startingGameplayRevision = gameplayMutationRevisionRef.current;
+        const wasSuperseded = () => syncRevisionRef.current !== startingRevision || gameplayMutationRevisionRef.current !== startingGameplayRevision;
         let stateCommitted = false;
         let playerSendAttempted = false;
         const reportSuperseded = () => {
-            const warning = t(playerSendAttempted ? 'turn_sync_during_send' : 'turn_sync_before_send');
+            const warning = t(syncRevisionRef.current !== startingRevision ? (playerSendAttempted ? 'turn_sync_during_send' : 'turn_sync_before_send') : 'turn_game_state_changed');
             setError(warning);
             setGameHistory(prev => [...prev, { sender: 'system', content: warning }]);
             setIsLoading(false);
@@ -539,8 +554,9 @@ export const createTurnManager = (
             setLastJsonResponse(JSON.stringify(finalMergedResponse, null, 2));
     
             // FIX: Passing context.worldMap instead of visitedLocations
-            const { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalMergedResponse as GameResponse, withoutPreviousStash(baseState), gameSettings, t, false, context.currentTurnNumber, context.worldMap);
+            let { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalMergedResponse as GameResponse, withoutPreviousStash(baseState), gameSettings, t, false, context.currentTurnNumber, context.worldMap);
             
+            newState = retainPresentation(newState, gameStateRef.current);
             // Save the signature if present
             if (finalMergedResponse.thoughtSignature) {
                 newState.thoughtSignature = finalMergedResponse.thoughtSignature;
@@ -592,7 +608,7 @@ export const createTurnManager = (
                     setVisitedLocations(nextContext.visitedLocations);
                     setWorldState(nextContext.worldState);
                     setTurnNumber(nextContext.currentTurnNumber);
-                    setGameState(newState);
+                    setGameState(previous => retainPresentation(newState, previous));
                     stateCommitted = true;
                     turnPhaseRef.current = 'awaiting-sync';
                     // isLoading remains true until sync from host
@@ -617,7 +633,7 @@ export const createTurnManager = (
                 setVisitedLocations(nextContext.visitedLocations);
                 setTurnNumber(nextContext.currentTurnNumber);
                 
-                setGameState(newState);
+                setGameState(previous => retainPresentation(newState, previous));
                 stateCommitted = true;
                 turnPhaseRef.current = 'committed';
     
@@ -689,6 +705,7 @@ export const createTurnManager = (
 
     const resumeInterruptedTurn = (recovery: { context: GameContext; baseState: GameState; history: ChatMessage[] }) => {
         if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
         if (recovery.baseState.networkRole === 'player' && clientTurnStampRef && !clientTurnStampRef.current) {
             setError(t('network_sync_not_ready')); return;
         }
