@@ -1,5 +1,6 @@
 export const general = {
   en: {
+    "error_turn_applied_followup": "The turn was already applied, but a subsequent operation failed. Do not repeat the action. In multiplayer, reconnect and synchronize before continuing; other players may not have received the result.",
     "warning_item_journal_identity": "Warning: the journal entry for item {subject} was not added because the item could not be identified uniquely. Other turn changes may have been applied.",
     "warning_inventory_item_identity": "Warning: item {subject} was not added or updated because its ID is ambiguous or the new item is incomplete. Other turn changes may have been applied.",
     "warning_equipment_item_identity": "Warning: item {subject} was not equipped because it could not be identified uniquely in the inventory. Other turn changes may have been applied.",
@@ -222,6 +223,7 @@ export const general = {
     "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.": "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.",
   },
   ru: {
+    "error_turn_applied_followup": "Ход уже применён, но последующее действие завершилось ошибкой. Не повторяйте ход. В мультиплеере восстановите соединение и синхронизацию перед продолжением: другие игроки могли не получить результат.",
     "warning_item_journal_identity": "Предупреждение: запись в дневник предмета {subject} не добавлена, поскольку предмет не удалось однозначно определить. Другие изменения хода могли быть применены.",
     "warning_inventory_item_identity": "Предупреждение: предмет {subject} не добавлен и не обновлён, поскольку его ID неоднозначен или данные нового предмета неполны. Другие изменения хода могли быть применены.",
     "warning_equipment_item_identity": "Предупреждение: предмет {subject} не экипирован, поскольку его не удалось однозначно определить в инвентаре. Другие изменения хода могли быть применены.",

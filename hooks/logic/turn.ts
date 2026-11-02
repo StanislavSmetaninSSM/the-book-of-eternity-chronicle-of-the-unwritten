@@ -97,6 +97,9 @@ export const createTurnManager = (
         abortControllerRef.current = new AbortController();
         // Each turn owns its lease; never share it with the separate Ask GM flow.
         let releaseArenaGmTurn: (() => void) | null = null;
+        // Errors after committing the state (e.g. broadcasting it) must not
+        // roll back its logs or suggest that the user repeat the action.
+        let stateCommitted = false;
 
         try {
             const onPartialResponse = (response: any, stepName: string, modelName: string) => {
@@ -209,6 +212,7 @@ export const createTurnManager = (
                     setWorldState(nextContext.worldState);
                     setTurnNumber(nextContext.currentTurnNumber);
                     setGameState(newState);
+                    stateCommitted = true;
                     // isLoading remains true until sync from host
                 } else {
                     setError(t("connection_lost"));
@@ -234,6 +238,7 @@ export const createTurnManager = (
                 }
 
                 setGameState(newState);
+                stateCommitted = true;
 
                 if (currentRole === 'host') {
                     const newSaveData: SaveFile = {
@@ -254,14 +259,16 @@ export const createTurnManager = (
             }
           
         } catch (err: any) {
-          // Discard tentative calculations and restore logs from the last
-          // committed state; streamed output may describe a rejected turn.
-          setGameLog(gameLog);
-          setCombatLog(combatLog);
-          // Failed turns do not receive the host sync that clears loading.
+          // Roll back streamed calculations only if the state was not applied.
+          // A post-commit sync error must retain the committed logs and story.
+          if (!stateCommitted) {
+            setGameLog(gameLog);
+            setCombatLog(combatLog);
+          }
           setIsLoading(false);
-          if (err.name !== 'AbortError') {
-            const formattedError = formatError(err);
+          if (err.name !== 'AbortError' || stateCommitted) {
+            const detail = formatError(err);
+            const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : detail;
             setError(formattedError);
             const systemMessage: ChatMessage = { sender: 'system', content: `Error: ${formattedError}` };
             setGameHistory(prev => [...prev, systemMessage]);
@@ -407,7 +414,8 @@ export const createTurnManager = (
             previousThoughtSignature: baseState.thoughtSignature
         };
         setLastRequestJson(JSON.stringify(context, null, 2));
-        
+        let stateCommitted = false;
+
         try {
             const onStepStart = (stepName: string, modelName: string) => {
               setCurrentStep(stepName);
@@ -488,6 +496,7 @@ export const createTurnManager = (
                     setWorldState(nextContext.worldState);
                     setTurnNumber(nextContext.currentTurnNumber);
                     setGameState(newState);
+                    stateCommitted = true;
                     // isLoading remains true until sync from host
                 } else {
                     setError(t("connection_lost"));
@@ -509,6 +518,7 @@ export const createTurnManager = (
                 setTurnNumber(nextContext.currentTurnNumber);
                 
                 setGameState(newState);
+                stateCommitted = true;
     
                 if (currentRole === 'host') {
                     const newSaveData: SaveFile = {
@@ -526,17 +536,18 @@ export const createTurnManager = (
             }
           
         } catch (err: any) {
-          // Discard tentative calculations and restore logs from the last
-          // committed state; streamed output may describe a rejected turn.
-          setGameLog(gameLog);
-          setCombatLog(combatLog);
-          // Failed turns do not receive the host sync that clears loading.
+          if (!stateCommitted) {
+            setGameLog(gameLog);
+            setCombatLog(combatLog);
+          }
           setIsLoading(false);
-          if (err.name !== 'AbortError') {
-            const formattedError = formatError(err);
+          if (err.name !== 'AbortError' || stateCommitted) {
+            const detail = formatError(err);
+            const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : detail;
             setError(formattedError);
             const systemMessage: ChatMessage = { sender: 'system', content: `Error: ${formattedError}` };
-            setGameHistory([...historyWithQuestion, systemMessage]);
+            if (stateCommitted) setGameHistory(prev => [...prev, systemMessage]);
+            else setGameHistory([...historyWithQuestion, systemMessage]);
           }
         } finally {
             if (gameStateRef.current?.networkRole !== 'player') {
