@@ -1,3 +1,5 @@
+// @ts-ignore -- shared JS helpers
+import { coordinateKey, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
 import { GameState, GameResponse, PlayerCharacter, Characteristics, Location, Faction, Language, LootTemplate, UnlockedMemory, Recipe, Item, WorldStateFlag, SkillMastery, GameSettings, WorldState, NPC, Effect, WorldEvent, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Project, CompletedProject, AdjacencyMapEntry, Calendar, CompleteThreatActivity, Month, NPCInventoryAdd, DayInfo, GameContext, ChatMessage } from '../types';
 import { gameData } from './localizationGameData';
 import { generateLootTemplates } from './lootGenerator';
@@ -314,11 +316,40 @@ export const calculateJourneyDay = (currentMinutes: number, startMinutes?: numbe
     return Math.abs(Math.floor(currentMinutes / (24 * 60)));
 };
 
+// Assign IDs to legacy activities before they are sent to the GM. This mutates
+// only the in-memory save/context and does not write the user's save by itself.
+export function ensureThreatActivityIds(map: Record<string, Location>, currentLocation?: Location | null): void {
+    for (const loc of Object.values(map || {})) {
+        for (const threat of loc?.activeThreats || []) {
+            if (threat.currentActivity && !threat.currentActivity.activityId) threat.currentActivity.activityId = generateId('threat-activity');
+        }
+    }
+    if (currentLocation?.locationId && map?.[currentLocation.locationId]) {
+        const saved = map[currentLocation.locationId];
+        for (const threat of currentLocation.activeThreats || []) {
+            const match = saved.activeThreats?.find(t => t.threatId && t.threatId === threat.threatId);
+            if (threat.currentActivity && !threat.currentActivity.activityId) {
+                threat.currentActivity.activityId = match?.currentActivity?.activityId || generateId('threat-activity');
+            }
+        }
+    } else if (currentLocation) {
+        for (const threat of currentLocation.activeThreats || []) {
+            if (threat.currentActivity && !threat.currentActivity.activityId) threat.currentActivity.activityId = generateId('threat-activity');
+        }
+    }
+}
+
+export type WorldMapWarning = {
+    kind: 'link-create' | 'link-update' | 'link-remove' | 'threat-completion' | 'threat-replacement' | 'threat-update' | 'threat-identity';
+    subject: string;
+};
+
 export function updateWorldMap(
     currentMap: Record<string, Location>,
     updates: GameResponse['worldMapUpdates'],
     currentLocation: Location,
-    currentTurnNumber: number
+    currentTurnNumber: number,
+    onWarning?: (warning: WorldMapWarning) => void
 ): Record<string, Location> {
     const newMap: Record<string, Location> = JSON.parse(JSON.stringify(currentMap));
 
@@ -326,6 +357,7 @@ export function updateWorldMap(
         newMap[currentLocation.locationId] = deepMergeResponses(newMap[currentLocation.locationId], currentLocation);
     }
 
+    ensureThreatActivityIds(newMap);
     if (!updates) {
         return newMap;
     }
@@ -342,13 +374,17 @@ export function updateWorldMap(
     asArray(updates.newLocations).forEach(newLoc => {
         if (!newLoc.coordinates) return;
         const coordKey = `${newLoc.coordinates.x},${newLoc.coordinates.y}`;
-        if (existingCoords.has(coordKey)) return;
-        
         const newLocationId = newLoc.locationId || generateId('loc');
         newLoc.locationId = newLocationId;
 
         if (newLoc.initialId) {
             initialIdToLocationIdMap.set(newLoc.initialId, newLocationId);
+        }
+        // A location may represent another vertical level at the same x/y.
+        // Preserve distinct IDs; coordinates alone cannot identify an entity.
+        if (newMap[newLocationId]) return;
+        if (existingCoords.has(coordKey)) {
+            console.warn(`Multiple locations share coordinates ${coordKey}; coordinate-only navigation may be ambiguous.`);
         }
 
         if (newLoc.locationStorages) {
@@ -362,6 +398,7 @@ export function updateWorldMap(
         existingCoords.add(coordKey);
     });
 
+    const embeddedThreatUpdates: Array<{ targetLocationId: string; threatUpdate: Partial<ActiveThreat> }> = [];
     asArray(updates.locationUpdates).forEach(update => {
         if (update.locationId && newMap[update.locationId]) {
             const originalLocation = newMap[update.locationId];
@@ -381,6 +418,26 @@ export function updateWorldMap(
                 }
             }
             
+            // Route updates to existing activities through the same identity and
+            // completion checks as explicit threatsToUpdate commands.
+            if (Array.isArray(cleanUpdate.activeThreats)) {
+                cleanUpdate.activeThreats = cleanUpdate.activeThreats.flatMap(threat => {
+                    if (!threat) return [];
+                    const existingThreats = originalLocation.activeThreats || [];
+                    const matches = existingThreats.filter(existing =>
+                        threat.threatId ? existing.threatId === threat.threatId : threat.name && existing.name === threat.name);
+                    const nameCollision = threat.name && existingThreats.some(existing => existing.name === threat.name);
+                    if (matches.length > 1 || (matches.length === 0 && nameCollision)) {
+                        onWarning?.({ kind: 'threat-identity', subject: threat.threatId || threat.name || '?' });
+                        return [];
+                    }
+                    if (matches.length !== 1 || !Object.prototype.hasOwnProperty.call(threat, 'currentActivity')) return [threat];
+                    const { currentActivity, ...otherFields } = threat;
+                    if (currentActivity) embeddedThreatUpdates.push({ targetLocationId: update.locationId, threatUpdate: { threatId: matches[0].threatId, name: matches[0].name, currentActivity } });
+                    return [otherFields as ActiveThreat];
+                });
+            }
+
             if (restOfUpdate.locationStorages) {
                 cleanUpdate.locationStorages = (restOfUpdate.locationStorages as Partial<LocationStorage>[]).map(storage => {
                     if (!storage) return null;
@@ -394,6 +451,11 @@ export function updateWorldMap(
             }
     
             let mergedLocation = deepMergeResponses(originalLocation, cleanUpdate) as Location;
+            // Only new embedded threats still lack an ID after merging. Assign
+            // one now, after name-only updates have had a chance to match.
+            for (const threat of mergedLocation.activeThreats || []) {
+                if (threat && !threat.threatId) threat.threatId = generateId('threat');
+            }
 
             if (newLastEventsDescription && typeof newLastEventsDescription === 'string') {
                 if (!Array.isArray(mergedLocation.eventDescriptions)) {
@@ -406,40 +468,55 @@ export function updateWorldMap(
         }
     });
 
+    const locations = Object.values(newMap);
     asArray(updates.newLinks).forEach(linkUpdate => {
         const source = newMap[linkUpdate.sourceLocationId];
-        if (source) {
-            if (!source.adjacencyMap) source.adjacencyMap = [];
-            if (!source.adjacencyMap.some(l => 
-                l.targetCoordinates.x === linkUpdate.link.targetCoordinates.x &&
-                l.targetCoordinates.y === linkUpdate.link.targetCoordinates.y
-            )) {
-                source.adjacencyMap.push(linkUpdate.link);
-            }
+        let link = linkUpdate.link;
+        if (!source || !link || isAmbiguousCoordinateLink(link, locations)) {
+            console.warn('Skipping ambiguous or invalid new location link.');
+            onWarning?.({ kind: 'link-create', subject: linkUpdate.sourceLocationId || '?' });
+            return;
         }
+        if (link.targetLocationId && !newMap[link.targetLocationId]) {
+            console.warn(`Skipping link to unknown location ${link.targetLocationId}.`);
+            onWarning?.({ kind: 'link-create', subject: linkUpdate.sourceLocationId || '?' });
+            return;
+        }
+        if (link.targetLocationId) {
+            const targetCoordinates = newMap[link.targetLocationId].coordinates;
+            const targetKey = coordinateKey(targetCoordinates);
+            const suppliedKey = coordinateKey(link.targetCoordinates);
+            if (!targetKey || (link.targetCoordinates != null && suppliedKey !== targetKey)) {
+                console.warn('Skipping link with invalid or conflicting destination coordinates.');
+                onWarning?.({ kind: 'link-create', subject: linkUpdate.sourceLocationId || '?' });
+                return;
+            }
+            link = { ...link, targetCoordinates: { ...targetCoordinates } };
+        }
+        source.adjacencyMap ||= [];
+        if (matchingLinkIndexes(source.adjacencyMap, link, locations).length === 0) source.adjacencyMap.push(link);
     });
 
     asArray(updates.linkUpdates).forEach(update => {
         const source = newMap[update.sourceLocationId];
-        if (source?.adjacencyMap) {
-            const linkIndex = source.adjacencyMap.findIndex(l => 
-                l.targetCoordinates.x === update.targetCoordinates.x && 
-                l.targetCoordinates.y === update.targetCoordinates.y
-            );
-            if (linkIndex > -1) {
-                source.adjacencyMap[linkIndex] = deepMergeResponses(source.adjacencyMap[linkIndex], update.updatedLink);
-            }
+        const matches = source?.adjacencyMap ? matchingLinkIndexes(source.adjacencyMap, update, locations) : [];
+        if (matches.length !== 1) { console.warn('Skipping ambiguous or unknown location link update.'); onWarning?.({ kind: 'link-update', subject: update.sourceLocationId || '?' }); return; }
+        const merged = deepMergeResponses(source.adjacencyMap[matches[0]], update.updatedLink);
+        const target = merged.targetLocationId && newMap[merged.targetLocationId];
+        if (target && merged.targetCoordinates == null && coordinateKey(target.coordinates)) merged.targetCoordinates = { ...target.coordinates };
+        if (!coordinateKey(merged.targetCoordinates) || (merged.targetLocationId && (!target || coordinateKey(merged.targetCoordinates) !== coordinateKey(target.coordinates)))) {
+            console.warn('Skipping link update with invalid or conflicting destination coordinates.');
+            onWarning?.({ kind: 'link-update', subject: update.sourceLocationId || '?' });
+            return;
         }
+        source.adjacencyMap[matches[0]] = merged;
     });
 
     asArray(updates.linksToRemove).forEach(removal => {
         const source = newMap[removal.sourceLocationId];
-        if (source?.adjacencyMap) {
-            source.adjacencyMap = source.adjacencyMap.filter(l => 
-                !(l.targetCoordinates.x === removal.targetCoordinates.x && 
-                  l.targetCoordinates.y === removal.targetCoordinates.y)
-            );
-        }
+        const matches = source?.adjacencyMap ? matchingLinkIndexes(source.adjacencyMap, removal, locations) : [];
+        if (matches.length !== 1) { console.warn('Skipping ambiguous or unknown location link removal.'); onWarning?.({ kind: 'link-remove', subject: removal.sourceLocationId || '?' }); return; }
+        source.adjacencyMap.splice(matches[0], 1);
     });
 
     const { threatsToAdd, threatsToUpdate, threatsToRemove, completeThreatActivities, storageUpdates, storagesToRemove } = updates || {};
@@ -483,14 +560,14 @@ export function updateWorldMap(
     if (threatsToAdd) {
         asArray(threatsToAdd).forEach(add => {
             let targetLocationId = add.targetLocationId;
-            if (add.initialTargetLocationId) {
+            if (!targetLocationId && add.initialTargetLocationId) {
                 const foundId = initialIdToLocationIdMap.get(add.initialTargetLocationId);
                 if (foundId) targetLocationId = foundId;
                 else console.warn(`Could not find a new location with initialId: ${add.initialTargetLocationId} for a new threat.`);
             }
             if (targetLocationId && newMap[targetLocationId]) {
                 if (!newMap[targetLocationId].activeThreats) newMap[targetLocationId].activeThreats = [];
-                const newThreat = { ...add.threat, threatId: add.threat.threatId || generateId('threat') };
+                const newThreat = { ...add.threat, threatId: add.threat.threatId || generateId('threat'), currentActivity: add.threat.currentActivity ? { ...add.threat.currentActivity, activityId: generateId('threat-activity') } : null };
                 newMap[targetLocationId].activeThreats!.push(newThreat);
             } else if(targetLocationId) {
                 console.warn(`Attempted to add a threat to a non-existent location ID: ${targetLocationId}`);
@@ -498,26 +575,43 @@ export function updateWorldMap(
         });
     }
 
-    if (threatsToUpdate) {
-        asArray(threatsToUpdate).forEach(update => {
-            if (update.targetLocationId && newMap[update.targetLocationId] && newMap[update.targetLocationId].activeThreats) {
-                const location = newMap[update.targetLocationId];
-                let threatIndex = -1;
-                if (update.threatUpdate.threatId) threatIndex = location.activeThreats!.findIndex(t => t.threatId === update.threatUpdate.threatId);
-                if (threatIndex === -1 && update.threatUpdate.name) threatIndex = location.activeThreats!.findIndex(t => t.name === update.threatUpdate.name);
-                if (threatIndex > -1) {
-                    if (!location.activeThreats![threatIndex].threatId) location.activeThreats![threatIndex].threatId = generateId('threat');
-                    location.activeThreats![threatIndex] = deepMergeResponses(location.activeThreats![threatIndex], update.threatUpdate) as ActiveThreat;
-                }
+    // Apply progress to the existing activity first, complete it next, and only
+    // then install a replacement. A stale completion must never replace the task.
+    const deferredThreatUpdates: Array<{ targetLocationId: string; threatId: string; threatUpdate: Partial<ActiveThreat>; previousId: string }> = [];
+    if (threatsToUpdate || embeddedThreatUpdates.length) {
+        [...embeddedThreatUpdates, ...asArray(threatsToUpdate)].forEach(update => {
+            const location = newMap[update.targetLocationId];
+            if (!location?.activeThreats || !update.threatUpdate) return;
+            const matches = location.activeThreats.map((threat, index) =>
+                (update.threatUpdate.threatId ? threat.threatId === update.threatUpdate.threatId :
+                    update.threatUpdate.name && threat.name === update.threatUpdate.name) ? index : -1).filter(index => index >= 0);
+            if (matches.length !== 1) {
+                onWarning?.({ kind: 'threat-identity', subject: update.threatUpdate.threatId || update.threatUpdate.name || '?' });
+                return;
             }
-        });
-    }
-
-    if (threatsToRemove) {
-        asArray(threatsToRemove).forEach(remove => {
-            if (remove.targetLocationId && newMap[remove.targetLocationId] && newMap[remove.targetLocationId].activeThreats) {
-                newMap[remove.targetLocationId].activeThreats = newMap[remove.targetLocationId].activeThreats!.filter(t => t.threatId !== remove.threatId);
+            const threatIndex = matches[0];
+            const existing = location.activeThreats[threatIndex];
+            if (!existing.threatId) existing.threatId = generateId('threat');
+            const incoming = update.threatUpdate.currentActivity;
+            const payload = { ...update.threatUpdate };
+            const previous = existing.currentActivity;
+            if (incoming && previous && incoming.activityId && incoming.activityId !== previous.activityId) {
+                // An explicit identity must never be rewritten to target a different task.
+                delete payload.currentActivity;
+                onWarning?.({ kind: 'threat-update', subject: existing.threatId! });
+            } else if (incoming && previous && incoming.activityName && incoming.activityName !== previous.activityName) {
+                deferredThreatUpdates.push({ targetLocationId: update.targetLocationId, threatId: existing.threatId!, threatUpdate: { currentActivity: incoming }, previousId: previous.activityId! });
+                delete payload.currentActivity;
+            } else if (incoming && previous) {
+                payload.currentActivity = { ...incoming, activityId: previous.activityId };
+            } else if (incoming?.activityId) {
+                // An identified task is an update, not a request to start a new one.
+                delete payload.currentActivity;
+                onWarning?.({ kind: 'threat-update', subject: existing.threatId! });
+            } else if (incoming) {
+                payload.currentActivity = { ...incoming, activityId: generateId('threat-activity') };
             }
+            location.activeThreats[threatIndex] = deepMergeResponses(existing, payload) as ActiveThreat;
         });
     }
 
@@ -528,9 +622,17 @@ export function updateWorldMap(
                 const threatIndex = location.activeThreats.findIndex(t => t.threatId === completion.threatId);
                 if (threatIndex > -1) {
                     const threat = location.activeThreats[threatIndex];
+                    // Completion refers to an active task, not to the threat itself.
+                    // A duplicate command for an idle threat must not create history.
+                    if (!threat.currentActivity || !completion.activityId || completion.activityId !== threat.currentActivity.activityId) {
+                        console.warn('Skipping threat activity completion: no active activity or missing/mismatched activityId.');
+                        onWarning?.({ kind: 'threat-completion', subject: completion.threatId || '?' });
+                        return;
+                    }
                     if (!threat.completedActivities) threat.completedActivities = [];
                     threat.completedActivities.unshift({
-                        activityName: threat.currentActivity?.activityName || completion.threatName,
+                        activityId: threat.currentActivity.activityId,
+                        activityName: threat.currentActivity.activityName,
                         finalState: completion.finalState,
                         narrativeSummary: completion.narrativeSummary,
                         completionTurn: currentTurnNumber,
@@ -538,11 +640,34 @@ export function updateWorldMap(
                     threat.currentActivity = null;
                 } else {
                     console.warn(`Could not find threat with id ${completion.threatId} in location ${completion.targetLocationId} to complete its activity.`);
+                    onWarning?.({ kind: 'threat-completion', subject: completion.threatId || '?' });
                 }
+            } else {
+                onWarning?.({ kind: 'threat-completion', subject: completion.threatId || '?' });
             }
         });
     }
 
+    for (const deferred of deferredThreatUpdates) {
+        const threat = newMap[deferred.targetLocationId]?.activeThreats?.find(t => t.threatId === deferred.threatId);
+        const completed = threat?.completedActivities?.some(a => a.activityId === deferred.previousId && a.completionTurn === currentTurnNumber);
+        if (!threat || threat.currentActivity || !completed) {
+            console.warn('Skipping replacement of an unfinished threat activity.');
+            onWarning?.({ kind: 'threat-replacement', subject: deferred.threatId });
+            continue;
+        }
+        threat.currentActivity = { ...deferred.threatUpdate.currentActivity!, activityId: generateId('threat-activity') };
+    }
+
+    if (threatsToRemove) {
+        asArray(threatsToRemove).forEach(remove => {
+            if (remove.targetLocationId && newMap[remove.targetLocationId] && newMap[remove.targetLocationId].activeThreats) {
+                newMap[remove.targetLocationId].activeThreats = newMap[remove.targetLocationId].activeThreats!.filter(t => t.threatId !== remove.threatId);
+            }
+        });
+    }
+
+    ensureThreatActivityIds(newMap);
     return newMap;
 }
 
@@ -552,7 +677,8 @@ export function buildNextContext(
     response: GameResponse,
     newState: GameState,
     newHistory: ChatMessage[],
-    advanceTurn: boolean = true
+    advanceTurn: boolean = true,
+    onWorldMapWarning?: (warning: WorldMapWarning) => void
 ): GameContext {
     // ... (Same as previous patches for resource consistency) ...
     if (response.inventoryItemsResources) {
@@ -735,7 +861,7 @@ export function buildNextContext(
         baseMap = {};
     }
 
-    const newWorldMap = updateWorldMap(baseMap, response.worldMapUpdates, newState.currentLocationData as Location, currentContext.currentTurnNumber);
+    const newWorldMap = updateWorldMap(baseMap, response.worldMapUpdates, newState.currentLocationData as Location, currentContext.currentTurnNumber, onWorldMapWarning);
     
     if (newState.currentLocationData?.locationId && newWorldMap[newState.currentLocationData.locationId]) {
         newState.currentLocationData = newWorldMap[newState.currentLocationData.locationId];

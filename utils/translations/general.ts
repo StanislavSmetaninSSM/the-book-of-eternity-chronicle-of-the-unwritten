@@ -1,5 +1,18 @@
 export const general = {
   en: {
+    "warning_item_journal_identity": "Warning: the journal entry for item {subject} was not added because the item could not be identified uniquely. Other turn changes may have been applied.",
+    "warning_inventory_item_identity": "Warning: item {subject} was not added or updated because its ID is ambiguous or the new item is incomplete. Other turn changes may have been applied.",
+    "warning_equipment_item_identity": "Warning: item {subject} was not equipped because it could not be identified uniquely in the inventory. Other turn changes may have been applied.",
+    "warning_npc_item_transfer": "Warning: the inventory change for NPC item {subject} was deferred because a possible transfer could not be validated. Other turn changes may have been applied.",
+    "warning_npc_transfer_batch": "Warning: player inventory and equipment changes and NPC inventory additions (including starting inventories), equipment and resource changes were deferred because a possible transfer could not be validated. Other turn changes may have been applied.",
+    "warning_npc_relationship_identity": "Warning: the relationship update for NPC {subject} was not applied because its participants could not be identified uniquely. Other turn changes may have been applied.",
+    "world_map_warning_threat-replacement": "Warning: the new activity for threat {subject} was not started because its current activity was not confirmed complete. Other turn changes may have been applied.",
+    "world_map_warning_threat-update": "Warning: the activity of threat {subject} was not updated because its ID could not be matched to a current activity. Other turn changes may have been applied.",
+    "world_map_warning_threat-identity": "Warning: the threat {subject} was not updated because its identity could not be verified uniquely. Other turn changes may have been applied.",
+    "world_map_warning_link-create": "Warning: a location link from {subject} was not created because its destination is ambiguous or invalid. Other turn changes may have been applied.",
+    "world_map_warning_link-update": "Warning: a location link from {subject} was not updated because it could not be identified uniquely. Other turn changes may have been applied.",
+    "world_map_warning_link-remove": "Warning: a location link from {subject} was not removed because it could not be identified uniquely. Other turn changes may have been applied.",
+    "world_map_warning_threat-completion": "Warning: the activity of threat {subject} was not completed because the activity or its ID could not be verified. Other turn changes may have been applied.",
     // General
     "Yes": "Yes",
     "No": "No",
@@ -205,6 +218,19 @@ export const general = {
     "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.": "Are you sure you want to delete all chronicle entries for {name}? This cannot be undone.",
   },
   ru: {
+    "warning_item_journal_identity": "Предупреждение: запись в дневник предмета {subject} не добавлена, поскольку предмет не удалось однозначно определить. Другие изменения хода могли быть применены.",
+    "warning_inventory_item_identity": "Предупреждение: предмет {subject} не добавлен и не обновлён, поскольку его ID неоднозначен или данные нового предмета неполны. Другие изменения хода могли быть применены.",
+    "warning_equipment_item_identity": "Предупреждение: предмет {subject} не экипирован, поскольку его не удалось однозначно определить в инвентаре. Другие изменения хода могли быть применены.",
+    "warning_npc_item_transfer": "Предупреждение: изменение предмета {subject} в инвентаре NPC отложено, поскольку возможную передачу не удалось проверить. Другие изменения хода могли быть применены.",
+    "warning_npc_transfer_batch": "Предупреждение: изменения инвентаря и экипировки игроков, а также добавление предметов NPC (включая начальные инвентари), изменения экипировки и ресурсов NPC отложены, поскольку возможную передачу не удалось проверить. Другие изменения хода могли быть применены.",
+    "warning_npc_relationship_identity": "Предупреждение: изменение отношений NPC {subject} не применено, поскольку участников не удалось однозначно определить. Другие изменения хода могли быть применены.",
+    "world_map_warning_threat-replacement": "Предупреждение: новое занятие угрозы {subject} не начато, поскольку завершение текущего занятия не подтверждено. Другие изменения хода могли быть применены.",
+    "world_map_warning_threat-update": "Предупреждение: занятие угрозы {subject} не изменено, поскольку его ID не удалось сопоставить с текущим занятием. Другие изменения хода могли быть применены.",
+    "world_map_warning_threat-identity": "Предупреждение: угроза {subject} не изменена, поскольку её не удалось однозначно определить. Другие изменения хода могли быть применены.",
+    "world_map_warning_link-create": "Предупреждение: связь из локации {subject} не создана, поскольку её цель неоднозначна или неверна. Другие изменения хода могли быть применены.",
+    "world_map_warning_link-update": "Предупреждение: связь из локации {subject} не изменена, поскольку её не удалось однозначно определить. Другие изменения хода могли быть применены.",
+    "world_map_warning_link-remove": "Предупреждение: связь из локации {subject} не удалена, поскольку её не удалось однозначно определить. Другие изменения хода могли быть применены.",
+    "world_map_warning_threat-completion": "Предупреждение: занятие угрозы {subject} не завершено, поскольку занятие или его ID не удалось проверить. Другие изменения хода могли быть применены.",
     // General
     "Yes": "Да",
     "No": "Нет",

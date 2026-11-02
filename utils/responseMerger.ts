@@ -45,12 +45,12 @@ const nestedEntityMergeConfig: Record<string, { idField: string, nameField?: str
     fateCards: { idField: 'cardId' },
     unlockedMemories: { idField: 'memoryId' },
     factionAffiliations: { idField: 'factionId' },
-    completedActivities: { idField: '', compositeKey: (item: any) => `${item.activityName}_${item.completionTurn}` },
+    completedActivities: { idField: '', compositeKey: (item: any) => item.activityId ? `id:${item.activityId}` : `${item.activityName}_${item.completionTurn}` },
     npcRelationships: { idField: 'targetNpcId', nameField: 'targetNpcName' },
     personalQuests: { idField: 'questId', nameField: 'questName' },
     
     // Location
-    adjacencyMap: { idField: '', compositeKey: (item: any) => `${item.targetCoordinates.x},${item.targetCoordinates.y}` },
+    adjacencyMap: { idField: '', compositeKey: (item: any) => item.targetLocationId ? `id:${item.targetLocationId}` : `xy:${item.targetCoordinates?.x},${item.targetCoordinates?.y}` },
     factionControl: { idField: 'factionId' },
     locationStorages: { idField: 'storageId' },
     activeThreats: { idField: 'threatId', nameField: 'name' },

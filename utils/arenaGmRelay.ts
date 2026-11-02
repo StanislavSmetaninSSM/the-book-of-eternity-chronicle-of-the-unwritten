@@ -38,6 +38,7 @@ export interface ArenaGmStepRequest {
   modelName: string;
   attempt: number;
   systemInstruction?: string;
+  ruleBundleId?: string;
   instructions: string;
   prompt: string;
 }
@@ -299,6 +300,10 @@ async function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void
   });
 }
 
+export class ArenaGmRelayRequestError extends Error {
+  constructor(public status: number, message: string) { super(message); this.name = 'ArenaGmRelayRequestError'; }
+}
+
 const isRetryableHttpStatus = (status: number): boolean => status === 408 || status === 425 || status === 429 || status >= 500;
 
 async function postAndWaitForRelayResponse<T extends { kind: string; protocolVersion: number; correlationId: string }>(
@@ -342,7 +347,7 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
         retryDelay = Math.min(10_000, Math.round(retryDelay * 1.7));
         continue;
       }
-      throw new Error(`Relay server returned ${response.status}.`);
+      throw new ArenaGmRelayRequestError(response.status, response.status === 413 ? 'Relay request is too large (maximum 12 MiB). Reduce the attachment or game context.' : `Relay server returned ${response.status}.`);
     }
 
     while (!signal?.aborted) {
@@ -376,7 +381,7 @@ async function postAndWaitForRelayResponse<T extends { kind: string; protocolVer
         retryDelay = 900;
         break;
       }
-      if (!result.ok) throw new Error(`Relay response read failed (${result.status}).`);
+      if (!result.ok) throw new ArenaGmRelayRequestError(result.status, `Relay response read failed (${result.status}).`);
       const envelope = await result.json();
       completed = true;
       clearActiveRelayCorrelation(request.correlationId);
@@ -403,11 +408,12 @@ export async function requestArenaGmStep(
   attempt: number,
   signal?: AbortSignal,
   systemInstruction?: string,
+  ruleBundleId?: string,
 ): Promise<{ text: string; thoughtSignature?: string }> {
   const request: ArenaGmStepRequest = {
     kind: 'arena-gm-step', protocolVersion: ARENA_GM_PROTOCOL_VERSION,
     correlationId: newCorrelationId(), createdAt: new Date().toISOString(),
-    stepName, modelName, attempt, systemInstruction,
+    stepName, modelName, attempt, systemInstruction, ruleBundleId,
     instructions: 'Perform exactly this generation step from the game pipeline. Read and obey the supplied systemInstruction (if present) and prompt, especially the allowed-key/output contract. Return one arena-gm-step-response JSON envelope with this correlationId and output containing only the JSON object for this step. Write it atomically to .arena-gm-relay/responses/<correlationId>.json. Do not skip or combine steps.',
     prompt,
   };

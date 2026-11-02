@@ -1,14 +1,15 @@
 
 import React from 'react';
-import { GameState, GameContext, ChatMessage, GameResponse, WorldStateFlag, Location, NPC, PeerInfo, NetworkRole, GameSettings, NetworkMessage, SaveFile, Item } from '../../types';
+import { GameState, GameContext, ChatMessage, GameResponse, WorldStateFlag, Location, NPC, PeerInfo, NetworkRole, GameSettings, NetworkMessage, SaveFile } from '../../types';
 import { executeTurn, askGmQuestion as executeGmQuestion, getModelForStep, executeWorldProgression } from '../../utils/gemini';
-import { createInitialContext, buildNextContext } from '../../utils/gameContext';
+import { createInitialContext, buildNextContext, WorldMapWarning } from '../../utils/gameContext';
 import { formatError } from '../../utils/errorUtils';
 import { playNotificationSound } from '../../utils/soundManager';
 import { DataConnection } from 'peerjs';
 import { deepMergeResponses, processAndApplyResponse } from '../../utils/responseProcessor';
 import { deepStripModerationSymbols } from '../../utils/textUtils';
 import { acquireArenaGmTurnLease } from '../../utils/arenaGmRelay';
+import { shouldRunWorldProgression } from '../../utils/worldProgression.js';
 import { clearInterruptedTurnRecovery, saveInterruptedTurnRecovery } from '../../utils/fileManager';
 
 
@@ -168,69 +169,21 @@ export const createTurnManager = (
             const gmMessage: ChatMessage = { sender: 'gm', content: finalResponse.response || '' };
                       
             // FIX: Passing context.worldMap to processAndApplyResponse to prevent data bleeding
-            const { newState, logsToAdd, combatLogsToAdd } = processAndApplyResponse(finalResponse, baseState, context.gameSettings, t, true, context.currentTurnNumber, context.worldMap);
+            const { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalResponse, baseState, context.gameSettings, t, true, context.currentTurnNumber, context.worldMap);
 
             // Save the thought signature to the game state for the next turn
             if (finalResponse.thoughtSignature) {
                 newState.thoughtSignature = finalResponse.thoughtSignature;
             }
             
-            if (finalResponse.itemJournalUpdates) {
-                asArray(finalResponse.itemJournalUpdates).forEach(update => {
-                    let itemFound = false;
-                    
-                    const findAndUpdate = (inventory: Item[]) => {
-                        if (itemFound || !inventory) return;
-            
-                        let item: Item | null = null;
-                        
-                        if (update.itemId) {
-                            item = inventory.find((i: Item) => i.existedId === update.itemId) || null;
-                        }
-                        
-                        if (!item && update.initialItemId) {
-                            item = inventory.find((i: Item) => i.initialId === update.initialItemId) || null;
-                        }
-            
-                        if (!item && update.itemName) {
-                            item = inventory.find((i: Item) => i.name === update.itemName && (!i.journalEntries || i.journalEntries.length === 0)) || inventory.find(i => i.name === update.itemName);
-                        }
-            
-                        if (item) {
-                            if (!Array.isArray(item.journalEntries)) {
-                                item.journalEntries = [];
-                            }
-                            item.journalEntries.unshift(update.entryToAppend);
-                            itemFound = true;
-                        }
-                    };
-            
-                    newState.players.forEach(p => {
-                        if (p?.inventory) findAndUpdate(p.inventory);
-                    });
-            
-                    if (!itemFound) {
-                        newState.encounteredNPCs.forEach(npc => {
-                            if (npc?.inventory) findAndUpdate(npc.inventory);
-                        });
-                    }
-                });
-            }
-
-
-            if (newState.currentLocationData.initialId) {
-                newState.encounteredNPCs.forEach(npc => {
-                    if (npc.initialLocationId === newState.currentLocationData.initialId) {
-                        npc.currentLocationId = newState.currentLocationData.locationId;
-                    }
-                });
-            }
-
             const newHistoryWithAnswer = [...fullHistoryForTurn, gmMessage];
+            const onWorldMapWarning = (warning: WorldMapWarning) => {
+                newHistoryWithAnswer.push({ sender: 'system', content: t(`world_map_warning_${warning.kind}`, { subject: warning.subject }) });
+            };
             const currentRole = baseState.networkRole;
 
             if (currentRole === 'player') {
-                const nextContext = buildNextContext(context, finalResponse, newState, newHistoryWithAnswer, true);
+                const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, true, onWorldMapWarning);
 
                 const newSaveData: SaveFile = {
                     gameContext: nextContext,
@@ -269,7 +222,7 @@ export const createTurnManager = (
                     setIsLoading(false);
                 }
             } else { // Host or local
-                const nextContext = buildNextContext(context, finalResponse, newState, newHistoryWithAnswer, true);
+                const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, true, onWorldMapWarning);
 
                 setGameLog([...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd]);
                 if (combatLogsToAdd.length > 0) {
@@ -472,7 +425,7 @@ export const createTurnManager = (
             let finalMergedResponse = finalResponse;
             const gmMessage: ChatMessage = { sender: 'gm', content: finalResponse.response || '' };
     
-            if (finalResponse.generateWorldProgression === true) {
+            if (shouldRunWorldProgression(finalResponse.generateWorldProgression, context.gameSettings)) {
                 const wpContext = { ...context, responseHistory: [...historyWithQuestion, gmMessage] };
                 const wpResponseRaw = await executeWorldProgression(wpContext, abortControllerRef.current!.signal, onStreamingChunk, (r, s, m) => setLastJsonResponse(JSON.stringify(r, null, 2)), onStepStart);
                 const wpResponse = deepStripModerationSymbols(wpResponseRaw);
@@ -489,7 +442,7 @@ export const createTurnManager = (
             setLastJsonResponse(JSON.stringify(finalMergedResponse, null, 2));
     
             // FIX: Passing context.worldMap instead of visitedLocations
-            const { newState, logsToAdd, combatLogsToAdd } = processAndApplyResponse(finalMergedResponse as GameResponse, baseState, gameSettings, t, false, context.currentTurnNumber, context.worldMap);
+            const { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalMergedResponse as GameResponse, baseState, gameSettings, t, false, context.currentTurnNumber, context.worldMap);
             
             // Save the signature if present
             if (finalMergedResponse.thoughtSignature) {
@@ -497,12 +450,15 @@ export const createTurnManager = (
             }
 
             const newHistoryWithAnswer = [...historyWithQuestion, gmMessage];
+            const onWorldMapWarning = (warning: WorldMapWarning) => {
+                newHistoryWithAnswer.push({ sender: 'system', content: t(`world_map_warning_${warning.kind}`, { subject: warning.subject }) });
+            };
             const newLogsForThisTurn = [...asArray(finalMergedResponse.items_and_stat_calculations), ...logsToAdd];
             
             const currentRole = baseState.networkRole;
     
             if (currentRole === 'player') {
-                const nextContext = buildNextContext(context, finalMergedResponse as GameResponse, newState, newHistoryWithAnswer, false);
+                const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning);
                 const newSaveData: SaveFile = {
                     gameContext: nextContext,
                     gameState: newState,
@@ -545,7 +501,7 @@ export const createTurnManager = (
                     setCombatLog(prev => [...prev, ...combatLogsToAdd]);
                 }
                 
-                const nextContext = buildNextContext(context, finalMergedResponse as GameResponse, newState, newHistoryWithAnswer, false);
+                const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning);
                 gameContextRef.current = nextContext;
     
                 setGameHistory(newHistoryWithAnswer);

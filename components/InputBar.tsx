@@ -155,7 +155,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
   const [activeView, setActiveView] = useState<'write' | 'preview'>('write');
   const [isSuggestionsExpanded, setIsSuggestionsExpanded] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { t } = useLocalization();
+  const { t, language } = useLocalization();
   const [selectedImage, setSelectedImage] = useState<{ dataUrl: string; mimeType: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const actionDraftWarningShownRef = useRef(false);
@@ -297,6 +297,15 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
               alert(t("Please select an image file."));
               return;
           }
+          // Keep the encoded image plus the large rules prompt below the relay's 12 MiB limit.
+          if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'].includes(file.type)) {
+              alert(language === 'ru' ? 'Поддерживаются изображения PNG, JPEG, WebP, GIF и BMP.' : 'Supported images: PNG, JPEG, WebP, GIF and BMP.');
+              return;
+          }
+          if (file.size > 4 * 1024 * 1024) {
+              alert(language === 'ru' ? 'Размер изображения не должен превышать 4 МиБ.' : 'The image must be no larger than 4 MiB.');
+              return;
+          }
           const reader = new FileReader();
           reader.onloadend = () => {
               const dataUrl = reader.result as string;
@@ -412,7 +421,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" className="hidden" />
             <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}

@@ -34,6 +34,10 @@ When a durable plan or specification is appropriate, obtain the user's approval 
 - If one service is genuinely absent, start only that missing service and leave the healthy one untouched. If the site appears unresponsive or must be restarted, first report the risk of losing unsaved browser state and ask the user before restarting, unless the user explicitly authorized the restart. Use non-disruptive checks (for example, inspect process output and `/__arena_gm/status`) before concluding that a service is down.
 - Keep mailbox processing separate from service lifecycle: answer relay packets while the current site session remains open. Do not equate an empty mailbox or completion of one turn with a reason to restart or close either service.
 
+## Referenced narrative rule bundles
+
+For a stage packet containing `ruleBundleId`, follow its `<LocalRuleReference>`: verify the stated SHA-256 hashes, for narrative synthesis read the complete narrative guide; for NPC detail processing read the world guide and consult relevant narrative sections; for inventory read the applicable item, equipment, resource, capacity, crafting and journal rules specified in the task; for combat audit read cited combat, resistance, effect and wound rules and verify the prior combat log; for world progression read the complete world and narrative guides, consult cited simulation rules, and account for prior faction events; for faction progression read the complete world and narrative guides and consult the cited economy, project, territory and consequence rules. Consult indexed game rules and relevant cross-references for the task. The referenced files are part of the stage instructions, not a replacement for the current context or output contract. If a file is missing or its hash differs, respond with the normal stage envelope and `output` exactly `{"_arenaRuleBundleUnavailable": true}`; the app retries with the complete guides. Never pretend to have consulted an inaccessible file. This special output is only for referenced stages.
+
 ## Monitoring procedure
 
 1. Check `.arena-gm-relay/pending.json` and process any request already waiting.
@@ -44,6 +48,10 @@ When a durable plan or specification is appropriate, obtain the user's approval 
 6. **Drain to the terminal stage.** After responding to a nonterminal step, do not treat a temporarily empty mailbox/status as completion. Recheck `/__arena_gm/status`, `pending.json`, and `request-queue`; keep processing successive packets until the terminal-stage test in Core expectations passes. If the relay is briefly idle between stages, wait and recheck within the current turn. With no explicit monitoring duration, use the existing ~60-second idle grace as a minimum gap-detection window, not as permission to declare an unfinished turn complete. If that window expires without a terminal packet, say the turn is still pending/stalled and what was the last confirmed stage; never claim it finished.
 7. **Completion report.** Only report a turn as completed after its terminal response has been consumed and the relay has no active request or queued turn stage. State the terminal stage and distinguish any remaining image-only work from gameplay completion.
 8. At the end of an explicit monitoring window, stop the watcher and report which stages were handled and whether a request remains pending. Do not silently leave a background watcher running beyond the requested window.
+
+## Player-attached images
+
+A stage packet's `<CurrentGameContext>` may contain `image` with a MIME type and base64 data. This is an image the player attached to their action or question, not an image-generation request. Before answering a stage that needs it, run `node scripts/arena-gm-extract-attachment.mjs`, then inspect the resulting path with the Arena file-reading tool. Use its actual visual contents; do not guess from base64 or claim to have viewed an image you did not inspect. Supported attachments are PNG, JPEG, WebP, GIF and BMP, up to 4 MiB. The total request is also subject to the relay body limit. Extracted files live in the ignored private relay directory.
 
 ## Image requests
 

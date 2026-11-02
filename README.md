@@ -41,7 +41,7 @@ npm run build
 npm run preview -- --host 0.0.0.0
 ```
 
-`npm run build` checks and bundles the app. The file relay is development-server middleware, so a built static site or `vite preview` alone cannot service relay requests. For a production deployment, implement and configure a persistent server-side mailbox adapter; do not expose workspace files directly to the public internet.
+`npm run build` checks and bundles the app. The file relay is supplied by this repository’s Vite middleware in both the development server and `vite preview`; generic static hosting cannot service relay requests. For a production deployment, implement and configure a persistent server-side mailbox adapter; do not expose workspace files directly to the public internet.
 
 ## Relay docs
 
@@ -53,4 +53,4 @@ npm run preview -- --host 0.0.0.0
 - `.arena-gm-relay/` is transient runtime state and is deliberately ignored by Git.
 - Never commit API keys, saved games, relay payloads, or generated images.
 - `npm run relay:watch` is an optional local mailbox watcher; it only announces requests and does not contact or wake the Arena agent.
-- The repository currently has no automated regression-test suite. Use `npm run build` to validate a deployment build.
+- Run `npm test`, `npm run typecheck`, and `npm run build` to validate changes. Automated tests do not replace a real browser/game-master playthrough.

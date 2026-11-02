@@ -1,6 +1,8 @@
 import { defineConfig, Plugin } from 'vite';
 import { access, mkdir, open, readFile, rename, rm, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+// @ts-ignore -- server-only JS module
+import { ensureRuleBundle, verifyRuleBundle } from './utils/arenaRuleBundle.js';
 
 const relayDirectory = path.resolve(process.env.ARENA_GM_RELAY_DIR || path.join(process.cwd(), '.arena-gm-relay'));
 const pendingPath = path.join(relayDirectory, 'pending.json');
@@ -150,6 +152,10 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
         };
 
         try {
+          if (url.pathname === '/__arena_gm/rules' && req.method === 'GET') {
+            send(200, await ensureRuleBundle(relayDirectory));
+            return;
+          }
           if (url.pathname === '/__arena_gm/turn' && req.method === 'POST') {
             const packet = await readBody();
             if (!['arena-gm-turn', 'arena-gm-step', 'arena-gm-image'].includes(packet?.kind) || packet?.protocolVersion !== 1 || typeof packet?.correlationId !== 'string' || !CORRELATION_ID_PATTERN.test(packet.correlationId)) {
@@ -158,6 +164,11 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
             }
             if (packet.kind === 'arena-gm-step' && (typeof packet.prompt !== 'string' || typeof packet.stepName !== 'string')) {
               send(400, { error: 'Arena GM step packet is missing its prompt or step name.' });
+              return;
+            }
+            if (packet.kind === 'arena-gm-step' && packet.ruleBundleId !== undefined &&
+                !(await verifyRuleBundle(relayDirectory, packet.ruleBundleId))) {
+              send(409, { error: 'Rule bundle unavailable or changed; retry with full rules.' });
               return;
             }
             if (packet.kind === 'arena-gm-turn' && (!packet.turn || typeof packet.turn !== 'object')) {

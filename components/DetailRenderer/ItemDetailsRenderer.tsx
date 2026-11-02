@@ -33,8 +33,12 @@ const ItemHeader: React.FC<ItemDetailsProps> = (props) => {
     const { item, allowHistoryManipulation, onEditItemData, onOpenImageModal, imageCache, onImageGenerated, gameSettings, onOpenTextReader, isLoading } = props;
     const { t } = useLocalization();
 
-    const displayImagePrompt = item.custom_image_prompt || item.image_prompt || `A detailed, photorealistic fantasy art image of a single ${item.quality} ${item.name}. ${item.description.split('. ')[0]}`;
-    const originalImagePrompt = item.image_prompt || `A detailed, photorealistic fantasy art image of a single ${item.quality} ${item.name}. ${item.description.split('. ')[0]}`;
+    // Older saves may already contain incomplete items created by earlier
+    // versions; they must remain inspectable even without a description.
+    const description = typeof item.description === 'string' ? item.description : '';
+    const fallbackImagePrompt = `A detailed, photorealistic fantasy art image of a single ${item.quality || ''} ${item.name || 'item'}. ${description.split('. ')[0]}`;
+    const displayImagePrompt = item.custom_image_prompt || item.image_prompt || fallbackImagePrompt;
+    const originalImagePrompt = item.image_prompt || fallbackImagePrompt;
     
     const hasPendingUpdate = !!item.pending_image_prompt;
 

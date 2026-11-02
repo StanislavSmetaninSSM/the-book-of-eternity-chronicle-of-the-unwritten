@@ -355,7 +355,7 @@ export const getStep0 = () => {
                     "# 2. Триггеры Прогрессии Мира (Закон 8)",
                     "- Время с последней прогрессии мира: 15 мин.",
                     "- Проверка Мировой Прогрессии: 15 < 240 мин. Результат: FALSE.",
-                    "- Проверка Прогрессии Фракций: 1440 мин. Результат: FALSE.",
+                    "- Проверка Прогрессии Фракций: 1439 мин. Результат: FALSE.",
 
                     "# 3. Симуляция Действия (Сценарий А: Боевое Действие)",
 
@@ -376,11 +376,11 @@ export const getStep0 = () => {
                     "  - Релевантная Сложность: 'externalDifficultyProfile.combat' = 40 (Орк - сильный).",
                     "  - Шкала Сложности (Ур. 5): max(0.2, 5/50) = 0.2.",
                     "  - Базовая Сложность: 40 * 0.2 = 8.",
-                    "  - ActionDifficultModificator: 8.",
-                    "- Бросок Костей (D20): Игрок 17.",
+                    "  - При отсутствии дополнительных факторов: ActionDifficultModificator = round(8 * (0.4 + 5/100)) = 4.",
+                    "- Бросок Костей (D20): Игрок 17, ГМ 5.",
                     "- Расчет Итога (Правило #12.7):",
-                    "  - (Бросок 17 + StatMod 22) - (Сложность 8) = 39 - 8 = 31.",
-                    "- Результат: Разница 31 >= 10. Критический Успех (Critical Success).",
+                    "  - (Бросок 17 + StatMod 22) - (Бросок ГМ 5 + Сложность 4) = 39 - 9 = 30.",
+                    "- Результат: Разница 30 >= 10. Критический Успех (Critical Success).",
 
                     "## В. Расчет Урона и Эффектов (Правила #14.2 & #7.3)",
                     "- Навык: 'Power Strike'. База: 20% (дробящий). Масштабируется от Силы.",
@@ -393,21 +393,21 @@ export const getStep0 = () => {
                     "- Общий Базовый Урон (TotalPreCritDamage):",
                     "  - Оружие (Боевой Молот): 15%.",
                     "  - Навык (Power Strike): 23%.",
-                    "  - Пассивный бонус (навык 'Дробитель'): +5%.",
-                    "  - Итого база: 15 + 23 + 5 = 43%.",
+                    "  - Бонус уровня 5: +5%; бонус Силы 18: floor(18 / 2.5) = +7%; пассивный бонус навыка: +5%.",
+                    "  - Итого база: 15 + 23 + 5 + 7 + 5 = 55%.",
                     "- Применение Критического Множителя (Правило #14.2.2):",
                     "  - Удача игрока: 10.",
                     "  - Бонус крит.урона: floor(10/2) = 5%.",
                     "  - Множитель: 1.5 + 0.05 = 1.55.",
-                    "  - Урон после крита: round(43 * 1.55) = 67%.",
+                    "  - Урон после крита: 55 * 1.55 = 85.25% (без промежуточного округления).",
                     "- Применение Сопротивления Цели (Правило #14.3):",
                     "  - Орк имеет 'Толстую шкуру' (Resist Slashing/Bludgeoning 20%).",
-                    "  - Финальный урон: round(67 * (1 - 0.20)) = 54%.",
+                    "  - Финальный урон: round(85.25 * (1 - 0.20)) = 68%.",
 
                     "# 4. Определение Последствий",
-                    "- Здоровье Врага (Орк-берсерк): Начальное 100% - 54% = 46%.",
+                    "- Здоровье Врага (Орк-берсерк): Начальное 100% - 68% = 32%.",
                     "- Проверка Ран (Правило #5.20):",
-                    "  - Урон 54% превышает порог 45% (Средняя рана).",
+                    "  - Урон 68% превышает порог 45% (Средняя рана).",
                     "  - Последствие: Наложение раны 'Сломанное Ребро' (дебафф: -25% к скорости).",
                     "- Ресурсы Игрока:",
                     "  - Энергия: -10 (стоимость навыка).",
@@ -884,7 +884,7 @@ export const getStep3Logs = () => {
                 - The step-by-step **Turn Execution** for every combatant. For each action, you must log:
                     - The **Action Check** (Dice + StatMod - Difficulty) OR the **EAV vs Defense Check** (for generics).
                     - The **Damage Calculation**, explicitly showing Base Damage, Multipliers (Crit), and Resistance Reductions (**Rule #12.9**).
-                    - The **Armor Threshold Check** (**Rule #15.A**).
+                    - The **Armor Threshold Check** (**Rule #15.A**): log each affected armor item and owner by ID, its starting and resulting durability, and the health damage after the threshold. Do not output inventory commands in this logs-only stage.
                     - The specific **Health Updates** (e.g., "Health: 100% -> 85%").
                 
                 ]]>
@@ -984,6 +984,7 @@ export const getStep3Logs = () => {
                 4.  **End of Turn Logic:**
                     -   Did any combatant die? Log it.
                     -   Did the combat end (all enemies dead/fled)? Log "Combat Ended".
+                    -   If combat ended, log each affected named NPC's NPCId, final actual health on the NPC scale, wounds, and independent effects with their remaining durations, supported by the calculations. This evidence is needed because combat rosters will be cleared and Step 4 must report NPC health. Do not invent a missing value.
 
                 **EXAMPLE OF CORRECT OUTPUT FOR THIS STEP (IN RUSSIAN):**
 
@@ -1011,28 +1012,29 @@ export const getStep3Logs = () => {
 
                         "- **Расчет Урона (Правило 14.2):**",
                         "  - Базовый урон оружия: 18%.",
-                        "  - Бонусы (пассивные + статы): +12%.",
-                        "  - Итого база: 30%.",
-                        "  - Множитель крита (Удача 10 -> 1.55): 30 * 1.55 = 46.5 -> 46%.",
+                        "  - Бонус уровня 10: +7%; бонус Силы 30: floor(30 / 2.5) = +12%; других бонусов нет.",
+                        "  - Итого база: 18 + 7 + 12 = 37%.",
+                        "  - Множитель крита (Удача 10 -> 1.55): 37 * 1.55 = 57.35% без округления.",
                         "  - Сопротивление цели (0%): урон не снижен.",
-                        "  - Финальный урон: 46%.",
+                        "  - Финальный урон: round(57.35 * (1 - 0 / 100)) = 57%.",
 
                         "- **Применение последствий:**",
-                        "  - Здоровье Гоблина: 91% - 46% = 45%.",
-                        "  - Проверка Ран (Правило 5.20): Урон (46%) превышает 45% порог. Применение (Средняя рана).",
-                        "  - Наложение дебаффа: 'Тяжелая рана' (эффект: -20% к урону).",
+                        "  - Здоровье Гоблина (максимум 100%): 91% - 57% = 34%.",
+                        "  - Проверка Ран (Правило 5.20): Урон 57% превышает 45% максимума. Средняя рана хранится отдельно, эффект находится внутри неё.",
+                        "  - Рана: 'Рассечение' (Moderate, generatedEffects: -20% к урону). Отдельный дублирующий эффект не создаётся.",
 
                         "## Ход 2: Гоблин-копейщик",
                         "- Состояние: Ранен, низкое здоровье.",
                         "- Действие: Атаковать игрока в отчаянии.",
                         "- **Расчет Атаки (Правило 15.2):**",
                         "  - EAV (Атакующая ценность): (EL 9 / 2) + (Урон 8 / 2) + Тип(2) = 11.",
+                        "- Бросок атакующего гоблина: 12 — обычный, переход к проверке защиты.",
                         "- **Защита Игрока (Правило 12):**",
                         "  - Игрок уклоняется от атаки. StatMod: 28.",
                         "  - Сложность: EAV (11).",
                         "  - Бросок Игрока: 14. Бросок Мастера: 18.",
                         "  - Итог: (14 + 28) - (18 + 11) = 42 - 29 = 13. Результат: Критический Успех защиты.",
-                        "- **Итог:** Атака Гоблина - Критический Провал (Critical Failure). Урон 0.",
+                        "- **Итог:** Атака Гоблина - Критический Провал (Critical Failure). Урон 0; гоблин получает отдельную лёгкую рану от ошибки при атаке согласно Правилу 5.20.2.",
 
                         "# 3. Конец Раунда",
                         "- Бой продолжается."
@@ -1131,13 +1133,14 @@ export const getStep3 = () => {
 
         1.  **The Audit Phase (Mandatory Sanity Check):**
             -   Read the 'items_and_stat_calculations' from Step 3 (Logs).
-            -   **Verify Math:** Did the log apply Resistance percentages correctly (e.g., Damage * (1 - Resist/100)) as per **Rule #14.3**? Did it apply the x1.5 Crit Multiplier?
+            -   **Verify Math:** Did the log apply Resistance percentages correctly (e.g., Damage * (1 - Resist/100)) as per **Rule #14.3**? Did it apply the correct critical multiplier from Rule #14.2.2 (base 1.5 plus the applicable modified-Luck bonus for a PC or named NPC, rather than assuming a flat 1.5)?
             -   **Verify Logic:** Did a 'Stunned' combatant correctly skip their turn?
             -   *Action:*
                 -   If correct: Proceed to population.
                 -   If error found: You MUST append a new log entry starting with "**CORRECTION LOG / ЛОГ ИСПРАВЛЕНИЯ:**" detailing the fix. Use the *corrected* values for the JSON below.
 
         2.  **Combatants Data ('enemiesData' & 'alliesData'):**
+            -   *Combat End (Rule #13.7.1):* If the logs say combat ended, output both 'enemiesData' and 'alliesData' as empty arrays. For named NPCs, report wounds and independent effects using 'NPCWoundChanges' and 'NPCEffectChanges' in this step. Record their final actual health and any necessary evidence in the calculation log for Step 4 to report via 'NPCsData'; that key is forbidden in this step. Never infer a missing final value from the pre-turn context.
             -   *Source:* Based on the final state in the logs.
             -   **Update Health:** Set 'currentHealth' to the final percentage string calculated in the logs (e.g., "45%").
                 -   *Defeat Check:* If health <= 0%, set 'currentHealth' to "0%". The system handles removal next turn.
@@ -1145,6 +1148,7 @@ export const getStep3 = () => {
                 -   *New Effects:* Add any new effects applied this turn (**Rule #6.2**).
                 -   *Duration:* Decrement 'duration' of existing effects by 1.
                 -   *Cleanup:* Remove effects where 'duration' has reached 0.
+            -   *Generic Wounds:* If a generic combatant without an NPC record receives a wound, include its complete independent wound object in that combatant's 'wounds' array, with associated effects inside 'generatedEffects' (Rules #5.20.2-5.20.4). Preserve the wound IDs on subsequent turns; do not create a fake NPC or duplicate its effects separately.
             -   *Splitting:* If a Unit was split from a Group (Rule #6.1.8.4), ensure both the Group (count -1) and the New Unit (count 1) are present.
 
         3.  **Player Effects ('playerActiveEffectsChanges'):**
@@ -1153,12 +1157,12 @@ export const getStep3 = () => {
             -   *Constraint:* Do NOT list existing effects, only new ones or updates to existing ones.
 
         4.  **Player Wounds ('playerWoundChanges'):**
-            -   **Trigger:** Did the logs indicate the Player suffered damage exceeding a threshold (25% or 45% of Max HP) or received a Critical Hit?
+            -   **Trigger:** Check all wound triggers in Rule #5.20.2, including damage exceeding a threshold, a received critical hit, an attack's wound property, or a critical failure on an attack.
             -   **Action:** If a specific Wound was logged (e.g., "Broken Arm"), generate the complete Wound Object (**Rule #5.20.3**) and add it here.
             -   *Note:* This implies mechanical consequences (Debuffs) which are defined *inside* the Wound Object.
 
         5.  **NPC Specifics ('NPCWoundChanges' & 'NPCEffectChanges'):**
-            -   **Wounds:** Did an NPC take >25% damage in one hit? If the log generated a Wound, output the Wound Object (**Rule #5.20**).
+            -   **Wounds:** Check every trigger in Rule #5.20.2, including significant damage, received critical hits, wound-causing attacks, and critical attack failures. If the log generated a wound, output one flat NPCWoundChanges object per wound with NPCId, NPCName and the complete wound fields (**Rule #5.20**).
             -   **Non-Combatant Effects:** If a Named NPC (not in enemiesData) was hit by AoE, report effects here.
 
         6.  **Player Metrics ('currentHealthChange', 'currentEnergyChange', 'playerStatus'):**
@@ -1403,7 +1407,7 @@ export const getStep4 = () => {
                                 -   **DO NOT SKIP THIS.** An idle key NPC is a system failure.
                         </CRITICAL ANTI-FREEZE MANDATE>
 
-                    -   *Input:* Did an NPC act proactively in the scene (as determined in Step 0), or did an off-screen event trigger a change in their plans?
+                    -   *Input:* Did an NPC act proactively in the scene (as determined in Step 0), or did an off-screen event trigger a change in their plans? Read the faction-event handoff and worldEventsLog in partiallyGeneratedResponse; evaluate the named NPCs and affected factions, and report justified goal and quest changes here using the allowed atomic commands. Do not invent a reaction if the event does not warrant one or repeat an already reported change.
                     -   **Goals & Quests (Unified Protocol):** You MUST now execute the full logic from **Rule #19.E.2**.
                         -   If an NPC's idle state and goals analysis (from Step 0) indicates a new plan is needed, you MUST perform the **Internal Strategic Synthesis** (Rule #19.E.2.A).
                         -   This means you internally formulate the new **plan** AND deconstruct it into a new **personalQuest**.
@@ -1434,7 +1438,7 @@ export const getStep4 = () => {
                     -   *Input:* Did an NPC receive, lose, consume, or use items in this turn's events?
                     -   **PROHIBITION:** You are FORBIDDEN from using the 'NPCsData' key to modify the 'inventory' of an existing NPC.
                     -   **Additions:** Use the 'NPCInventoryAdds' command. **MANDATORY:** You MUST first perform and log the **Critical Weight Check (Rule #19.C)**. If the check fails, the NPC refuses the item, and the command is not generated.
-                    -   **Updates:** Use 'NPCInventoryUpdates' for changes to an existing item's 'count' or 'durability'.
+                    -   **Updates:** Use 'NPCInventoryUpdates' for changes to an existing item's 'count' or 'durability'. Review the prior combat calculation and correction logs for named NPC armor wear (Rule #15.A); report each logged change once by NPC and item ID, without inventing damage or duplicating an already reported update.
                     -   **Removals:** Use 'NPCInventoryRemovals' for the complete removal of an item stack.
                     -   **Equipment:** Use 'NPCEquipmentChanges' to reflect any changes in what the NPC is actively wearing or wielding (**Rule #19.B**).
 
@@ -1456,6 +1460,7 @@ export const getStep4 = () => {
 
                 10.  **State & Location:**
                     -   *Health:* If an NPC's health changed outside of formal combat, report the updated NPC object in 'NPCsData'.
+                    -   *Combat End Handoff:* When the combat log reports that combat ended and the combat arrays were cleared, report each affected named NPC's final actual health through 'NPCsData' using its NPCId. Use only a final value supported by the combat calculation logs or an explicit NPC update; do not infer a result from the pre-turn roster. Report any missing, independently justified effects or wounds through their existing atomic commands without duplicating prior stage results or wound-generated effects.
                     -   *Custom States:* If an NPC's custom state (e.g., Hunger, Morale) changed, report the update via the 'NPCCustomStateChanges' command (**Rule #25.A**).
                     -   *Scene:* Set the 'NPCsInScene' flag to 'true' or 'false' based on the final state of the scene.
 
@@ -1693,7 +1698,7 @@ export const getStep5 = () => {
                     -   *Count Change:* Did player use/give part of a stack? Use 'inventoryItemsData' with 'existedId' + new 'count'. (**Rule #5.13**)
                     -   *Resource Usage:* Did player shoot/drink/charge? Use 'inventoryItemsResources'. (**Rule #5.14**)
                         -   *Prohibition:* NEVER use 'removeInventoryItems' for consumption.
-                    -   *Durability:* Did an item break/degrade? Update via 'inventoryItemsData'. (**Rule #5.15**)
+                    -   *Durability:* Did an item break/degrade? Review prior combat calculation and correction logs for player armor wear (Rule #15.A), then update each logged item once via 'inventoryItemsData' using its existing ID and final durability. Do not invent wear or repeat an already reported update. (**Rule #5.15**)
 
                 3.  **Item Removal ('removeInventoryItems'):**
                     -   *Input:* Did player explicitly drop, destroy, or give away an ENTIRE stack?
@@ -2579,10 +2584,10 @@ export const getStepFactionProgression = () => {
                     -   *Input:* Review all new 'worldEventsLog' entries you have generated in this Faction Progression step.
                     -   **MANDATORY CHECK:** For each event, you MUST check its 'affectedFactions' and 'involvedNPCs' list.
                     -   **Trigger:** Does this event create a new, urgent motivation for any key NPC (especially those belonging to the affected factions)?
-                    -   **Action:** If a trigger is found, you MUST apply the consequences directly to the NPC's "brain" by generating the appropriate atomic command.
-                        -   **Goal Update:** If the event creates a new, overriding priority, you MUST generate a new 'shortTerm' goal for the NPC via the **'NPCGoalUpdates'** command.
+                    -   **Handoff:** If a trigger is found, log the affected NPC's identity, the event and the proposed motivation in 'items_and_stat_calculations'. Do not issue 'NPCGoalUpdates' or 'NPCQuestUpdates' in this stage: they are outside its AllowedKeys.
+                        -   **Goal Update:** If the event creates a new, overriding priority, identify the proposed 'shortTerm' goal for **Step4_NPC_TaskGuide** to report via 'NPCGoalUpdates'.
                             *Example:* If the "Iron Horde" (event) conquers a city, "Captain Thorne" (NPC of the defending faction) gets a new short-term goal: "Retake the city".
-                        -   **Quest Generation:** If the new goal is concrete, you can immediately generate a 'personalQuest' for the NPC via **'NPCQuestUpdates'**.
+                        -   **Quest Generation:** If the new goal is concrete, identify a possible 'personalQuest' for Step 4 to evaluate and report via 'NPCQuestUpdates'.
                             *Example:* Thorne's new quest becomes "Guerilla Warfare", with the objective "Sabotage Iron Horde supply lines".
 
                 6.  **Phase 5: Growth (Level Up):**
@@ -2771,7 +2776,7 @@ export const getStepWorldProgression = () => {
                     -   *Busy Threat:* Run **Action Simulation Check**.
                         -   *Roll:* Threat Power vs Location Defense/Target Resistance.
                         -   *Result:* Calc 'EffectiveTimeSpent'. Update Progress.
-                    -   *Complete?* Use 'completeThreatActivities'. Apply 'impactProfile' consequences.
+                    -   *Complete?* Use 'completeThreatActivities' with the exact currentActivity.activityId from context; missing or mismatched IDs are rejected. Apply 'impactProfile' consequences.
                     -   *Report:* Generate 'worldEventsLog' entry for the threat's action.
 
                 3.  **NPC & General Event Generation (Rule #30.1):**

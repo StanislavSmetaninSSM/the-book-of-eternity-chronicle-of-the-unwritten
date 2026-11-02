@@ -1,3 +1,5 @@
+// @ts-ignore -- shared JS helpers
+import { resolveLinkTarget } from '../../utils/locationLinks.js';
 
 
 
@@ -351,12 +353,14 @@ export const createPlayerActionsManager = (
         });
         setWorldMap(prev => {
             const newMap = { ...prev };
+            const originalLocations = Object.values(prev) as Location[];
             delete newMap[locationId];
             Object.keys(newMap).forEach(key => {
                 if (newMap[key].adjacencyMap) {
                     newMap[key].adjacencyMap = newMap[key].adjacencyMap!.filter(link => {
-                        const targetLoc = (Object.values(newMap) as Location[]).find(l => l.coordinates?.x === link.targetCoordinates.x && l.coordinates?.y === link.targetCoordinates.y);
-                        return !(targetLoc && targetLoc.locationId === locationId);
+                        if (link.targetLocationId) return link.targetLocationId !== locationId;
+                        const targetLoc = resolveLinkTarget(link, originalLocations);
+                        return targetLoc?.locationId !== locationId;
                     });
                 }
             });

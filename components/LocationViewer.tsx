@@ -1,3 +1,5 @@
+// @ts-ignore -- shared JS helpers
+import { coordinateKey, resolveLinkTarget } from '../utils/locationLinks.js';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Location, GameSettings, Faction, DifficultyProfile, ImageCacheEntry } from '../types';
@@ -251,7 +253,7 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
     const { t } = useLocalization();
 
     const [showAllLabels, setShowAllLabels] = useState(true);
-    const [goToCoords, setGoToCoords] = useState({ x: '', y: '' });
+    const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
     const [isStrategicView, setIsStrategicView] = useState(false);
 
     // State to trigger recentering effect
@@ -262,13 +264,13 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
 
         visitedLocations.forEach(loc => {
             if (loc.coordinates) {
-                const key = `${loc.coordinates.x},${loc.coordinates.y}`;
+                const key = loc.locationId || `legacy-${loc.coordinates.x},${loc.coordinates.y}-${loc.name}`;
                 allLocations.set(key, { ...loc, isVisited: true });
             }
         });
 
         if (currentLocation && currentLocation.coordinates) {
-            const key = `${currentLocation.coordinates.x},${currentLocation.coordinates.y}`;
+            const key = currentLocation.locationId || `legacy-${currentLocation.coordinates.x},${currentLocation.coordinates.y}-${currentLocation.name}`;
             allLocations.set(key, { ...(currentLocation as Location), isVisited: true });
         }
 
@@ -276,14 +278,19 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
         processedLocations.forEach(loc => {
             if (loc.isVisited && loc.adjacencyMap) {
                 loc.adjacencyMap.forEach(link => {
-                    const key = `${link.targetCoordinates.x},${link.targetCoordinates.y}`;
-                    if (!allLocations.has(key)) {
+                    if (!link) return;
+                    // Old saves may contain incomplete links; never crash the map.
+                    const target = resolveLinkTarget(link, Array.from(allLocations.values()));
+                    const coordinates = link.targetCoordinates || target?.coordinates;
+                    const key = coordinateKey(coordinates);
+                    if (!key) return;
+                    if (!Array.from(allLocations.values()).some(l => coordinateKey(l.coordinates) === key)) {
                         const unvisitedLoc: Location & { isVisited: boolean } = {
                             name: link.name,
                             description: link.shortDescription,
                             internalDifficultyProfile: link.estimatedInternalDifficultyProfile || { combat: 0, environment: 0, social: 0, exploration: 0 },
                             externalDifficultyProfile: link.estimatedExternalDifficultyProfile || { combat: 0, environment: 0, social: 0, exploration: 0 },
-                            coordinates: link.targetCoordinates,
+                            coordinates,
                             isVisited: false,
                             locationId: `undiscovered-${key}`, 
                             lastEventsDescription: '',
@@ -291,7 +298,7 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
                             biome: 'Plains', // A safe default for an unknown outdoor location
                             image_prompt: `A detailed fantasy art image of a mysterious location known as ${link.name}. ${link.shortDescription}`,
                         } as any;
-                        allLocations.set(key, unvisitedLoc);
+                        allLocations.set(`undiscovered-${key}`, unvisitedLoc);
                     }
                 });
             }
@@ -338,15 +345,13 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
         }));
 
 
-        const locationMap = new Map(locationsWithPositions.map(l => [`${l.coordinates.x},${l.coordinates.y}`, l]));
         const drawnConnections = new Set<string>();
         const connections = [];
 
         for (const loc of locationsWithPositions) {
             if (loc.isVisited && loc.adjacencyMap) {
                 for (const link of loc.adjacencyMap) {
-                    const targetKey = `${link.targetCoordinates.x},${link.targetCoordinates.y}`;
-                    const targetLoc = locationMap.get(targetKey);
+                    const targetLoc = resolveLinkTarget(link, locationsWithPositions);
                     if (targetLoc) {
                         const connectionKey = [loc.locationId, targetLoc.locationId].sort().join('-');
                         if (!drawnConnections.has(connectionKey)) {
@@ -569,7 +574,21 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
                             />
                         ))}
                     </svg>
-                    {locations.map(loc => {
+                    {Array.from(new Map(locations.map(loc => [coordinateKey(loc.coordinates), locations.filter(other => coordinateKey(other.coordinates) === coordinateKey(loc.coordinates))])).entries()).map(([groupKey, group]) => {
+                        if (group.length > 1) {
+                            const first = group[0];
+                            return <div key={groupKey} className="map-location" style={{ left: `${first.x}%`, top: `${first.y}%` }} onMouseDown={e => e.stopPropagation()}>
+                                <button type="button" className="map-control-button" aria-expanded={expandedGroup === groupKey} onClick={e => { e.stopPropagation(); setExpandedGroup(expandedGroup === groupKey ? null : groupKey); }}>
+                                    {t('Locations')} ({group.length})
+                                </button>
+                                {expandedGroup === groupKey && <div role="group" aria-label={t('Locations')} style={{ position: 'absolute', top: '100%', left: 0, zIndex: 20, minWidth: 200, background: '#17202a', padding: 8, borderRadius: 6 }}>
+                                    {group.map(loc => <button type="button" key={loc.locationId} style={{ display: 'block', width: '100%', textAlign: 'left', padding: 6 }} onClick={e => { e.stopPropagation(); setExpandedGroup(null); if (loc.isVisited) onOpenModal(t('Location: {name}', { name: loc.name }), { ...loc, type: 'location' }); }}>
+                                        {loc.name} <small>({loc.locationId})</small>{loc.locationId === currentLocation.locationId ? ' •' : ''}
+                                    </button>)}
+                                </div>}
+                            </div>;
+                        }
+                        const loc = group[0];
                         const { Icon, color } = getLocationIconAndStyle(loc);
                         const isPlayerLocation = loc.locationId === currentLocation.locationId;
                         const isUndiscovered = !loc.isVisited;

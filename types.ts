@@ -382,6 +382,7 @@ export interface ThreatArchetype {
 }
 
 export interface CompletedThreatActivity {
+    activityId?: string;
     activityName: string;
     finalState: 'Completed' | 'Abandoned';
     narrativeSummary: string;
@@ -501,6 +502,7 @@ export interface FateCard {
 
 // FIX: Added missing Activity types for NPCs.
 export interface CurrentActivity {
+    activityId?: string; // Stable identity for threat activities; legacy saves may omit it.
     activityName: string;
     description: string;
     totalTimeCostMinutes: number;
@@ -907,6 +909,7 @@ export interface CompleteFactionProject {
 }
 
 export interface CompleteThreatActivity {
+  activityId: string;
   targetLocationId: string;
   threatId: string;
   threatName: string;
@@ -1302,6 +1305,7 @@ export interface DBSaveSlotInfo {
 }
 
 export interface AdjacencyMapEntry {
+    targetLocationId?: string; // Legacy links may contain coordinates only.
     name: string;
     shortDescription: string;
     linkType: string;

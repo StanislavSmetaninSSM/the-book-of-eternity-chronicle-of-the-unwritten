@@ -1,68 +1,10 @@
+/* Static rules: current values are supplied separately in CurrentGameContext. */
+export const getGameMasterGuideRules = () => `
 
-/*
- * Генерирует основной промпт Game Master'а на основе полной конфигурации текущего игрового хода.
- * @param {object} configuration - Объект, содержащий все данные о текущем состоянии игры.
- * @returns {string} - Сгенерированный XML-подобный промпт в виде строки.
- */
-export const getGameMasterGuideRules = (configuration) => {
 
-    const {
-        message,
-        superInstructions,
-        currentTurnNumber,
-        gameSettings,
-        players,
-        playerCharacter,
-        currentLocation,
-        activeQuests,
-        completedQuests,
-        encounteredNPCs,
-        npcSkillMasteryData,
-        lootForCurrentTurn,
-        preGeneratedDices1d20,
-        worldState,
-        worldStateFlags,
-        previousTurnResponse,
-        encounteredFactions,
-        plotOutline,
-        worldMap,
-        responseHistory,
-        currentStepFocus,
-        partiallyGeneratedResponse,
-        enemiesDataForCurrentTurn,
-        alliesDataForCurrentTurn,
-        playerCustomStates,
-        worldEventsLog,
-        isRegenerationAttempt,
-        regenerationReason,
-        doNotUseWorldEvents, //Boolean. If true, excludes world events from the prompt
-      } = configuration;
-
-    const regenerationBlock = isRegenerationAttempt ? `
-        <InstructionBlock id="RegenerationAttemptInfo">
-            <Title>SYSTEM ALERT: REGENERATION PROTOCOL ACTIVE</Title>
-            <Description>
-                This is a re-attempt to generate a response for the current step.
-                The system detected that the previously generated JSON was incomplete or corrupted.
-            </Description>
-            <InstructionText>
-                <![CDATA[
-
-                PREVIOUS ATTEMPT FAILED. REASON: ${regenerationReason}.
-
-                YOUR DIRECTIVE:
-                Re-execute the task for the current step as defined in the 'CurrentGenerationTaskPlaceholder'.
-                The 'PartiallyGeneratedResponse' contains the valid data from the previous successful step.
-                Your goal is to generate a complete and valid JSON structure for the current task based on this data.
-                Focus on successfully completing the generation task according to the primary rules.
-
-                ]]>
-            </InstructionText>
-        </InstructionBlock>
-        ` : '';
-
-    return `
-
+<ContextDocumentContract>
+The separate CurrentGameContext document is the authoritative source of current values. The symbolic {{context.field}} references in this guide describe fields and their roles, not literal JSON values. Resolve every reference from that document; expressions containing || or ?? describe fallback defaults. Consult context.message for the player message, context.superInstructions for user super instructions, context.currentStepFocus for the active task, and context.partiallyGeneratedResponse for prior stage results. Apply conditional branches only when their stated conditions match the context. Missing or null values are not invented.
+</ContextDocumentContract>
 <GameMasterGuide_JSONFormattingRules>
     <Title>Instructions for Game Master - JSON creation</Title>
     <Preamble>
@@ -2349,7 +2291,7 @@ export const getGameMasterGuideRules = (configuration) => {
 
             These are high-priority instructions for the current turn provided by the user. They override all rules EXCEPT the System Super Instructions above.
 
-            ${superInstructions}
+            {{context.superInstructions}}
 
             ]]>
         </Content>
@@ -2889,7 +2831,7 @@ export const getGameMasterGuideRules = (configuration) => {
         <Content type="user_message" name="Current user message">
             <![CDATA[
 
-            ${message}
+            {{context.message}}
 
             ]]> 
         </Content>
@@ -2914,24 +2856,24 @@ export const getGameMasterGuideRules = (configuration) => {
             <![CDATA[
 
             {
-                "currentTurnNumber": "${currentTurnNumber}", // Integer: Current turn number
+                "currentTurnNumber": "{{context.currentTurnNumber}}", // Integer: Current turn number
                 "worldState": { // Object: The current state of the world's time and environment.
-                    "day": ${JSON.stringify(worldState.day)}, // Integer: The current day number of the campaign, starting from 1. 
+                    "day": {{context.worldState.day}}, // Integer: The current day number of the campaign, starting from 1.
                         // CRITICAL NOTE FOR GM: This field is for INFORMATIONAL and DISPLAY purposes only (e.g., "Day 75 of your journey").
                         // It is a derived value calculated by the system from 'currentTimeInMinutes'.
                         // You are STRICTLY FORBIDDEN from using this 'day' field for any calculations or for generating timestamps.
                         // For all logical operations, narrative descriptions of the date, and timestamp generation,
                         // you MUST use the 'worldState.date' object as the single source of truth.
 
-                    "currentTimeInMinutes": ${JSON.stringify(worldState.currentTimeInMinutes || 0)}, // Integer: Total campaign time in minutes.
-                    "weather": "${worldState.weather}", // String: Current weather conditions. e.g., 'Clear', 'Cloudy', 'Rain', 'Storm', 'Snow', 'Foggy'.
-                    "lastWorldProgressionTimeInMinutes": ${JSON.stringify(worldState.lastWorldProgressionTimeInMinutes || 0)}, //  Integer: The value of 'currentTimeInMinutes' at the last world progression event. For NPC-related events and common events ONLY.
-                    "lastFactionProgressionTimeInMinutes": ${JSON.stringify(worldState.lastFactionProgressionTimeInMinutes || 0)}, // Integer: The value of 'currentTimeInMinutes' at the last world progression event for factions planning step.
+                    "currentTimeInMinutes": {{context.worldState.currentTimeInMinutes || 0}}, // Integer: Total campaign time in minutes.
+                    "weather": "{{context.worldState.weather}}", // String: Current weather conditions. e.g., 'Clear', 'Cloudy', 'Rain', 'Storm', 'Snow', 'Foggy'.
+                    "lastWorldProgressionTimeInMinutes": {{context.worldState.lastWorldProgressionTimeInMinutes || 0}}, //  Integer: The value of 'currentTimeInMinutes' at the last world progression event. For NPC-related events and common events ONLY.
+                    "lastFactionProgressionTimeInMinutes": {{context.worldState.lastFactionProgressionTimeInMinutes || 0}}, // Integer: The value of 'currentTimeInMinutes' at the last world progression event for factions planning step.
                     "date": { // Object: The current calendar date, derived by the system from 'currentTimeInMinutes' and calendar settings.
-                        "currentYear": ${JSON.stringify(worldState.date?.currentYear)}, // Integer: The current year.
-                        "currentMonthName": "${worldState.date?.currentMonthName}", // String: The name of the current month.
-                        "dayOfMonth": ${JSON.stringify(worldState.date?.dayOfMonth)}, // Integer: The current day of the month.
-                        "timeOfDay": "${worldState.date?.timeOfDay}" // String in "HH:MM" format. The SINGLE SOURCE OF TRUTH for the time of day.
+                        "currentYear": {{context.worldState.date.currentYear}}, // Integer: The current year.
+                        "currentMonthName": "{{context.worldState.date.currentMonthName}}", // String: The name of the current month.
+                        "dayOfMonth": {{context.worldState.date.dayOfMonth}}, // Integer: The current day of the month.
+                        "timeOfDay": "{{context.worldState.date.timeOfDay}}" // String in "HH:MM" format. The SINGLE SOURCE OF TRUTH for the time of day.
                     }
                 },
                 "worldStateFlags": // Array of Flag Objects representing the current global state of the world.
@@ -2945,12 +2887,12 @@ export const getGameMasterGuideRules = (configuration) => {
                         }
                     ]
                     */
-                    ${JSON.stringify(worldStateFlags)}
+                    {{context.worldStateFlags}}
                 ,
                 "gameSettings": { // Object: General game settings
-                    "nonMagicMode": "${gameSettings.nonMagicMode}", // Boolean: True if magic is absent
-                    "language": "${gameSettings.language}", // String: User's chosen language code (e.g., "en", "ru"),
-                    "gameWorldInformation": ${JSON.stringify(gameSettings.gameWorldInformation)}, //Object: the base information about game world
+                    "nonMagicMode": "{{context.gameSettings.nonMagicMode}}", // Boolean: True if magic is absent
+                    "language": "{{context.gameSettings.language}}", // String: User's chosen language code (e.g., "en", "ru"),
+                    "gameWorldInformation": {{context.gameSettings.gameWorldInformation}}, //Object: the base information about game world
 
                     /* Example of a calendar object within gameWorldInformation:
                     "calendar": {
@@ -2984,156 +2926,156 @@ export const getGameMasterGuideRules = (configuration) => {
                     }
                     */
 
-                    "hardMode": ${gameSettings.hardMode}, // Boolean: True if Hard Mode is enabled
-                    "impossibleMode": ${gameSettings.impossibleMode}, //  Boolean: True if Impossible Mode is enabled,
-                    "cooperativeGameType": ${gameSettings.cooperativeGameType}, // String. Allowed values: 'None' | 'MultiplePersonalities' | 'FullParty',
+                    "hardMode": {{context.gameSettings.hardMode}}, // Boolean: True if Hard Mode is enabled
+                    "impossibleMode": {{context.gameSettings.impossibleMode}}, //  Boolean: True if Impossible Mode is enabled,
+                    "cooperativeGameType": {{context.gameSettings.cooperativeGameType}}, // String. Allowed values: 'None' | 'MultiplePersonalities' | 'FullParty',
                     "multiplePersonalitiesSettings": { // Use it ONLY when "cooperativeGameType" is 'MultiplePersonalities'
-                        "shareCharacteristics": ${gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false},
-                        "shareSkills": ${gameSettings.multiplePersonalitiesSettings?.shareSkills ?? false},
-                        "shareNpcReputation": ${gameSettings.multiplePersonalitiesSettings?.shareNpcReputation ?? false},
-                        "shareFactionReputation": ${gameSettings.multiplePersonalitiesSettings?.shareFactionReputation ?? false},
-                        "shareInventory": ${gameSettings.multiplePersonalitiesSettings?.shareInventory ?? false}
+                        "shareCharacteristics": {{context.gameSettings.multiplePersonalitiesSettings.shareCharacteristics ?? false}},
+                        "shareSkills": {{context.gameSettings.multiplePersonalitiesSettings.shareSkills ?? false}},
+                        "shareNpcReputation": {{context.gameSettings.multiplePersonalitiesSettings.shareNpcReputation ?? false}},
+                        "shareFactionReputation": {{context.gameSettings.multiplePersonalitiesSettings.shareFactionReputation ?? false}},
+                        "shareInventory": {{context.gameSettings.multiplePersonalitiesSettings.shareInventory ?? false}}
                     },
-                    "allowHistoryManipulation": ${gameSettings.allowHistoryManipulation} // Boolean: True if the player can manipulate history
+                    "allowHistoryManipulation": {{context.gameSettings.allowHistoryManipulation}} // Boolean: True if the player can manipulate history
                 },
-                "players": ${JSON.stringify(players)}, // Array of Player Snapshot Objects
+                "players": {{context.players}}, // Array of Player Snapshot Objects
                 "playerCharacter": { // Object: Player character's core data
-                    "name": "${playerCharacter.name}", // String: Player's full name
-                    "race": "${playerCharacter.race}", // String: Player's race
-                    "class": "${playerCharacter.class}", // String: Player's class
-                    "age": "${playerCharacter.age}", // Integer: Player's age
-                    "appearanceDescription": "${playerCharacter.appearanceDescription}",
-                    "image_prompt": "${playerCharacter.image_prompt}", // String: Prompt for character image generation.
-                    "raceDescription": "${playerCharacter.raceDescription}", // String
-                    "classDescription": "${playerCharacter.classDescription}", // String
-                    "level": "${playerCharacter.level}", // Integer: Current experience level
-                    "levelOnPreviousTurn": "${playerCharacter.levelOnPreviousTurn}", // Integer: Level at the end of the last turn
-                    "experience": "${playerCharacter.experience}", // Integer: Current XP
-                    "experienceForNextLevel": "${playerCharacter.experienceForNextLevel}", // Integer: XP needed for next level
-                    "money": "${playerCharacter.money}", // Integer: Current money
-                    "currentHealth": "${playerCharacter.currentHealth}", // Integer: Current health points (raw value)
-                    "maxHealth": "${playerCharacter.maxHealth}", // Integer: Maximum health points (raw value, derived as per #5.7.3)
-                    "currentEnergy": "${playerCharacter.currentEnergy}", // Integer: Current energy points (raw value)
-                    "maxEnergy": "${playerCharacter.maxEnergy}", // Integer: Maximum energy points (raw value, derived as per #5.7.3)
-                    "maxWeight": "${playerCharacter.maxWeight}", // Double: Max carry weight before overload (kg, derived as per #5.7.3)
-                    "totalWeight": "${playerCharacter.totalWeight}", // Double: Current total inventory weight (kg)
-                    "criticalExcessWeight": "${playerCharacter.criticalExcessWeight}", // Double: How much extra weight can be carried beyond maxWeight before being unable to move.
-                    "critChanceBuffFromLuck": "${playerCharacter.critChanceBuffFromLuck}", // Integer: Bonus from luck to crit chance (floor(PermanentlyModifiedLuck/20))
-                    "critChanceThreshold": "${playerCharacter.critChanceThreshold}", // Integer: d20 roll needed for crit (20 - critChanceBuffFromLuck)
+                    "name": "{{context.playerCharacter.name}}", // String: Player's full name
+                    "race": "{{context.playerCharacter.race}}", // String: Player's race
+                    "class": "{{context.playerCharacter.class}}", // String: Player's class
+                    "age": "{{context.playerCharacter.age}}", // Integer: Player's age
+                    "appearanceDescription": "{{context.playerCharacter.appearanceDescription}}",
+                    "image_prompt": "{{context.playerCharacter.image_prompt}}", // String: Prompt for character image generation.
+                    "raceDescription": "{{context.playerCharacter.raceDescription}}", // String
+                    "classDescription": "{{context.playerCharacter.classDescription}}", // String
+                    "level": "{{context.playerCharacter.level}}", // Integer: Current experience level
+                    "levelOnPreviousTurn": "{{context.playerCharacter.levelOnPreviousTurn}}", // Integer: Level at the end of the last turn
+                    "experience": "{{context.playerCharacter.experience}}", // Integer: Current XP
+                    "experienceForNextLevel": "{{context.playerCharacter.experienceForNextLevel}}", // Integer: XP needed for next level
+                    "money": "{{context.playerCharacter.money}}", // Integer: Current money
+                    "currentHealth": "{{context.playerCharacter.currentHealth}}", // Integer: Current health points (raw value)
+                    "maxHealth": "{{context.playerCharacter.maxHealth}}", // Integer: Maximum health points (raw value, derived as per #5.7.3)
+                    "currentEnergy": "{{context.playerCharacter.currentEnergy}}", // Integer: Current energy points (raw value)
+                    "maxEnergy": "{{context.playerCharacter.maxEnergy}}", // Integer: Maximum energy points (raw value, derived as per #5.7.3)
+                    "maxWeight": "{{context.playerCharacter.maxWeight}}", // Double: Max carry weight before overload (kg, derived as per #5.7.3)
+                    "totalWeight": "{{context.playerCharacter.totalWeight}}", // Double: Current total inventory weight (kg)
+                    "criticalExcessWeight": "{{context.playerCharacter.criticalExcessWeight}}", // Double: How much extra weight can be carried beyond maxWeight before being unable to move.
+                    "critChanceBuffFromLuck": "{{context.playerCharacter.critChanceBuffFromLuck}}", // Integer: Bonus from luck to crit chance (floor(PermanentlyModifiedLuck/20))
+                    "critChanceThreshold": "{{context.playerCharacter.critChanceThreshold}}", // Integer: d20 roll needed for crit (20 - critChanceBuffFromLuck)
                     "characteristics": { // Object: All player characteristics (standard and modified)                       
-                        "standardStrength": "${playerCharacter.characteristics.standardStrength}",
-                        "modifiedStrength": "${playerCharacter.characteristics.modifiedStrength}",
-                        "standardDexterity": "${playerCharacter.characteristics.standardDexterity}",
-                        "modifiedDexterity": "${playerCharacter.characteristics.modifiedDexterity}",
-                        "standardConstitution": "${playerCharacter.characteristics.standardConstitution}",
-                        "modifiedConstitution": "${playerCharacter.characteristics.modifiedConstitution}",
-                        "standardIntelligence": "${playerCharacter.characteristics.standardIntelligence}",
-                        "modifiedIntelligence": "${playerCharacter.characteristics.modifiedIntelligence}",
-                        "standardWisdom": "${playerCharacter.characteristics.standardWisdom}",
-                        "modifiedWisdom": "${playerCharacter.characteristics.modifiedWisdom}",
-                        "standardFaith": "${playerCharacter.characteristics.standardFaith}",
-                        "modifiedFaith": "${playerCharacter.characteristics.modifiedFaith}",
-                        "standardAttractiveness": "${playerCharacter.characteristics.standardAttractiveness}",
-                        "modifiedAttractiveness": "${playerCharacter.characteristics.modifiedAttractiveness}",
-                        "standardTrade": "${playerCharacter.characteristics.standardTrade}",
-                        "modifiedTrade": "${playerCharacter.characteristics.modifiedTrade}",
-                        "standardPersuasion": "${playerCharacter.characteristics.standardPersuasion}",
-                        "modifiedPersuasion": "${playerCharacter.characteristics.modifiedPersuasion}",
-                        "standardPerception": "${playerCharacter.characteristics.standardPerception}",
-                        "modifiedPerception": "${playerCharacter.characteristics.modifiedPerception}",
-                        "standardLuck": "${playerCharacter.characteristics.standardLuck}",
-                        "modifiedLuck": "${playerCharacter.characteristics.modifiedLuck}",
-                        "standardSpeed": "${playerCharacter.characteristics.standardSpeed}",
-                        "modifiedSpeed": "${playerCharacter.characteristics.modifiedSpeed}"
+                        "standardStrength": "{{context.playerCharacter.characteristics.standardStrength}}",
+                        "modifiedStrength": "{{context.playerCharacter.characteristics.modifiedStrength}}",
+                        "standardDexterity": "{{context.playerCharacter.characteristics.standardDexterity}}",
+                        "modifiedDexterity": "{{context.playerCharacter.characteristics.modifiedDexterity}}",
+                        "standardConstitution": "{{context.playerCharacter.characteristics.standardConstitution}}",
+                        "modifiedConstitution": "{{context.playerCharacter.characteristics.modifiedConstitution}}",
+                        "standardIntelligence": "{{context.playerCharacter.characteristics.standardIntelligence}}",
+                        "modifiedIntelligence": "{{context.playerCharacter.characteristics.modifiedIntelligence}}",
+                        "standardWisdom": "{{context.playerCharacter.characteristics.standardWisdom}}",
+                        "modifiedWisdom": "{{context.playerCharacter.characteristics.modifiedWisdom}}",
+                        "standardFaith": "{{context.playerCharacter.characteristics.standardFaith}}",
+                        "modifiedFaith": "{{context.playerCharacter.characteristics.modifiedFaith}}",
+                        "standardAttractiveness": "{{context.playerCharacter.characteristics.standardAttractiveness}}",
+                        "modifiedAttractiveness": "{{context.playerCharacter.characteristics.modifiedAttractiveness}}",
+                        "standardTrade": "{{context.playerCharacter.characteristics.standardTrade}}",
+                        "modifiedTrade": "{{context.playerCharacter.characteristics.modifiedTrade}}",
+                        "standardPersuasion": "{{context.playerCharacter.characteristics.standardPersuasion}}",
+                        "modifiedPersuasion": "{{context.playerCharacter.characteristics.modifiedPersuasion}}",
+                        "standardPerception": "{{context.playerCharacter.characteristics.standardPerception}}",
+                        "modifiedPerception": "{{context.playerCharacter.characteristics.modifiedPerception}}",
+                        "standardLuck": "{{context.playerCharacter.characteristics.standardLuck}}",
+                        "modifiedLuck": "{{context.playerCharacter.characteristics.modifiedLuck}}",
+                        "standardSpeed": "{{context.playerCharacter.characteristics.standardSpeed}}",
+                        "modifiedSpeed": "{{context.playerCharacter.characteristics.modifiedSpeed}}"
                     },
                     "activeSkills": // Array of Active Skill Objects the player knows (structure from #7.1)
                         // Example: { "skillName": "Fireball", "rarity": "Common", ... }
-                        ${JSON.stringify(playerCharacter.activeSkills)}
+                        {{context.playerCharacter.activeSkills}}
                     ,
                     "passiveSkills": // Array of Passive Skill Objects the player knows (structure from #8.1)
                         // Example: { "skillName": "Toughness", "rarity": "Uncommon", ... }
-                        ${JSON.stringify(playerCharacter.passiveSkills)}
+                        {{context.playerCharacter.passiveSkills}}
                     ,
                     "skillMasteryData": // Array of objects tracking mastery for each known active skill
                         // Example: { "skillName": "Fireball", "currentMasteryLevel": 2, "currentMasteryProgress": 5, "masteryProgressNeeded": 10 }
-                        ${JSON.stringify(playerCharacter.skillMasteryData)}
+                        {{context.playerCharacter.skillMasteryData}}
                     ,
                     "knownRecipes": // Array of Recipe Objects (structure from #9.2.1) the player has learned.
                         // Example: { "recipeName": "Recipe: Basic Healing Potion", "craftedItemName": "Healing Potion", "requiredMaterials": [...] }
-                        ${JSON.stringify(playerCharacter.knownRecipes)}
+                        {{context.playerCharacter.knownRecipes}}
                     ,
                     "inventory": // Array of Item Objects representing the master list of ALL items the player possesses, regardless of whether they are equipped or in containers.                         
-                        ${JSON.stringify(playerCharacter.inventory)}
+                        {{context.playerCharacter.inventory}}
                     ,
                     "equippedItems": // Object mapping equipment slots to item IDs (or null if empty). It's a quick-reference map to the IDs of items currently in equipment slots.
                         // Example: "Head": "item-guid-helmet-01", "MainHand": "item-guid-sword-03", "OffHand": null
-                        ${JSON.stringify(playerCharacter.equippedItems)}
+                        {{context.playerCharacter.equippedItems}}
                     ,
                     "activePlayerEffects": // Array of active buff/debuff/control effect objects on player (structure from #6.2.1)
                         // Example: { "effectType": "Buff", "value": "10%", "targetType": "strength", "duration": 3, ... }
-                        ${JSON.stringify(playerCharacter.activePlayerEffects)}
+                        {{context.playerCharacter.activePlayerEffects}}
                     ,
                     "playerWounds": // Array of active Wound Objects on player (structure from #5.20.3)
                         // Example: { "woundId": "wound-guid-01", "woundName": "Gashed Leg", "severity": "Moderate", ...}
-                        ${JSON.stringify(playerCharacter.playerWounds)}
+                        {{context.playerCharacter.playerWounds}}
                     ,
-                    "autoCombatSkill": "${playerCharacter.autoCombatSkill || null}" // String: Name of active skill to use automatically in combat, or 'null'.
+                    "autoCombatSkill": "{{context.playerCharacter.autoCombatSkill || null}}" // String: Name of active skill to use automatically in combat, or 'null'.
                     ,
                     "stealthState": {
-                        "isActive": ${playerCharacter.stealthState.isActive || false},
-                        "detectionLevel": ${playerCharacter.stealthState.detectionLevel || 0},
-                        "description": "${playerCharacter.stealthState.description || 'Not sneaking'}"
+                        "isActive": {{context.playerCharacter.stealthState.isActive || false}},
+                        "detectionLevel": {{context.playerCharacter.stealthState.detectionLevel || 0}},
+                        "description": "{{context.playerCharacter.stealthState.description || 'Not sneaking'}}"
                     },
                     "effortTracker": {
-                        "lastUsedCharacteristic": "${playerCharacter.effortTracker?.lastUsedCharacteristic || null}",
-                        "consecutivePartialSuccesses": ${playerCharacter.effortTracker?.consecutivePartialSuccesses || 0}
+                        "lastUsedCharacteristic": "{{context.playerCharacter.effortTracker.lastUsedCharacteristic || null}}",
+                        "consecutivePartialSuccesses": {{context.playerCharacter.effortTracker.consecutivePartialSuccesses || 0}}
                     },
                     "characterChronicle": // Array of strings or null. A persistent, third-person chronicle of the character's history and significant deeds, written by the storyteller (GM).
-                        ${JSON.stringify(playerCharacter.characterChronicle)}
+                        {{context.playerCharacter.characterChronicle}}
                     ,
                 },
-                "currentLocation": ${JSON.stringify(currentLocation)}, // Object: Data about the current location                
+                "currentLocation": {{context.currentLocation}}, // Object: Data about the current location
                 "activeQuests": // Array of Quest Objects for currently active quests (structure from #18.2)
-                    ${JSON.stringify(activeQuests)}
+                    {{context.activeQuests}}
                 ,
                 "completedQuests": // Array of Quest Objects for completed quests
-                    ${JSON.stringify(completedQuests)}
+                    {{context.completedQuests}}
                 ,
                 "encounteredNPCs": // Array of full NPC Objects for all NPCs met so far (structure from #19.1.2)
                                      // Includes their stats, skills, inventory, relationshipLevel, fateCards, experience, progressionTrackers, etc.
-                    ${JSON.stringify(encounteredNPCs)}
+                    {{context.encounteredNPCs}}
                 ,
                 "npcSkillMasteryData": // Array of objects tracking mastery for NPC active skills
                     // Example: { "NPCId": "npc-guid-001", "skillName": "Power Strike", "currentMasteryLevel": 3, ... }
-                    ${JSON.stringify(npcSkillMasteryData)}
+                    {{context.npcSkillMasteryData}}
                 ,
                 "lootForCurrentTurn": // Array of item templates available for the player to find/receive THIS TURN (structure used by #10.1.1)
                     // Example: { "templateId": "loot-thing-01", "baseName": "thing_1", "quality": "Common", "bonuses": ["generate_interesting_effect"] }
-                    ${JSON.stringify(lootForCurrentTurn)}
+                    {{context.lootForCurrentTurn}}
                 ,
                 "preGeneratedDices1d20": // Array of pre-generated d20 roll results for this turn
                     // Example: [15, 8, 19, 3, 11]
-                    ${JSON.stringify(preGeneratedDices1d20)}
+                    {{context.preGeneratedDices1d20}}
                 ,                
                 "previousTurnResponse": // Object: The full JSON response generated by the AI in the PREVIOUS turn.
                                           // Useful for maintaining continuity if some state is not explicitly in other context fields.
-                    ${JSON.stringify(previousTurnResponse)}
+                    {{context.previousTurnResponse}}
                 ,
                 "encounteredFactions":
                     // Array of Faction Data Objects for all factions the player knows about (structure from #21.1.2)
                     // Example: { "factionId": "faction-oakhaven-guard-01", "name": "Oakhaven Guard", "reputation": 10, ... }
-                    ${JSON.stringify(encounteredFactions)}
+                    {{context.encounteredFactions}}
                 ,
                 "plotOutline":
                     // The full Plot Outline object from the previous turn, if it exists.
-                    ${JSON.stringify(plotOutline)}
+                    {{context.plotOutline}}
                 ,
                 "worldMap":
                     // CRITICAL DATA SOURCE: THE WORLD ATLAS.
                     // This object is the SINGLE SOURCE OF TRUTH for ALL known locations in the game world, including those the player has visited and those they only know about.
                     // The keys are location IDs, and the values are the full location objects.
                     // You MUST use this map to understand geographical relationships, travel possibilities, and the state of off-screen locations.
-                    ${JSON.stringify(worldMap)}
+                    {{context.worldMap}}
                 ,
                 "responseHistory" :
                     // GM Advisory Regarding 'responseHistory':
@@ -3153,31 +3095,31 @@ export const getGameMasterGuideRules = (configuration) => {
                     //      - 'activeQuests' and 'completedQuests' for plot progression.
                     //      - 'plotOutline' for the overall narrative direction.
                     //      - 'encounteredNPCs' for relationship history.
-                    ${JSON.stringify(responseHistory)}
+                    {{context.responseHistory}}
                 ,
                 "enemiesDataForCurrentTurn":
                 // Array of Enemy Combat Objects (structure from #6.1.2) representing all enemies active at the START of this turn.
                 // This array will be null or empty if no combat was active at the end of the previous turn.
                 // The GM should use this data to update health, apply new effects, and report the modified state in the response's 'enemiesData' key.
-                ${JSON.stringify(enemiesDataForCurrentTurn)}
+                {{context.enemiesDataForCurrentTurn}}
                 ,
                 "alliesDataForCurrentTurn": 
                     // Array of Ally Combat Objects (structure from #6.1.4) representing all allies active at the START of this turn.
                     // This array will be null or empty if no combat was active at the end of the previous turn.
                     // The GM should use this data to update health, apply new effects, and report the modified state in the response's 'alliesData' key.
-                    ${JSON.stringify(alliesDataForCurrentTurn)}
+                    {{context.alliesDataForCurrentTurn}}
                 ,
                 "playerCustomStates":
                 // Array of Custom State Objects representing player-defined statuses like Hunger, Thirst, Sanity, etc., at the START of this turn.
                 // The GM should use this data to calculate changes and report the new state in the 'customStateChanges' key of the response.
                 // Structure of each object is defined in InstructionBlock '25'.
-                ${JSON.stringify(playerCustomStates)}
+                {{context.playerCustomStates}}
                 ,
                 "worldEventsLog": 
                 // Array of World Event Objects. A persistent log of major off-screen events that have occurred in the world.
                 // This is your primary source for understanding the world's progression.
                 // Structure of each object is defined in InstructionBlock '30'
-                ${JSON.stringify(worldEventsLog)}
+                {{context.worldEventsLog}}
 
                 }
 
@@ -3194,20 +3136,45 @@ export const getGameMasterGuideRules = (configuration) => {
             Do NOT re-generate or overwrite data in 'PartiallyGeneratedResponse' that is outside the current focus, unless a direct rule in the main Guide dictates a recalculation based on new findings in the current focus area.
         </Description>
         <Content type="generation_task_data">
-            <CurrentStepFocus>${currentStepFocus}</CurrentStepFocus>
+            <CurrentStepFocus>{{context.currentStepFocus}}</CurrentStepFocus>
             <PartiallyGeneratedResponse type="json_object_string_or_null">
                 <![CDATA[
 
                 This response in also known as 'partially_generated_response' (remember it).
 
-                ${partiallyGeneratedResponse}
+                {{context.partiallyGeneratedResponse}}
 
                 ]]>
             </PartiallyGeneratedResponse>
         </Content>
     </InstructionBlock>
 
-    ${regenerationBlock}
+
+    <ConditionalInstruction when="context.isRegenerationAttempt is true">
+
+        <InstructionBlock id="RegenerationAttemptInfo">
+            <Title>SYSTEM ALERT: REGENERATION PROTOCOL ACTIVE</Title>
+            <Description>
+                This is a re-attempt to generate a response for the current step.
+                The system detected that the previously generated JSON was incomplete or corrupted.
+            </Description>
+            <InstructionText>
+                <![CDATA[
+
+                PREVIOUS ATTEMPT FAILED. REASON: {{context.regenerationReason}}.
+
+                YOUR DIRECTIVE:
+                Re-execute the task for the current step as defined in the 'CurrentGenerationTaskPlaceholder'.
+                The 'PartiallyGeneratedResponse' contains the valid data from the previous successful step.
+                Your goal is to generate a complete and valid JSON structure for the current task based on this data.
+                Focus on successfully completing the generation task according to the primary rules.
+
+                ]]>
+            </InstructionText>
+        </InstructionBlock>
+
+    </ConditionalInstruction>
+
 
     <InstructionBlock id="2">
         <Title>JSON Response Formatting Rules</Title>
@@ -4374,7 +4341,7 @@ export const getGameMasterGuideRules = (configuration) => {
                         <![CDATA[
 
                         [
-                            "# Player Action: Attack Goblin with skill 'Power Strike' using 'Iron Sword'\n\n## 1. Action Check: Attack Roll\n\n- Intent: Physical Attack. Associated Characteristic: strength.\n- Dice Rolls: Player rolls 1d20 -> 17. GM rolls 1d20 -> 5.\n- Player's StatModificator: 33\n- Goblin's DifficultyMod: 1\n- Calculation: (17 + 33) - (5 + 1) = 44\n- Outcome: Difference (44) is >= 10. Final Result: Critical Success.\n\n---\n\n## 2. Skill Scaling Calculation: 'Power Strike'\n\n- Base Skill Damage: 10%\n- Character Parameters: Level: 10, ModStrength: 35, Skill Mastery: 2\n- Bonus Calculation:\n  - CharBonus: (floor(35/10)*5) = 15%\n  - LevelBonus: (floor(10/5)*8) = 16%\n  - MasteryBonus: (floor(2/1)*4) = 8%\n  - TotalBonusMultiplier: 1 + 0.15 + 0.16 + 0.08 = 1.39\n- Final Scaled Skill Damage: round(10 * 1.39) = 14%\n\n---\n\n## 3. Final Damage Calculation\n\n- Input Variables & Bonus Breakdown:\n  - Item 'Iron Sword' Base Damage: 18%\n  - Scaled Skill Damage (from step 2): 14%\n  - Calculating TotalAddedDamageBonus%:\n    * Bonus from Level (Lvl 10): +7%\n    * Bonus from Characteristic (ModStr 35): +7%\n    * Bonus from Passive Skills ('Weapon Focus: Sword'): +5%\n    * TotalAddedDamageBonus% = 7 + 7 + 5 = 19%\n  - Player FinalCritMultiplier: 1.51\n  - Goblin Slashing Resistance: 0%\n\n- Calculation:\n  - Total Base Damage = Item Base (18%) + Scaled Skill Damage (14%) + TotalAddedDamageBonus% (19%) = 51%\n  - Damage After Crit = Total Base (51%) * Crit Multiplier (1.51) = 76.01% (rounded to 76%)\n  - Final Damage to Target = Damage After Crit (76%) * (1 - Resistance [0%]) = 76%\n\n- Final Outcome:\n  - Goblin takes 76% damage. Health changes from 91% to 15%."
+                            "# Player Action: Attack Goblin with skill 'Power Strike' using 'Iron Sword'\n\n## 1. Action Check: Attack Roll\n\n- Intent: Physical Attack. Associated Characteristic: strength.\n- Dice Rolls: Player rolls 1d20 -> 17. GM rolls 1d20 -> 5.\n- Player's StatModificator: 33\n- Goblin's DifficultyMod: 1\n- Calculation: (17 + 33) - (5 + 1) = 44\n- Outcome: Difference (44) is >= 10. Final Result: Critical Success.\n\n---\n\n## 2. Skill Scaling Calculation: 'Power Strike'\n\n- Base Skill Damage: 10%\n- Character Parameters: Level: 10, ModStrength: 35, Skill Mastery: 2\n- Bonus Calculation:\n  - CharBonus: (floor(35/10)*5) = 15%\n  - LevelBonus: (floor(10/5)*8) = 16%\n  - MasteryBonus: (floor(2/1)*4) = 8%\n  - TotalBonusMultiplier: 1 + 0.15 + 0.16 + 0.08 = 1.39\n- Final Scaled Skill Damage: round(10 * 1.39) = 14%\n\n---\n\n## 3. Final Damage Calculation\n\n- Input Variables & Bonus Breakdown:\n  - Item 'Iron Sword' Base Damage: 18%\n  - Scaled Skill Damage (from step 2): 14%\n  - Calculating TotalAddedDamageBonus%:\n    * Bonus from Level (Lvl 10): +7%\n    * Bonus from Characteristic (ModStr 35): +14%\n    * Bonus from Passive Skills ('Weapon Focus: Sword'): +5%\n    * TotalAddedDamageBonus% = 7 + 14 + 5 = 26%\n  - Player FinalCritMultiplier: 1.51\n  - Goblin Slashing Resistance: 0%\n\n- Calculation:\n  - Total Base Damage = Item Base (18%) + Scaled Skill Damage (14%) + TotalAddedDamageBonus% (26%) = 58%\n  - Damage After Crit = Total Base (58%) * Crit Multiplier (1.51) = 87.58% (unrounded)\n  - Final Damage to Target = round(Damage After Crit (87.58%) * (1 - Resistance [0%])) = 88%\n\n- Final Outcome:\n  - Goblin takes 88% damage. Health changes from 91% to 3%."
                         ]
 
                         ]]>
@@ -9258,7 +9225,7 @@ export const getGameMasterGuideRules = (configuration) => {
                             <![CDATA[
 
                             This is a strict protocol. When a Wound is triggered, your responsibility is ONLY to describe the new Wound object. 
-                            The game system handles the application of its effects automatically.
+                            The GM must apply its generated effects from the active wound during resolution; the system stores the wound object.
 
                             ]]>
                         </InstructionText>
@@ -9292,9 +9259,10 @@ export const getGameMasterGuideRules = (configuration) => {
                             1) Your sole mechanical output for inflicting the Wound is to add the complete Wound Object (created in Step 2) to the appropriate array:
                                 - For the Player Character, add it to 'playerWoundChanges'.
                                 - For a named NPC, add it to 'NPCWoundChanges'.
+                                - For a generic combatant without an NPC record, include the complete Wound Object in that combatant's 'wounds' array in 'enemiesData' or 'alliesData'; do not create a fake NPC record.
 
                             2) It is forbidden to report the effects from the Wound's 'generatedEffects' array anywhere else. 
-                            The system will read them from the Wound Object you provide.
+                            The GM reads them from the active Wound Object during resolution, without duplicating them as separate effects.
 
                             Step 4: Log Everything
                             1) In 'items_and_stat_calculations', you must log:
@@ -9353,7 +9321,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                     }],
 
                                     // NOTE: 'playerActiveEffectsChanges' IS INTENTIONALLY LEFT EMPTY regarding this wound.
-                                    // The game system is responsible for reading the 'generatedEffects' from the wound object above
+                                    // The GM reads 'generatedEffects' from the active wound object above during resolution
                                     // and applying them. The GM's job is only to report the wound itself.
                                     "playerActiveEffectsChanges": []
 
@@ -9381,8 +9349,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                 
                                 -   The GM must report the updated Wound object (with the new 'healingState') in 'playerWoundChanges' or 'NPCWoundChanges'.
                                 
-                                -   Any change to active debuffs MUST be reported via 'playerActiveEffectsChanges' 
-                                (e.g., by adding an object for the removed effect with duration 0).
+                                -   Change wound-generated debuffs only in the updated wound's 'generatedEffects'. If a separate, independently tracked active effect also changes, report that separate effect via the appropriate effect-change command; do not duplicate a wound-generated effect.
 
                             3.  Recovery: More advanced healing (magic, potent potions, long-term rest) is required for full recovery.
                                 -   This action changes the wound's 'healingState.currentState' to 'Recovering' or directly to 'Healed', depending on the potency of the healing method.
@@ -9390,7 +9357,7 @@ export const getGameMasterGuideRules = (configuration) => {
 
                             4.  Healing (Full Recovery): When the 'healingState.currentState' becomes 'Healed':
                                 -   The wound is considered fully closed and no longer has any mechanical or narrative impact.                                
-                                -   The game system will remove the Wound object entirely from the character's 'playerWounds' or 'NPCWounds' list in the next turn's Context once it is reported as 'Healed'.
+                                -   The wound remains in the character's saved history. In the next turn's Context it is separated from active wounds into that character's 'healedWounds' history, and must not impose effects or be treated as an active injury.
         
                             ]]>
                         </Content>
@@ -11552,7 +11519,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                     Clearly log this decision.
 
                                     c) Format 'maxHealth' as a percentage string.
-                                    d) Set 'currentHealth' equal to 'maxHealth' unless the narrative dictates they are injured.
+                                    d) Carry forward the named NPC's existing 'currentHealth' from Context.encounteredNPCs; format it on the same health-point scale as 'maxHealth'. Never restore health merely because combat begins. If no health value is available, use 'maxHealth' and log the assumption.
                                     e) Record Calculation in 'items_and_stat_calculations', showing how you derived the Permanently Modified values before calculating health.
 
                                     ]]>
@@ -18956,6 +18923,7 @@ export const getGameMasterGuideRules = (configuration) => {
             For every player action that is not trivially easy or automatically successful/failed by plot, the GM MUST perform an action check by following these steps sequentially.
             NPCs performing complex actions that could fail also follow this general process, using their own characteristics and skills.
             Generic enemies/allies have a simplified action resolution (see InstructionBlock '15').
+            For every action check, inspect the acting character's active wounds and their 'generatedEffects', including current-turn wound updates. Apply relevant effects once, whether or not a WoundReference exists; do not apply healed wound history.
             
             CRITICAL NOTE: 
             When determining THE action the player will perform this turn (which then proceeds through these steps):
@@ -19454,7 +19422,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                        You MUST log when you are using this fallback method.
 
                                 - Temporary Effects: 
-                                Examine the player's 'activeBuffs' and 'activeDebuffs' arrays.
+                                Examine the player's 'activeBuffs' and 'activeDebuffs' arrays. Also inspect each active wound's 'generatedEffects' for effects applicable to this action; a WoundReference is not required. Count each wound-generated effect only once and do not apply healed wound history.
 
                             2) CRITICAL STEP - Conditional Verification:
                                 For EACH identified percentage bonus, you MUST verify if its condition is met in the current context (time of day, environment, specific target, player state).
@@ -20225,7 +20193,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                     d)  Critical Hit Bonus (for PC/Named NPC attackers ONLY if ActionSuccessLevel was 'Critical Success'):
                                         If the attacker is a PC or Named NPC AND the 'ActionSuccessLevel' was 'Critical Success':
                                         DamageAfterCrit% = DamageBeforeCrit% * FinalCritMultiplier (FinalCritMultiplier from #14.2.2).
-                                        Otherwise, DamageAfterCrit% = DamageBeforeCrit%.
+                                        Otherwise, DamageAfterCrit% = DamageBeforeCrit%. For generic attackers, Rule #15.2.3.A already applied the 1.5 critical multiplier to EffectBaseMagnitude%; do not apply it again here. Keep fractional DamageAfterCrit% until the final resistance calculation; do not round it here.
                                  
                                     e)  Apply Target Resistances:
                                         1.  TargetResistValue%: The target's total resistance as a "Percentage Share" against the 'targetType' of this damage effect (see Rule #5.0).
@@ -20350,11 +20318,11 @@ export const getGameMasterGuideRules = (configuration) => {
                                 - New/Updated Wounds: Report via 'playerWoundChanges' array (using #5.20.3 structure). Update 'playerStatus.activeConditions' to reflect significant wounds.
 
                             3.  For Named NPCs (from 'encounteredNPCs' in Context):
-                                - If NPC is an active combatant (in 'enemiesData'/'alliesData'): Handle as per point 1 (update their object there).
+                                - If NPC is an active combatant (in 'enemiesData'/'alliesData'): Update their combat object as in point 1. Also report their new or updated wounds as flat 'NPCWoundChanges' objects so the named NPC retains them after combat. If the NPC health scale differs from the combat object's maxHealth, report the actual NPC health explicitly through 'NPCsData'.
                                 - If NPC is affected but *not* an active combatant in those arrays:
                                     - Health Changes: Narrate. System updates 'Context.encounteredNPCs[NPCId].currentHealth'.
                                     - New Temporary Buffs/Debuffs: Report via 'NPCEffectChanges' array ({ "NPCId": "guid", "effectsApplied": [array_of_effect_objects_as_per_6.2.1] }).
-                                    - New/Updated Wounds: Report via 'NPCWoundChanges' array ({ "NPCId": "guid", "wounds": [array_of_wound_objects_as_per_5.20.3] }).
+                                    - New/Updated Wounds: Report via 'NPCWoundChanges' as one flat object per wound, containing 'NPCId', 'NPCName', and the wound's fields from #5.20.3 (including 'woundId'). Do not nest a 'wounds' array.
 
                             4.  Logging: Ensure all health changes, application of new status effects, and Wounds are detailed in 'items_and_stat_calculations'.
                             
@@ -22510,8 +22478,8 @@ export const getGameMasterGuideRules = (configuration) => {
                             
                             -   For PC: Tracked by the system, provided in 'Context.playerCharacter.currentHealth'.
 
-                            -   For Named NPCs: Initialized to 'maxHealth%' and updated based on damage/healing. 
-                                If the NPC is part of 'enemiesData' or 'alliesData', their 'currentHealth' is updated there.
+                            -   For Named NPCs: Preserve their existing 'currentHealth' from 'encounteredNPCs' when entering combat; initialize it to 'maxHealth%' only when no prior current health exists.
+                                Update health for damage/healing in 'enemiesData' or 'alliesData' and record it in 'NPCsData' as required by rule #6.1.6.2.
 
                             ]]>
                         </Content>
@@ -22810,7 +22778,7 @@ export const getGameMasterGuideRules = (configuration) => {
                             Logging: The entire step-by-step calculation MUST be logged in 'items_and_stat_calculations'.
 
                             Example Log: "Calculating Player Resistance to 'fire' damage:
-                            \n\n - Step 1 (Innate): LevelResist(L25, all)=+10% + ConstResist(ModConst60, all)=+6% -> InnateResistance=+16%
+                            \n\n - Step 1 (Innate): LevelResist(L25, all)=+4% + ConstResist(ModConst60, all)=+6% -> InnateResistance=+10%
                             \n\n - Step 2 (Primary Armor): Equipped 'Dragonscale Shield' provides the best 'fire' resistance at +30%. PrimaryArmorResistance=+30%
                             \n\n - Step 3 (Additional Bonuses):
                             \n\n   - Equipment: 'Amulet of Warding' (resist all)=+5%
@@ -22818,8 +22786,8 @@ export const getGameMasterGuideRules = (configuration) => {
                             \n\n   - Temp Effects: 'Stone Skin' (resist all)=+20%
                             \n\n   - Total AdditionalBonuses = 5 + 10 + 20 = +35%
                             \n\n - Step 4 (Final):
-                            \n\n   - TotalBeforeCap = 16% + 30% + 35% = 81%
-                            \n\n   - Final Fire Resistance = min(90, 81) = 81%."
+                            \n\n   - TotalBeforeCap = 10% + 30% + 35% = 75%
+                            \n\n   - Final Fire Resistance = min(90, 75) = 75%."
 
                             ]]>
                         </Content>
@@ -22845,9 +22813,9 @@ export const getGameMasterGuideRules = (configuration) => {
                             # Расчет Итогового Сопротивления ('FinalResistance%') к урону типа 'Огонь'
 
                             ## 1. Врожденное Сопротивление (Innate Resistance)
-                            - Сопротивление от Уровня (Lvl 25, 'all'): 5 + floor(25/10)*2 = +9%
+                            - Сопротивление от Уровня (Lvl 25, 'all'): floor(25/10)*2 = +4%
                             - Сопротивление от Телосложения (Мод. Телосложение 60, 'all'): floor(60/10) = +6%
-                            - Итоговое врожденное сопротивление ('all'): 9% + 6% = 15%
+                            - Итоговое врожденное сопротивление ('all'): 4% + 6% = 10%
 
                             ## 2. Сопротивление от Основной Брони (Primary Armor)
                             - Проверка снаряжения на сопротивление огню:
@@ -22857,14 +22825,14 @@ export const getGameMasterGuideRules = (configuration) => {
                             - Сопротивление от основной брони: 30%
 
                             ## 3. Суммирование Дополнительных Бонусов
-                            - Доп. Снаряжение ('Amulet of Warding', resist 'all'): +5%
+                            - Доп. Снаряжение ('Plate Armor', resist fire): +20%; 'Amulet of Warding', resist all: +5%
                             - Пассивные Навыки ('Elemental Adaptation', resist 'fire'): +10%
                             - Временные Эффекты ('Stoneskin', resist 'all'): +20%
-                            - Итоговые дополнительные бонусы: 5 + 10 + 20 = 35%
+                            - Итоговые дополнительные бонусы: 20 + 5 + 10 + 20 = 55%
 
                             ## 4. Финальный Расчет и Ограничение
-                            - Общее сопротивление (до ограничения) = Врожденное (15%) + Основная броня (30%) + Доп. бонусы (35%) = 80%
-                            - Итоговое Сопротивление Огню ('FinalResistance%'): min(90, 80) = 80%
+                            - Общее сопротивление (до ограничения) = Врожденное (10%) + Основная броня (30%) + Доп. бонусы (55%) = 95%
+                            - Итоговое Сопротивление Огню ('FinalResistance%'): min(90, 95) = 90%
 
                             ]]>
                         </Content>
@@ -22889,7 +22857,7 @@ export const getGameMasterGuideRules = (configuration) => {
                 <Title>Processing Wound Reference Effects (WoundReference)</Title>
                 <Description>
                     This rule describes how the GM must process "WoundReference" type effects during calculations to apply the mechanical consequences associated with the wound.
-                    Reference effects are added by the system to 'activeBuffs'/'activeDebuffs' only when the wound ID is known (i.e., in the turn following the wound's infliction).
+                    The wound object is the source of truth. A WoundReference may exist in an active effects list, but must not be required for a wound's effects to apply.
                 </Description>
                 <Content type="rule_text">
                     <![CDATA[
@@ -22901,7 +22869,9 @@ export const getGameMasterGuideRules = (configuration) => {
                         b)  Extract the 'generatedEffects' array from the found Wound object.
                         c)  Process each individual effect object from this Wound's 'generatedEffects' array (e.g., a "Disarmed" effect or a "Strength reduced by X%" effect) as if it were directly present in the main 'activeEffects' list.
 
-                    Thus, 'WoundReference' serves as a pointer to the actual mechanical penalties, which are fully defined within the corresponding Wound object.
+                    Also inspect each active wound's 'generatedEffects' directly, even if there is no WoundReference. Apply each wound-generated effect once only; a WoundReference and its wound are not separate copies. Exclude healed wounds and their historical effects. In the same turn, use newly reported wound updates when resolving subsequent actions.
+
+                    Thus, 'WoundReference' serves as an optional pointer to the actual mechanical penalties, which are fully defined within the corresponding Wound object.
 
                     ]]>
                 </Content>
@@ -23068,7 +23038,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                                - Takes next d20 roll: 1.
                                                - RESULT: Natural Critical Failure for the Ogre!
                                                - ActionSuccessLevel is set to 'Critical Failure'. The player's defensive check is bypassed.
-                                            # Applying Effects... (The Ogre stumbles, no damage is dealt, and it might become vulnerable for the next turn).
+                                            # Applying Effects... The attack deals no damage; the Ogre receives a self-inflicted Light or Moderate wound for the critical attack failure under Rule #5.20.2, recorded on its combat object with effects inside the wound.
 
                                             ]]>
                                         </LogOutput>
@@ -23180,7 +23150,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                     <![CDATA[
 
                                     The previous rule stating that generic combatants cannot benefit from critical hits is now obsolete and superseded by this protocol. 
-                                    Generic combatants achieve critical hits on a natural 20, which results in a 1.5x damage multiplier.
+                                    Generic combatants achieve critical hits on a natural 20 or when the target critically fails its defensive check, resulting in a 1.5x damage multiplier applied once as in #15.2.3.A.
 
                                     ]]>
                                 </Content>
@@ -23201,7 +23171,7 @@ export const getGameMasterGuideRules = (configuration) => {
                     1.  Source Damage: This is the 'FinalDamageToTarget%' calculated as per InstructionBlock '12' -> Rule '12.9.2.1' (which includes base effect value, success modifiers, context multipliers, critical hit bonuses for PC/NPCs, and target resistances).
                     2.  Update Health:
                         - For Player: The GM narrates the damage. The system updates 'Context.playerCharacter.currentHealth'. GM updates 'playerStatus.healthPercentage'.
-                        - For Named NPC (if tracked in Context): Narrate. System updates 'Context.encounteredNPCs[NPCId].currentHealth'. If the NPC is also in 'enemiesData' or 'alliesData', update 'currentHealth' there too.
+                        - For Named NPC (if tracked in Context): Narrate and update the combat object's 'currentHealth' in 'enemiesData' or 'alliesData'. The system synchronizes it to the NPC record only when their maxHealth values use the same scale; otherwise explicitly report actual NPC health via 'NPCsData'. Report new or changed NPC wounds via 'NPCWoundChanges' regardless of combat participation.
                         - For Generic Enemy/Ally: Update 'currentHealth' in their respective object in 'enemiesData' or 'alliesData'.
                     3.  Check for Additional Effects from Damage Severity:
                         - After updating health, the GM MUST consider if the damage taken was significant enough to cause a Wound or a temporary debilitating Debuff as per rules in InstructionBlock '5' -> Rule '5.20' (Wound System and Debuffs from Significant Damage Overview), particularly #5.20.3 (Triggering Wounds or Damage-Induced Debuffs).
@@ -23306,13 +23276,12 @@ export const getGameMasterGuideRules = (configuration) => {
                     Note the 'DamageType' (e.g., 'slashing', 'fire').
 
                     Step 2: Calculate Total Percentage Reduction ('TotalReduction % ') for the specific 'DamageType'.
-                    -   This is the critical step. You must sum ALL applicable percentage-based reductions from ALL sources that affect the incoming 'DamageType'.
-                    -   Formula: 
-                    'TotalReduction % = FinalResistance % (from character skills / buffs / race vs DamageType) + DamageReduction % (from all equipped items vs DamageType)'.
-                    -   This combined percentage represents the target's total ability to weaken a blow of this specific type.
+                    -   For a player or named NPC, calculate 'FinalResistance%' exactly once using Rule #14.3. It already includes the applicable innate, equipment, passive-skill and temporary-effect resistance, capped to [-100%, 90%].
+                    -   'TotalReduction% = FinalResistance%' for this damage type. Do NOT add equipped-item DamageReduction a second time. For a generic combatant use its applicable total resistance from its combat data and rules; do not add a source already included in that total.
+                    -   Record each contributing equipment item for the durability check, but do not reapply its percentage when determining 'TotalReduction%'.
 
                     Step 3: Calculate Damage After Percentage Reduction ('DamagePostReduction').
-                    -   Apply the total percentage reduction to the initial damage.
+                    -   Apply the total percentage reduction once to the unrounded initial damage. Round the post-reduction result, not the intermediate critical damage (Rule #12.9.2.1).
                     -   Formula: 
                     'DamagePostReduction = round(InitialDamage * (1 - (TotalReduction % / 100)))'.
                         - This is the actual amount of force that impacts the armor after being weakened by all resistances.
@@ -23837,7 +23806,7 @@ export const getGameMasterGuideRules = (configuration) => {
                     Pre-generated Dices: [12, 16, 8, 19, 4, 11, 15, 7, 10, 13, 6, 1, 20, 2]
                     Player's Crit Chance Threshold (StdLuck 15): 20 - floor(15/20) = 20.
                     Location: "Ruined Gas Station" (Difficulty Profile: { combat: 12, environment: 18, social: 5, exploration: 15 })
-                    Significant Damage Thresholds: >25% (Minor Debuff), >45% (Significant Debuff)
+                    Significant Damage Thresholds: >25% (Light Wound), >45% (Moderate Wound), each with its own generated effects (Rule #5.20.2)
 
                     ]]>
                 </ScenarioContext>
@@ -23873,31 +23842,11 @@ export const getGameMasterGuideRules = (configuration) => {
 
                             #12.9: Applying Mechanical Combat Effects (Assault Rifle, 3 shots)
                             Source Action: "Burst Fire" from "Scavenged Assault Rifle"
-                            TotalAddedDamageBonus% (#14.2.1): LevelAttackBonus%(L15)=9% + StatAttackBonus%(ModDex40)=8% + Passive"GunNut"=5% = 22%
-                            
-                            Shot 1 (vs Mutant Bruiser):
-                            - EffectBaseMagnitude (10% base + 22% added) = 32%
-                            - AdjustedMagnitude (CritSuccess mod 1.0) = 32%
-                            - DamageBeforeCrit (ContextMultiplier 1.0) = 32%
-                            - DamageAfterCrit (FinalCritMultiplier ModLuck15=1.51) = 32% * 1.51 = 48.32% -> 48%
-                            - TargetResist (Bruiser, piercing): 0% (has bludgeoning resist)
-                            - FinalDamageToTarget = 48%. Bruiser health: 128% - 48% = 80%.
-                            - Massive Dmg Check: (48/128)*100~=37.5% > Threshold 1 (25%). GM applies Minor Debuff: "Staggered (-10% speed for 1 turn)".
-
-                            Shot 2 (vs Mutant Bruiser): (Roll to hit again - assume for burst, subsequent shots hit if first does, or make separate checks with penalty)
-                            GM Decision: For multi-shot weapons, if the initial attack roll is a success, subsequent shots in the same burst automatically hit the same target unless specific rules for spread/recoil apply. Critical success on attack roll makes all shots in burst critical.
-                            - DamageAfterCrit = 48%. FinalDamageToTarget = 48%.
-                            - Bruiser health: 80% - 48% = 32%.
-                            - Massive Dmg Check: (48/128)*100~=37.5% > Threshold 1. Debuff is already active.
-
-                            Shot 3 (vs Mutant Bruiser):
-                            - DamageAfterCrit = 48%. FinalDamageToTarget = 48%.
-                            - Bruiser health: 32% - 48% = -16%. Bruiser defeated.
-                            
-                            Final Log: Scrap's rifle burst critically hits Mutant Bruiser. All 3 shots land.
-                            Shot 1 deals 48% piercing, Bruiser at 80%, Staggered.
-                            Shot 2 deals 48% piercing, Bruiser at 32%.
-                            Shot 3 deals 48% piercing, Bruiser at -16% (Defeated).
+                            TotalAddedDamageBonus% (#14.2.1): LevelAttackBonus%(L15)=7% + StatAttackBonus%(ModDex40)=16% + Passive"GunNut"=5% = 28%.
+                            GM Decision: in this burst all three shots hit the same target with the same critical result. Each is a separate damage instance.
+                            Each shot: base 10% + added 28% = 38%; FinalCritMultiplier = 1.5 + floor(15/2)/100 = 1.57; unrounded critical damage = 38 * 1.57 = 59.66%. Piercing resistance 0%, so final damage = round(59.66) = 60% per shot.
+                            Shot 1: 128% -> 68%. Shot 2: 68% -> 8%. Shot 3: 8% -> 0% (defeated).
+                            Each confirmed critical hit triggers a wound. Each 60% hit also exceeds 45% of the 128% maximum: report three distinct Moderate Wound Objects with their effects within each wound (Rule #5.20).
                             Ammunition "7.62mm Rounds" count becomes 47. Player energy: -10 (example for burst fire).
 
                             ]]>
@@ -23926,14 +23875,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                         "actions":[],
                                         "resistances":[], 
                                         "activeBuffs":[], 
-                                        "activeDebuffs":[{
-                                            "effectType":"Debuff", 
-                                            "value":"-10%", 
-                                            "targetType":"speed", 
-                                            "duration":0, 
-                                            "sourceSkill":"Rifle Trauma", 
-                                            "description":"Staggered (Effect ended as target defeated)"
-                                        }]
+                                        "activeDebuffs":[], "wounds":[{"woundId":null,"woundName":"Rifle wound","severity":"Moderate","descriptionOfEffects":"The wound hinders movement.","generatedEffects":[{"effectType":"Debuff","value":"-10%","targetType":"speed","duration":3,"description":"Wound pain"}],"healingState":{"currentState":"Untreated","description":"A bleeding wound.","treatmentProgress":0,"progressNeeded":30,"nextState":"Stabilized","canBeImprovedBy":["First Aid"]}},{"woundId":null,"woundName":"Rifle wound","severity":"Moderate","descriptionOfEffects":"The wound hinders movement.","generatedEffects":[{"effectType":"Debuff","value":"-10%","targetType":"speed","duration":3,"description":"Wound pain"}],"healingState":{"currentState":"Untreated","description":"A bleeding wound.","treatmentProgress":0,"progressNeeded":30,"nextState":"Stabilized","canBeImprovedBy":["First Aid"]}},{"woundId":null,"woundName":"Rifle wound","severity":"Moderate","descriptionOfEffects":"The wound hinders movement.","generatedEffects":[{"effectType":"Debuff","value":"-10%","targetType":"speed","duration":3,"description":"Wound pain"}],"healingState":{"currentState":"Untreated","description":"A bleeding wound.","treatmentProgress":0,"progressNeeded":30,"nextState":"Stabilized","canBeImprovedBy":["First Aid"]}}]
                                     },
                                     {
                                         "NPCId":null, 
@@ -24009,14 +23951,13 @@ export const getGameMasterGuideRules = (configuration) => {
                             #12.8: Interpret: Critical Success. Eligible for Intelligence increase.
                             #12.9: Applying Mechanical Effects (Frost Shard)
                             Skill "Frost Shard": Base 20% cold. Scaling (#7.3):
-                                CharBonus(ModInt45)=20%. LevelBonus(L8)=32%. MasteryBonus (assume L1)=4%. TotalBonusMult=(1+0.2+0.32+0.04)=1.56.
-                                ScaledValue = round(20*1.56) = 31%.
-                            - EffectBaseMagnitude = 31%. AdjustedMag(CritSuccess)=31%. DamageBeforeCrit=31%.
-                            - CriticalHit (Player Crit): FinalCritMult(ModLuck10)=1.51. DamageAfterCrit=round(31*1.51)=47%.
-                            - TargetResist(Boar, cold): 0%. FinalDamageToTarget = 47%.
-                            - Boar health: 87% - 47% = 40%.
-                            - Massive Dmg: (47/87)*100 ~= 54% > Threshold 2. Debuff: "Chilled (-20% speed for 1 turn)".
-                            Final Log: Anya's Frost Shard critically hits Wild Boar for 47% cold damage. Boar health 40%/87%. Boar Chilled. Energy: -7.
+                                CharBonus(ModInt45)=20%. LevelBonus(L8)=8%. MasteryBonus (assume L1)=4%. TotalBonusMult=(1+0.20+0.08+0.04)=1.32.
+                                ScaledValue = round(20*1.32) = 26%. Add level attack bonus 5% and intelligence bonus 18%: pre-critical damage = 49%.
+                            - CriticalHit (Player Crit): FinalCritMult(ModLuck10)=1.55. DamageAfterCrit=49*1.55=75.95% (unrounded).
+                            - TargetResist(Boar, cold): 0%. FinalDamageToTarget = round(75.95)=76%.
+                            - Boar health: 87% - 76% = 11%.
+                            - Massive Dmg: (76/87)*100 > 45%; the critical hit also triggers a Moderate wound with its own Chilled effect.
+                            Final Log: Anya's Frost Shard critically hits Wild Boar for 76% cold damage. Boar health 11%/87%. Boar Chilled. Energy: -7.
 
                             ]]>
                         </LogOutput>
@@ -24035,18 +23976,11 @@ export const getGameMasterGuideRules = (configuration) => {
                                     "description": "Крупный, агрессивный кабан с острыми клыками и вздыбленной шерстью. Он фыркает и роет землю копытом, готовый к атаке.",
                                     "type":"Weak", 
                                     "maxHealth":"87%", 
-                                    "currentHealth":"40%", 
+                                    "currentHealth":"11%",
                                     "actions":[/*Boar actions*/], 
                                     "resistances":[/*Boar resist*/], 
                                     "activeBuffs":[], 
-                                    "activeDebuffs":[{
-                                        "effectType":"Debuff", 
-                                        "value":"-20%", 
-                                        "targetType":"speed", 
-                                        "duration":1, 
-                                        "sourceSkill":"Frost Shard Trauma", 
-                                        "description":"Chilled! Speed reduced by 20% for 1 turn."
-                                    }]
+                                    "activeDebuffs":[], "wounds":[{"woundId":"boar-wound-1","woundName":"Frost wound","severity":"Moderate","descriptionOfEffects":"Chilled","generatedEffects":[{"effectType":"Debuff","value":"-20%","targetType":"speed","duration":1,"description":"Chilled"}],"healingState":{"currentState":"Untreated","description":"Frost injury.","treatmentProgress":0,"progressNeeded":30,"nextState":"Stabilized","canBeImprovedBy":["First Aid"]}}]
                                 }
 
                                 ]]>
@@ -24079,8 +24013,8 @@ export const getGameMasterGuideRules = (configuration) => {
                             - ActionSuccessLevel: Full Success. AdjustedMagnitude=8%. ContextMult=1.0. DamageBeforeCrit=8%.
                             - No Crit for Generic Ally.
                             - TargetResist(Boar, piercing): 0% (has slashing resist). FinalDamageToTarget = 8%.
-                            - Boar health: 40% - 8% = 32%.
-                            Final Log: Town Guard's Spear Jab hits Wild Boar for 8% piercing. Boar health 32%/87%.
+                            - Boar health: 11% - 8% = 3%.
+                            Final Log: Town Guard's Spear Jab hits Wild Boar for 8% piercing. Boar health 3%/87%.
 
                             ]]>
                         </LogOutput>
@@ -24099,18 +24033,11 @@ export const getGameMasterGuideRules = (configuration) => {
                                         "description": "Крупный, агрессивный кабан с острыми клыками и вздыбленной шерстью. Он фыркает и роет землю копытом, готовый к атаке.",
                                         "type":"Weak", 
                                         "maxHealth":"87%", 
-                                        "currentHealth":"32%", 
+                                        "currentHealth":"3%",
                                         "actions":[/*Boar actions*/], 
                                         "resistances":[/*Boar resist*/], 
                                         "activeBuffs":[], 
-                                        "activeDebuffs":[{
-                                            "effectType":"Debuff", 
-                                            "value":"-20%", 
-                                            "targetType":"speed", 
-                                            "duration":1, 
-                                            "sourceSkill":"Frost Shard Trauma", 
-                                            "description":"Chilled! Speed reduced by 20% for 1 turn."
-                                        }]
+                                        "activeDebuffs":[], "wounds":[{"woundId":"boar-wound-1","woundName":"Frost wound","severity":"Moderate","descriptionOfEffects":"Chilled","generatedEffects":[{"effectType":"Debuff","value":"-20%","targetType":"speed","duration":1,"description":"Chilled"}],"healingState":{"currentState":"Untreated","description":"Frost injury.","treatmentProgress":0,"progressNeeded":30,"nextState":"Stabilized","canBeImprovedBy":["First Aid"]}}]
                                     } 
 
                                 ]]>
@@ -24140,10 +24067,10 @@ export const getGameMasterGuideRules = (configuration) => {
                         - Final Standard Characteristics: Str 50, Con 45, Per 18, others low. Stats are valid.
                     - Final Context Data for Combat:
                         - NPCId: "thorne-001", Level: 22
-                        - Standard Characteristics: Strength=50, Constitution=45
+                        - Standard Characteristics: Strength=50, Constitution=45; Modified Constitution=45
                         - Modified Characteristics (from gear/skills): Strength=55
                         - MaxHealth (from StdStr 50, StdCon 45, using revised #5.7.3): 100 + floor(45 * 2.0) + floor(50 * 1.0) = 100 + 90 + 50 = 240%
-                        - Resistances: Plate Armor (15% slashing, 10% piercing)
+                        - Resistances: Plate Armor (item ID "thorne-plate", 15% slashing, 10% piercing; durability 100%, no applicable damageThreshold)
 
                     Dices: [18, 3, 11, 14, 7, 10, 19, 1]
                     Whisper Crit Threshold (StdLuck 25): 20 - floor(25/20) = 19.
@@ -24174,21 +24101,21 @@ export const getGameMasterGuideRules = (configuration) => {
                             #12.7: Difference = (18+46) - (14+5) = 64 - 19 = 45. Result: 'Critical Success'.
                             #12.8: Interpret: Critical Success. Eligible for Dexterity increase.
                             #12.9: Applying Mechanical Combat Effects (Shadow Strike + Dagger)
-                            GM Decision: Shadow Strike "delivers" the dagger's damage, enhanced. So, base is Dagger 15% + Skill 30% + Unaware 15% = 60%.
-                            Scaling (#7.3): ModDex60=>CharBonus=30%. Lvl20=>LevelBonus=64%. Mastery(assumeL2)=>MasteryBonus=8%. TotalBonusMult=(1+0.3+0.64+0.08)=2.02.
-                            Scaled Skill+Weapon Base = round(60 * 2.02) = 121%.
-                            TotalAddedDamageBonus (#14.2.1, from Player, assuming +5% from passive not shown): LevelAttack(L20)=13% + StatAttack(ModDex60)=12% = 25%.
-                            Final Pre-Crit Damage for this specific strike: 121% (scaled skill+weapon) + 25% (char profile bonus) = 146%.
-                            - EffectBaseMagnitude=146%. AdjustedMag(CritSuccess)=146%. DamageBeforeCrit=146%.
+                            The dagger contributes 15%; the skill contributes its own scaled value and a stated +15% bonus against an unaware target.
+                            Scaling (#7.3): ModDex60=>CharBonus=30%. Lvl20=>LevelBonus=32%. Mastery(assumeL2)=>MasteryBonus=8%. TotalBonusMult=(1+0.30+0.32+0.08)=1.70.
+                            Scaled skill damage = round(30 * 1.70) = 51%; do not scale the dagger or passive bonuses as part of the skill.
+                            TotalAddedDamageBonus (#14.2.1, assuming an applicable +5% passive): LevelAttack(L20)=9% + StatAttack(ModDex60)=24% + passive=5% = 38%.
+                            Final Pre-Crit Damage = dagger 15% + scaled skill 51% + unaware-target bonus 15% + added bonuses 38% = 119%.
+                            - EffectBaseMagnitude=119%. AdjustedMag(CritSuccess)=119%. DamageBeforeCrit=119%.
                             - CriticalHit (Player Crit): 
                                 - Player ModLuck=25. CritDamageLuckBonus% = floor(25/2) = 12%.
                                 - Base FinalCritMultiplier = 1.5 + (12/100) = 1.62.
                                 - ItemBonus("+5% crit damage(all)") adds +0.05 directly to multiplier.
                                 - Total FinalCritMultiplier = 1.62 + 0.05 = 1.67.
-                                - DamageAfterCrit = round(146 * 1.67) = 244%.
-                            - TargetResist(Thorne, piercing): Plate Armor 10%. FinalDamageToTarget = round(244 * (1 - 0.10)) = round(244 * 0.9) = 220%.
-                            - Thorne health: 240% - 220% = 20%. Thorne is critically wounded but survives.
-                            Final Log: Whisper's Shadow Strike from stealth is a massive critical hit, dealing 220% piercing damage. Captain Thorne is critically wounded but still standing. Energy: -12 (example).
+                                - DamageAfterCrit = 119 * 1.67 = 198.73% (unrounded).
+                            - TargetResist(Thorne, piercing): level 4% + constitution 4% + plate armor 10% = 18%; do not count the plate twice. FinalDamageToTarget = round(198.73 * (1 - 0.18)) = 163%. No matching armor threshold; the plate loses 2 durability (100% -> 98%).
+                            - Thorne health: 240% - 163% = 77%. The critical hit and damage over 45% of max health cause a Moderate wound with its own effects.
+                            Final Log: Whisper's Shadow Strike from stealth is a massive critical hit, dealing 163% piercing damage. Captain Thorne is critically wounded but still standing. Energy: -12 (example).
                             
                             ]]>
                         </LogOutput>
@@ -24210,7 +24137,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                         "description": "Закаленный капитан стражи в полных латах. Его шрамы и уверенная стойка говорят о том, что он — опасный и опытный противник.",
                                         "type":"Strong", 
                                         "maxHealth":"240%", 
-                                        "currentHealth":"20%", 
+                                        "currentHealth":"77%",
                                         "actions":[], 
                                         "resistances":[], 
                                         "activeBuffs":[], 
@@ -24218,6 +24145,8 @@ export const getGameMasterGuideRules = (configuration) => {
                                     }] 
                                 ]]>
                             </enemiesData>
+                            <NPCWoundChanges><![CDATA[ [{"NPCId":"thorne-001","NPCName":"Captain Thorne","woundId":null,"woundName":"Piercing wound","severity":"Moderate","descriptionOfEffects":"Pain slows movement.","generatedEffects":[{"effectType":"Debuff","value":"-20%","targetType":"speed","duration":3,"description":"Pain slows movement."}],"healingState":{"currentState":"Untreated","description":"An open wound.","treatmentProgress":0,"progressNeeded":30,"nextState":"Stabilized","canBeImprovedBy":["First Aid","Bandages"]}}] ]]></NPCWoundChanges>
+                            <NPCInventoryUpdates><![CDATA[ [{"NPCId":"thorne-001","NPCName":"Captain Thorne","itemUpdate":{"existedId":"thorne-plate","durability":"98%"}}] ]]></NPCInventoryUpdates>
                             <playerStatus>
                                 <![CDATA[ 
                                     {
@@ -34094,6 +34023,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                 "linkType": "'Road', 'Path', 'Secret Passage', 'Stairs Up', 'Stairs Down', 'Door', 'Gate', 'Waterway', 'Wilderness'",
                                 "linkState": "'Safe', 'Dangerous', 'Hidden', 'Blocked', 'Requires Key'",
                                 "targetCoordinates": { "x": "integer", "y": "integer" },
+                                "targetLocationId": "existing_destination_location_id_if_known",
                                 "estimatedInternalDifficultyProfile": {
                                     "combat": "integer",
                                     "environment": "integer",
@@ -34125,7 +34055,7 @@ export const getGameMasterGuideRules = (configuration) => {
                             
                             4.  "linkState": (string) The current state of the connection. 'Hidden' requires a Perception check to find. 'Blocked' requires an action to clear.
                             
-                            5.  "targetCoordinates": (object) The coordinates {x, y} of the adjacent location, determined logically.
+                            5.  "targetCoordinates": (object) The coordinates {x, y} of the adjacent location, determined logically. For an existing destination, provide its exact 'targetLocationId' from context. Coordinates alone are a legacy fallback only when they uniquely identify a destination; never choose between multiple locations with the same coordinates by guessing. For undiscovered locations omit the ID until it is known.
                             
                             6.  "estimatedInternalDifficultyProfile": (object) 
                                 The GM's logical estimation of the internal difficulty of the adjacent location. 
@@ -34469,7 +34399,8 @@ export const getGameMasterGuideRules = (configuration) => {
                             Structure for each object in 'linkUpdates':
                             {
                                 "sourceLocationId": "guid_of_the_location_where_the_link_originates",
-                                "targetCoordinates": { "x": "integer", "y": "integer" }, // Coordinates of the destination to uniquely identify the link
+                                "targetCoordinates": { "x": "integer", "y": "integer" },
+                                "targetLocationId": "existing_destination_id_if_known",
                                 "updatedLink": {
                                     // This object follows the Law of Partial Updates.
                                     // Include ONLY the fields of the link that have changed.
@@ -34488,7 +34419,7 @@ export const getGameMasterGuideRules = (configuration) => {
                             <![CDATA[
 
                             1.  Identify the Link: 
-                                Uniquely identify the link to be updated using the 'sourceLocationId' and the 'targetCoordinates' of its destination.
+                                Uniquely identify the link using 'sourceLocationId' and 'targetLocationId' when the destination ID is known. Coordinate-only commands are accepted only when the location and link are unambiguous.
                            
                             2.  Define Changes: 
                                 Create a partial 'updatedLink' object containing only the properties that have changed.
@@ -34522,7 +34453,8 @@ export const getGameMasterGuideRules = (configuration) => {
                             Structure for each object in 'linksToRemove':
                             {
                                 "sourceLocationId": "guid_of_the_location_where_the_link_originates",
-                                "targetCoordinates": { "x": "integer", "y": "integer" } // Coordinates of the destination to uniquely identify the link
+                                "targetCoordinates": { "x": "integer", "y": "integer" },
+                                "targetLocationId": "existing_destination_id_if_known"
                             }
 
                             ]]>
@@ -34534,7 +34466,7 @@ export const getGameMasterGuideRules = (configuration) => {
                             <![CDATA[
 
                             1.  Identify the Link: 
-                                Uniquely identify the link to be removed using its 'sourceLocationId' and 'targetCoordinates'.
+                                Uniquely identify the link using 'sourceLocationId' and 'targetLocationId' when known. Coordinate-only commands are accepted only when unambiguous.
 
                             2.  Report: 
                                 Add the identification object to the 'linksToRemove' array.
@@ -34944,6 +34876,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                 {
                                     "targetLocationId": "guid_of_the_location_where_the_threat_is",
                                     "threatId": "guid_of_the_threat_whose_activity_is_complete",
+                                    "activityId": "exact_currentActivity_activityId_from_context",
                                     "threatName": "user_readable_name_of_the_threat",
                                     "finalState": "'Completed' | 'Abandoned'",
                                     "narrativeSummary": "A brief, one-sentence summary of the final result for the historical log."
@@ -34959,7 +34892,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                 The simulation of a threat's action (Rule 30.1.B.2) results in its current task being completed or abandoned.
                             
                             -   ACTION: 
-                                You MUST use this command to signal the conclusion of the activity. 
+                                You MUST use this command to signal the conclusion of the activity. Copy the exact 'activityId' from the threat's currentActivity in the supplied context. Never invent or reuse an ID; missing or mismatched IDs are rejected, including legacy commands. The system assigns IDs to active threat activities, including legacy activities, before the next turn context is sent. New activities receive their ID after they are applied; do not complete a newly created task in the same response before its ID is available.
                                 The game system will use this to archive the task and set the threat's 'currentActivity' to null, making it idle for the next cycle.
                             
                             -   It is FORBIDDEN to use 'threatsToUpdate' to set 'currentActivity' to null for a completed task.
@@ -39331,7 +39264,7 @@ export const getGameMasterGuideRules = (configuration) => {
                         "loomingThreatsOrOpportunities": [
                             "description_of_a_background_threat_or_opportunity_that_could_surface_string"
                         ],
-                        "lastUpdatedTurn": "${currentTurnNumber}"
+                        "lastUpdatedTurn": "{{context.currentTurnNumber}}"
                     }
 
                     ]]>
@@ -41714,8 +41647,9 @@ export const getGameMasterGuideRules = (configuration) => {
         </Examples>
     </InstructionBlock>
 
-    ${doNotUseWorldEvents 
-        ? `
+
+    <ConditionalInstruction when="context.gameSettings.doNotUseWorldEvents is true: apply ONLY this disabled branch; ignore the enabled branch below">
+
 
     <InstructionBlock id="30">
         <Title>Protocol: World Progression Event Generation (DISABLED) </Title>
@@ -41732,8 +41666,10 @@ export const getGameMasterGuideRules = (configuration) => {
             ]]>
         </InstructionText>
     </InstructionBlock>
-        `
-        : `
+
+    </ConditionalInstruction>
+    <ConditionalInstruction when="context.gameSettings.doNotUseWorldEvents is false or absent: apply ONLY this enabled branch">
+
 
     <InstructionBlock id="30">
         <Title>Protocol: World Progression Event Generation</Title>
@@ -42310,6 +42246,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                         {
                                             "targetLocationId": "loc-cult-lair-01",
                                             "threatId": "threat-cult-01",
+                                            "activityId": "example-current-activity-id",
                                             "threatName": "Cult of the Silent Maw",
                                             "finalState": "Abandoned",
                                             "narrativeSummary": "The attempt to kidnap the princess was thwarted by the palace guard."
@@ -42373,6 +42310,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                         {
                                             "targetLocationId": "loc-cult-lair-01",
                                             "threatId": "threat-cult-01",
+                                            "activityId": "example-current-activity-id",
                                             "threatName": "Cult of the Silent Maw",
                                             "finalState": "Completed",
                                             "narrativeSummary": "The cult successfully kidnapped Princess Eliana."
@@ -45215,6 +45153,7 @@ export const getGameMasterGuideRules = (configuration) => {
                                         {
                                             "targetLocationId": "loc-woods-01",
                                             "threatId": "threat-gloomfang-01",
+                                            "activityId": "example-current-activity-id",
                                             "threatName": "The Gloomfang Pack",
                                             "finalState": "Completed",
                                             "narrativeSummary": "The pack's hunt was successfully concluded by the player providing an alternative food source."
@@ -45659,7 +45598,9 @@ export const getGameMasterGuideRules = (configuration) => {
         </Examples>
     </InstructionBlock>
 
-    `}
+
+    </ConditionalInstruction>
+
 
     <InstructionBlock id="FINAL">
         <Title>Final JSON Assembly and Validation</Title>
@@ -45819,5 +45760,3 @@ export const getGameMasterGuideRules = (configuration) => {
 </GameMasterGuide_JSONFormattingRules>
 
 			`;
-
-};

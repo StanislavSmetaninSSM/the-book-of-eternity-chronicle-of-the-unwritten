@@ -15,9 +15,10 @@ import { createInventoryActions } from './logic/inventoryActions';
 import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
 import { createMultiplayerManager } from './logic/multiplayer';
-import { checkAndApplyLevelUp, processAndApplyResponse } from '../utils/responseProcessor';
+import { processAndApplyResponse } from '../utils/responseProcessor';
+import { restorePlayerStats } from '../utils/restorePlayer';
 import { recalculateAllWeights } from '../utils/inventoryManager';
-import { recalculateDerivedStats, buildNextContext, createInitialContext, calculateDate, calculateTotalMinutes, calculateJourneyDay } from '../utils/gameContext';
+import { recalculateDerivedStats, buildNextContext, createInitialContext, calculateDate, calculateTotalMinutes, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
 import {
     clearCrashRecoveryMarker,
     getAutosaveTimestampFromDB,
@@ -465,6 +466,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         ].forEach(key => delete legacyAISettings[key]);
         loadedSettings.showImageSourceInfo = false;
 
+        ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameContext.currentLocation);
+        ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameState?.currentLocationData);
         gameContextRef.current = data.gameContext;
         const loadedGameState = data.gameState;
 
@@ -611,7 +614,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         return { ...flagData, flagId: key };
                     }
                     return flagData;
-                }).filter(f => isObject(f));
+                }).filter((f): f is WorldStateFlag => isObject(f));
             }
         }
         loadedGameState.worldStateFlags = processedFlags;
@@ -674,29 +677,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
         }
 
-        let updatedPc = loadedGameState.playerCharacter;
-        let levelUpLogs: string[] = [];
-        if (updatedPc) {
-            updatedPc = recalculateDerivedStats(updatedPc);
-            updatedPc = recalculateAllWeights(updatedPc);
-            if (updatedPc.totalWeight !== undefined && updatedPc.maxWeight !== undefined) {
-                updatedPc.isOverloaded = updatedPc.totalWeight > updatedPc.maxWeight;
-            } else {
-                updatedPc.isOverloaded = false;
-            }
-            if (updatedPc.criticalExcessWeight === undefined) {
-                updatedPc.criticalExcessWeight = 15;
-            }
-
-            const result = checkAndApplyLevelUp(updatedPc, t);
-            updatedPc = result.pc;
-            levelUpLogs = result.logs;
-        }
-
+        const levelUpLogs = restorePlayerStats(loadedGameState, t, isNetworkSync);
         let finalGameLog = data.gameLog || [];
         if (levelUpLogs.length > 0) {
-            loadedGameState.playerCharacter = updatedPc;
-            loadedGameState.players[loadedGameState.activePlayerIndex] = updatedPc;
             finalGameLog = [...finalGameLog, ...levelUpLogs];
         }
 
@@ -2350,7 +2333,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 superInstructions: narrativeStyleGuide.getGuide() + '\n' + superInstructions,
             };
 
-            const prompt = getCinemaPrompt(userPrompt, cinemaContext);
+            const prompt = getCinemaPrompt(cinemaContext, userPrompt);
             
             const result = await executeCancellableJsonGeneration(
                 prompt,
@@ -2373,7 +2356,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
                 for (let i = 0; i < newCinematic.frames.length; i++) {
                     if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
-                    if (gameContextRef.current?.gameSettings?.disableImageGeneration === true) break;
+                    if (Boolean(gameContextRef.current?.gameSettings?.disableImageGeneration)) break;
                     setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newCinematic.frames.length}` }));
 
                     const imageUrl = await requestArenaGmImage(
@@ -2427,7 +2410,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 superInstructions: narrativeStyleGuide.getGuide() + '\n' + superInstructions,
             };
 
-            const prompt = getContinueCinemaPrompt(cinematicToExtend, cinemaContext);
+            const prompt = getContinueCinemaPrompt(cinemaContext, cinematicToExtend);
             const result = await executeCancellableJsonGeneration(
                 prompt,
                 cinemaContext,
@@ -2442,7 +2425,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
                 for (let i = 0; i < newFrames.length; i++) {
                     if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
-                    if (gameContextRef.current?.gameSettings?.disableImageGeneration === true) break;
+                    if (Boolean(gameContextRef.current?.gameSettings?.disableImageGeneration)) break;
                     setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newFrames.length}` }));
                     newFrames[i].imageUrl = await requestArenaGmImage(
                         newFrames[i].imagePrompt,
