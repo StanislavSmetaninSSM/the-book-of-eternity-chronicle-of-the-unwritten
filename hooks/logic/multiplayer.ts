@@ -54,7 +54,19 @@ export function commitClientSnapshot(pending: PendingClientSync | null, rendered
     const historyMatches = Array.isArray(snapshot.gameHistory) && rendered.gameHistory.length >= snapshot.gameHistory.length &&
         snapshot.gameHistory.every((entry, index) => rendered.gameHistory[index] === entry) &&
         rendered.gameHistory.slice(snapshot.gameHistory.length).every(entry => entry.sender === 'system');
-    return rendered.gameState === snapshot.gameState && rendered.currentGameState === rendered.gameState &&
+    // Cinema can finish independently during synchronization. Permit only a
+    // cinema-only change on top of this snapshot; all gameplay fields must
+    // still match. The state setter re-filters these two collections, so
+    // compare their entries rather than their array identities.
+    const actual = rendered.gameState, expected = snapshot.gameState;
+    const sameEntries = (a: unknown, b: unknown) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((entry, i) => entry === b[i]);
+    const stateMatches = actual === expected || !!actual && !!expected &&
+        Object.keys(actual).length === Object.keys(expected).length &&
+        Object.keys(actual).every(key => Object.prototype.hasOwnProperty.call(expected, key)) &&
+        Object.keys(expected).every(key => key === 'cinematics' ||
+            ((key === 'encounteredNPCs' || key === 'encounteredFactions') && sameEntries((actual as any)[key], (expected as any)[key])) ||
+            (actual as any)[key] === (expected as any)[key]);
+    return stateMatches && rendered.currentGameState === rendered.gameState &&
         historyMatches && rendered.gameLog === snapshot.gameLog &&
         rendered.combatLog === snapshot.combatLog && rendered.lastJsonResponse === snapshot.lastJsonResponse &&
         rendered.sceneImagePrompt === snapshot.sceneImagePrompt ? pending.stamp : null;
@@ -93,12 +105,12 @@ export function stageHostFullSync(message: NetworkMessage, identity: { role: Net
 
 
 export const applyPlayerTurnResult = async (message: NetworkMessage, connectionId: string, {
-    gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority
-}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't' | 'hostTurnAuthority'>, acknowledge: (payload: any) => Promise<void>) => {
+    gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef
+}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't' | 'hostTurnAuthority' | 'activeTurnRef'>, acknowledge: (payload: any) => Promise<void>) => {
     const current = gameStateRef.current;
     const submission = message.payload?.submission;
     const decision = message.payload?.saveFile && current
-        ? hostTurnAuthority.accept(submission, message.senderId, connectionId, current.players[current.activePlayerIndex]?.playerId)
+        ? hostTurnAuthority.accept(submission, message.senderId, connectionId, current.players[current.activePlayerIndex]?.playerId, activeTurnRef.current !== null)
         : 'invalid';
     const reply = async (status: string) => {
         try { await acknowledge({ turnId: submission?.turnId, status }); }
@@ -205,7 +217,7 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
-                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
+                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
                     case 'new_player_character_data': {
@@ -530,7 +542,7 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
-                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
+                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
                     case 'new_player_character_data': {

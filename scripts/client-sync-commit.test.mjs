@@ -28,7 +28,7 @@ test('a host grant is unusable until the exact client snapshot commits, and fail
       context.currentTurnNumber = 2;
       const p = { ...context.playerCharacter, playerId: 'p', currentHealth: 40 }; context.playerCharacter = p; context.players = [p];
       const oldState = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'player', myPeerId: 'p', peers: [], isConnectedToHost: true };
-      const newPlayer = { ...p, currentHealth: 70 }, newState = { ...oldState, playerCharacter: newPlayer, players: [newPlayer] };
+      const newPlayer = { ...p, currentHealth: 70 }, newState = { ...oldState, playerCharacter: newPlayer, players: [newPlayer], cinematics: [] };
       const newContext = { ...context, playerCharacter: newPlayer, players: [newPlayer] };
       const oldHistory = [{ sender: 'gm', content: 'old' }], newHistory = [{ sender: 'gm', content: 'host state' }], newLogs = ['host log'], battles = [];
       const snapshot = { gameState: newState, gameContext: newContext, gameHistory: newHistory, gameLog: newLogs, combatLog: battles, lastJsonResponse: null, sceneImagePrompt: null, timestamp: 'now' };
@@ -51,13 +51,19 @@ test('a host grant is unusable until the exact client snapshot commits, and fail
       render = { ...render, gameState: queuedState, currentGameState: queuedState }; // state alone is insufficient
       assert.equal(commitClientSnapshot(pending.current, render), null);
       stateRef.current = queuedState; history = newHistory; render.gameHistory = [...newHistory, { sender: 'system', content: 'superseded' }];
+      // A concurrent cinema completion changes only cinematics (and the
+      // wrapper re-filters the NPC/faction arrays). This is safe to commit.
+      const cinemaState = { ...queuedState, cinematics: [{ id: 'cinema' }], encounteredNPCs: [...queuedState.encounteredNPCs], encounteredFactions: [...queuedState.encounteredFactions] };
+      assert.deepEqual(commitClientSnapshot(pending.current, { ...render, gameState: cinemaState, currentGameState: cinemaState }), fresh);
+      const unsafe = { ...cinemaState, playerCharacter: { ...cinemaState.playerCharacter, currentHealth: 20 } };
+      assert.equal(commitClientSnapshot(pending.current, { ...render, gameState: unsafe, currentGameState: unsafe }), null);
       stampRef.current = commitClientSnapshot(pending.current, render); pending.current = null;
       assert.deepEqual(stampRef.current, fresh);
       const after = manager(newState, newHistory);
       if (question) await after.askQuestion('Heal?'); else await after.resumeInterruptedTurn({ context: newContext, baseState: newState, history: newHistory });
       assert.equal(sends.length, 1); assert.equal(sends[0].payload.saveFile.gameState.playerCharacter.currentHealth, 80);
       const hostRef = { current: { ...newState, networkRole: 'host' } }; let decision;
-      await applyPlayerTurnResult(sends[0], 'p', { gameStateRef: hostRef, hostTurnAuthority: authority, restoreFromSaveData: file => { hostRef.current = file.gameState; return file; }, broadcastFullSync: noop, setError: noop, setGameHistory: noop, t: k => k }, async ack => { decision = ack.status; });
+      await applyPlayerTurnResult(sends[0], 'p', { gameStateRef: hostRef, hostTurnAuthority: authority, activeTurnRef: { current: null }, restoreFromSaveData: file => { hostRef.current = file.gameState; return file; }, broadcastFullSync: noop, setError: noop, setGameHistory: noop, t: k => k }, async ack => { decision = ack.status; });
       assert.equal(decision, 'accepted'); assert.equal(hostRef.current.playerCharacter.currentHealth, 80);
       authority.revoke(); const retryStamp = authority.issue(); const retry = { ...message, payload: { ...message.payload, protocol: retryStamp } };
       fail = true; assert.equal(stageHostFullSync(retry, identity, syncProps), 'failed'); assert.equal(stampRef.current, null); assert.equal(observed.current, fresh); assert.equal(pending.current, null); assert.match(error, /network_sync_restore_failed/);

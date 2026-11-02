@@ -115,7 +115,7 @@ export const createTurnManager = (
             setIsLoading(false); setError(t('network_sync_not_ready'));
             return;
         }
-        const wasSuperseded = () => isPlayerTurn && syncRevisionRef.current !== startingRevision;
+        const wasSuperseded = () => syncRevisionRef.current !== startingRevision;
         setIsLoading(true);
         setError(null);
         const startingCombatLog = context.enemiesDataForCurrentTurn?.length ? combatLog : [];
@@ -487,8 +487,7 @@ export const createTurnManager = (
         activeTurnRef.current = turnToken;
         turnPhaseRef.current = 'generating';
         const startingRevision = syncRevisionRef.current;
-        const isPlayerTurn = baseState.networkRole === 'player';
-        const wasSuperseded = () => isPlayerTurn && syncRevisionRef.current !== startingRevision;
+        const wasSuperseded = () => syncRevisionRef.current !== startingRevision;
         let stateCommitted = false;
         let playerSendAttempted = false;
         const reportSuperseded = () => {

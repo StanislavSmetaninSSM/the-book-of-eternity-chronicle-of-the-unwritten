@@ -44,12 +44,13 @@ export class HostTurnAuthority {
         this.issuedRevision = this.revision;
         return { version: 1, sessionId: this.sessionId, revision: this.revision };
     }
-    accept(submission: any, senderId: string | undefined, connectionId: string, activePlayerId: string | undefined): TurnDecision {
+    accept(submission: any, senderId: string | undefined, connectionId: string, activePlayerId: string | undefined, hostBusy = false): TurnDecision {
         if (!senderId || senderId !== connectionId) return 'unauthorized';
         if (!submission || typeof submission.turnId !== 'string' || submission.turnId.length < 16 || submission.turnId.length > 128 || !isTurnSyncStamp(submission.base)) return 'invalid';
         const previous = this.accepted.get(submission.turnId);
         if (previous) return previous.senderId !== senderId ? 'unauthorized' : previous.outcome === 'unknown' ? 'unknown' : 'duplicate';
         if (senderId !== activePlayerId) return 'unauthorized';
+        if (hostBusy) return 'pending';
         if (this.pendingMutations !== 0) return 'pending';
         if (submission.base.sessionId !== this.sessionId || submission.base.revision !== this.issuedRevision || this.issuedRevision !== this.revision) return 'stale';
         // Consume before touching React state or awaiting network sends.

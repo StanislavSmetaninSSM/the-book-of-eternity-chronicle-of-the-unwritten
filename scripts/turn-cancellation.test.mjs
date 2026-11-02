@@ -79,7 +79,7 @@ test('cancel and superseding sync stop waiting without claiming an in-flight sen
           authority.revoke(); const newStamp = authority.issue();
           let hostState = { ...base, networkRole: 'host', playerCharacter: { ...p, currentHealth: 70 } }, hostHistory = ['new'];
           const hostRef = { current: hostState }; let hostRestores = 0, decision;
-          const hostProps = { gameStateRef: hostRef, hostTurnAuthority: authority, restoreFromSaveData: save => { hostRestores++; hostRef.current = save.gameState; hostHistory = save.gameHistory; return save; }, broadcastFullSync: noop, setError: noop, setGameHistory: noop, t: k => k };
+          const hostProps = { gameStateRef: hostRef, hostTurnAuthority: authority, activeTurnRef: { current: null }, restoreFromSaveData: save => { hostRestores++; hostRef.current = save.gameState; hostHistory = save.gameHistory; return save; }, broadcastFullSync: noop, setError: noop, setGameHistory: noop, t: k => k };
           const next = { ...sentPacket, payload: { ...sentPacket.payload, submission: { turnId: 'newer-action-00000000001', base: newStamp }, saveFile: { ...sentPacket.payload.saveFile, gameState: hostState, gameHistory: hostHistory } } };
           await applyPlayerTurnResult(next, 'p', hostProps, async ack => { decision = ack.status; }); assert.equal(decision, 'accepted');
           await applyPlayerTurnResult(sentPacket, 'p', hostProps, async ack => { decision = ack.status; });

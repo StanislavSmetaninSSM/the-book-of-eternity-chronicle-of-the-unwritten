@@ -281,6 +281,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const restoreFromSaveData = useCallback((data: SaveFile, isNetworkSync: boolean = false, networkIdentityOverride?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => {
         syncRevisionRef.current += 1;
+        // Restoration supersedes pending host, player, and local GM tasks.
+        // Cinema has its own controller and is deliberately unaffected.
+        if (activeTurnRef.current) abortControllerRef.current?.abort();
         // --- BACKWARD COMPATIBILITY MIGRATION FOR EVENT LOGS ---
         const migrateLocationEvents = (loc: any) => {
             if (loc && loc.lastEventsDescription && typeof loc.lastEventsDescription === 'string' && !loc.eventDescriptions) {

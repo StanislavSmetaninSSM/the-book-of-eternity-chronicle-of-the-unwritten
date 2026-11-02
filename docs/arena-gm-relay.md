@@ -124,3 +124,9 @@ context and history/log snapshot has been restored and rendered. If restoring
 fails, the grant remains blocked and the same revision can be retried; request
 another synchronization or reconnect. This avoids using a fresh revision with
 a previous client state while React updates are still pending.
+
+A host also rejects new player results while its own turn or question is
+active; a superseding restore invalidates host generation as well as player
+generation. A cinema-only update during a client snapshot commit is allowed
+without treating the gameplay snapshot as changed; other state changes during
+snapshot commit keep the grant blocked.

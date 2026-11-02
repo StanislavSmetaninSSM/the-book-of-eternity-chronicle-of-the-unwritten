@@ -13,7 +13,7 @@ test('host broadcasts the restored player result without pending React or stale 
     const incoming = { gameState: { playerCharacter: { currentHealth: 50 } }, gameContext: { currentTurnNumber: 3 }, gameHistory: [{ sender: 'gm', content: 'Healed' }], gameLog: ['new'], combatLog: ['battle'], timestamp: 'now' };
     const restored = { ...incoming, gameState: { ...incoming.gameState, networkRole: 'host', myPeerId: 'host' }, gameLog: ['new', 'restored level log'] };
     const gameStateRef = { current: oldState }; let sent = null, history = incoming.gameHistory, error = null, restores = 0; const acks = [];
-    const props = { gameStateRef, hostTurnAuthority: authority, restoreFromSaveData: (data, network) => { restores++; assert.equal(data, incoming); assert.equal(network, true); return restored; }, broadcastFullSync: data => { sent = data; }, setError: v => { error = v; }, setGameHistory: v => { history = typeof v === 'function' ? v(history) : v; }, t: key => key };
+    const props = { gameStateRef, hostTurnAuthority: authority, activeTurnRef: { current: null }, restoreFromSaveData: (data, network) => { restores++; assert.equal(data, incoming); assert.equal(network, true); return restored; }, broadcastFullSync: data => { sent = data; }, setError: v => { error = v; }, setGameHistory: v => { history = typeof v === 'function' ? v(history) : v; }, t: key => key };
     const message = { type: 'turn_result_from_player', senderId: 'player', payload: { saveFile: incoming, submission: { turnId: 'turn-id-0000000001', base: stamp } } };
     const ack = async payload => { acks.push(payload); };
     await applyPlayerTurnResult(message, 'player', props, ack);

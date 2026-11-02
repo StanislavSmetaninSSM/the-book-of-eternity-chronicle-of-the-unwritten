@@ -11,7 +11,7 @@ test('late, replayed, concurrent and incompatible player results cannot overwrit
     const authority = new HostTurnAuthority(() => `session-${++session}`);
     const stateRef = { current: { networkRole: 'host', players: [{ playerId: 'p' }], activePlayerIndex: 0, playerCharacter: { currentHealth: 40 } } };
     let history = ['old'], restores = 0; const acks = [];
-    const props = { hostTurnAuthority: authority, gameStateRef: stateRef, restoreFromSaveData: snapshot => { restores++; stateRef.current = snapshot.gameState; history = snapshot.gameHistory; const finish = authority.beginMutation(); finish(); return snapshot; }, broadcastFullSync: async () => {}, setError: () => {}, setGameHistory: () => {}, t: k => k };
+    const props = { hostTurnAuthority: authority, activeTurnRef: { current: null }, gameStateRef: stateRef, restoreFromSaveData: snapshot => { restores++; stateRef.current = snapshot.gameState; history = snapshot.gameHistory; const finish = authority.beginMutation(); finish(); return snapshot; }, broadcastFullSync: async () => {}, setError: () => {}, setGameHistory: () => {}, t: k => k };
     const ack = async payload => { acks.push(payload); };
     const packet = (turnId, stamp, hp) => ({ type: 'turn_result_from_player', senderId: 'p', payload: { submission: { turnId, base: stamp }, saveFile: { gameState: { ...stateRef.current, playerCharacter: { currentHealth: hp } }, gameHistory: [`hp:${hp}`] } } });
     const first = authority.issue();
@@ -47,6 +47,7 @@ test('late, replayed, concurrent and incompatible player results cannot overwrit
     assert.equal(acks.at(-1).status, 'duplicate'); assert.equal(restores, appliedCount);
     // A retransmission remains a duplicate even after the active player changes.
     assert.equal(authority.accept(wonRace.payload.submission, 'p', 'p', 'different-player'), 'duplicate');
+    assert.equal(authority.accept(wonRace.payload.submission, 'p', 'p', 'different-player', true), 'duplicate', 'busy host must not claim a committed turn was rejected');
     const failStamp = authority.issue(); const failed = packet('restore-failure-00000010', failStamp, 100);
     const failProps = { ...props, restoreFromSaveData: () => { throw new Error('restore failed'); } };
     await applyPlayerTurnResult(failed, 'p', failProps, ack); await Promise.resolve();
