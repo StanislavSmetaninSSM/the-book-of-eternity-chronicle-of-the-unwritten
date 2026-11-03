@@ -27,10 +27,11 @@ export function gameplayMutationCommitted(
 }
 
 /** Guard whole user actions, including writes outside the GameState setter. */
-export function guardGameplayActions<T extends Record<string, (...args: any[]) => void>>(
+export function guardGameplayActions<T extends Record<string, (...args: any[]) => unknown>>(
     actions: T, blocked: () => boolean
-): T {
+): { [K in keyof T]: (...args: Parameters<T[K]>) => ReturnType<T[K]> | undefined } {
     return Object.fromEntries(Object.entries(actions).map(([key, action]) => [key, (...args: any[]) => {
-        if (!blocked()) action(...args);
-    }])) as T;
+        if (!blocked()) return action(...args);
+        return undefined;
+    }])) as { [K in keyof T]: (...args: Parameters<T[K]>) => ReturnType<T[K]> | undefined };
 }
