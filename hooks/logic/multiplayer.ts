@@ -6,7 +6,7 @@ import { createNewPlayerCharacter } from '../../utils/characterManager';
 import { formatError } from '../../utils/errorUtils';
 import { acceptHostStamp, HostTurnAuthority, type TurnSyncStamp } from '../../utils/networkTurnProtocol';
 import { sendOnOpenConnection } from '../../utils/peerSend';
-import { isLocalPreferenceKey } from '../../utils/localGamePreferences';
+import { sharedSettingsEqual } from '../../utils/localGamePreferences';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -32,6 +32,7 @@ interface MultiplayerManagerProps {
     hostConnectionRef: React.MutableRefObject<DataConnection | null>;
     setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
     activeTurnRef: React.MutableRefObject<symbol | null>;
+    gameplayMutationPendingRef?: React.MutableRefObject<boolean>;
     abortControllerRef: React.MutableRefObject<AbortController | null>;
     turnPhaseRef: React.MutableRefObject<'idle' | 'generating' | 'sending' | 'committed' | 'awaiting-sync'>;
     hostTurnAuthority: HostTurnAuthority;
@@ -74,13 +75,8 @@ export function snapshotMatchesRendered(snapshot: SaveFile, rendered: { gameStat
     const context = snapshot.gameContext;
     const expectedSettings = context?.gameSettings;
     const actualSettings = rendered.gameSettings;
-    // UI preferences may change while the snapshot is staged. Shared rules
-    // must match in both directions, including absence of removed fields.
-    const sharedKeys = (settings: GameSettings) => Object.keys(settings).filter(key => !isLocalPreferenceKey(key));
-    const sharedSettingsMatch = !!expectedSettings && !!actualSettings &&
-        sharedKeys(expectedSettings).length === sharedKeys(actualSettings).length &&
-        sharedKeys(expectedSettings).every(key => Object.prototype.hasOwnProperty.call(actualSettings, key) &&
-            (expectedSettings as any)[key] === (actualSettings as any)[key]);
+    // UI preferences may change while the snapshot is staged.
+    const sharedSettingsMatch = !!expectedSettings && sharedSettingsEqual(expectedSettings, actualSettings);
     const contextMatches = !!context && sharedSettingsMatch && rendered.worldState === context.worldState &&
         rendered.superInstructions === context.superInstructions && rendered.worldMap === context.worldMap &&
         rendered.visitedLocations === context.visitedLocations && rendered.turnNumber === context.currentTurnNumber;
@@ -138,12 +134,12 @@ export function stageHostFullSync(message: NetworkMessage, identity: { role: Net
 
 
 export const applyPlayerTurnResult = async (message: NetworkMessage, connectionId: string, {
-    gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef
-}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't' | 'hostTurnAuthority' | 'activeTurnRef'>, acknowledge: (payload: any) => Promise<void>) => {
+    gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef
+}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't' | 'hostTurnAuthority' | 'activeTurnRef' | 'gameplayMutationPendingRef'>, acknowledge: (payload: any) => Promise<void>) => {
     const current = gameStateRef.current;
     const submission = message.payload?.submission;
     const decision = message.payload?.saveFile && current
-        ? hostTurnAuthority.accept(submission, message.senderId, connectionId, current.players[current.activePlayerIndex]?.playerId, activeTurnRef.current !== null)
+        ? hostTurnAuthority.accept(submission, message.senderId, connectionId, current.players[current.activePlayerIndex]?.playerId, activeTurnRef.current !== null || gameplayMutationPendingRef?.current === true)
         : 'invalid';
     const reply = async (status: string) => {
         try { await acknowledge({ turnId: submission?.turnId, status }); }
@@ -187,6 +183,7 @@ export const createMultiplayerManager = (
         hostConnectionRef,
         setIsLoading,
         activeTurnRef,
+        gameplayMutationPendingRef,
         abortControllerRef,
         turnPhaseRef,
         hostTurnAuthority,
@@ -277,7 +274,7 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
-                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
+                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
                     case 'new_player_character_data': {
@@ -602,7 +599,7 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
-                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
+                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
                     case 'new_player_character_data': {

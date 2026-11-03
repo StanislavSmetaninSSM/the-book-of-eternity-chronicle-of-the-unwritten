@@ -33,3 +33,12 @@ export function mergeNetworkLocalPreferences(
     }
     return result;
 }
+
+/** Compare the host-owned rule fields while allowing independent UI edits. */
+export function sharedSettingsEqual(a: GameSettings | null, b: GameSettings | null): boolean {
+    if (!a || !b) return a === b;
+    const keys = (settings: GameSettings) => Object.keys(settings).filter(key => !isLocalPreferenceKey(key));
+    const aKeys = keys(a), bKeys = keys(b);
+    return aKeys.length === bKeys.length && aKeys.every(key => Object.prototype.hasOwnProperty.call(b, key) &&
+        (a as unknown as Record<string, unknown>)[key] === (b as unknown as Record<string, unknown>)[key]);
+}

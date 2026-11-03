@@ -1,5 +1,5 @@
 import { networkSafeSaveFile } from '../utils/networkSavePrivacy';
-import { isLocalPreferenceKey, mergeNetworkLocalPreferences, updateLocalPreferences } from '../utils/localGamePreferences';
+import { isLocalPreferenceKey, mergeNetworkLocalPreferences, updateLocalPreferences, sharedSettingsEqual } from '../utils/localGamePreferences';
 import { PresentationJournal } from '../utils/presentationJournal';
 import { beginGameplayMutation, gameplayMutationCommitted, clientLocalEditBlocked, guardGameplayActions } from '../utils/gameplayMutationGate';
 import { HostTurnAuthority, type TurnSyncStamp } from '../utils/networkTurnProtocol';
@@ -88,6 +88,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [gameplayMutationEpoch, setGameplayMutationEpoch] = useState(0);
     const mutationMessageRef = useRef({ delivery: '', host: '', client: '' });
     const hostHistoryHoldRef = useRef<(() => void) | null>(null);
+    const hostContextHoldRef = useRef<(() => void) | null>(null);
+    const contextEditRef = useRef({
+        settings: { revision: 0, applied: 0, expected: null as GameSettings | null },
+        instructions: { revision: 0, applied: 0, expected: '' }
+    });
+    const [contextEditEpoch, setContextEditEpoch] = useState(0);
+    const contextEditGenerationRef = useRef(0);
     const hostTurnAuthorityRef = useRef<HostTurnAuthority | null>(null);
     if (!hostTurnAuthorityRef.current) hostTurnAuthorityRef.current = new HostTurnAuthority();
     const clientTurnStampRef = useRef<TurnSyncStamp | null>(null);
@@ -113,6 +120,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         pendingPeerCharacterIdsRef.current.clear();
         hostHistoryHoldRef.current?.();
         hostHistoryHoldRef.current = null;
+        hostContextHoldRef.current?.();
+        hostContextHoldRef.current = null;
         pendingSyncRequestRef.current = null;
         queuedHostSyncRequestsRef.current.clear();
         presentationJournalRef.current.clear();
@@ -202,6 +211,45 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
     const localPreferencesRef = useRef<Partial<GameSettings>>({});
     const [superInstructions, setSuperInstructions] = useState<string>('');
+    // Separate context setters must invalidate authority before React can defer
+    // them. Track each field independently so a partial commit cannot release
+    // the hold. Local UI preference updates are intentionally not included.
+    const beginSharedContextEdit = useCallback((field: 'settings' | 'instructions') => {
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
+            gameStateRef.current?.networkRole, turnPhaseRef.current);
+        if (revision === null) throw new Error('Shared context mutation unexpectedly blocked');
+        const entry = contextEditRef.current[field];
+        const generation = contextEditGenerationRef.current;
+        entry.revision = revision;
+        if (gameStateRef.current?.networkRole === 'host' && !hostContextHoldRef.current) {
+            hostContextHoldRef.current = hostTurnAuthorityRef.current!.beginMutation();
+        }
+        if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
+        return <T,>(value: T): T => {
+            if (generation === contextEditGenerationRef.current) {
+                if (revision >= entry.applied) {
+                    entry.applied = revision;
+                    (entry as unknown as { expected: T }).expected = value;
+                }
+                gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, revision);
+                // A same-value update may bail out of rendering. Schedule a
+                // post-updater commit check even in that case.
+                queueMicrotask(() => setContextEditEpoch(epoch => epoch + 1));
+            }
+            return value;
+        };
+    }, []);
+    const clearPendingContextEdits = useCallback(() => {
+        contextEditGenerationRef.current++;
+        const edits = contextEditRef.current;
+        edits.settings.revision = edits.settings.applied = 0;
+        edits.instructions.revision = edits.instructions.applied = 0;
+        // Other pending user edits have their own state/history commit checks.
+        gameplayMutationAppliedRef.current = gameplayMutationRevisionRef.current;
+        hostContextHoldRef.current?.();
+        hostContextHoldRef.current = null;
+        if (gameplayMutationPendingRef.current) setContextEditEpoch(epoch => epoch + 1);
+    }, []);
     const [gameHistory, _setGameHistory] = useState<ChatMessage[]>([]);
     const gameHistoryRef = useRef(gameHistory);
     const setGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
@@ -307,19 +355,29 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const gameContextRef = useRef<GameContext | null>(null);
 
     useEffect(() => {
-        if (gameHistoryRef.current === gameHistory &&
+        const contextEdits = contextEditRef.current;
+        const settingsCommitted = contextEdits.settings.applied === contextEdits.settings.revision &&
+            (contextEdits.settings.revision === 0 || sharedSettingsEqual(gameSettings, contextEdits.settings.expected));
+        const instructionsCommitted = contextEdits.instructions.applied === contextEdits.instructions.revision &&
+            (contextEdits.instructions.revision === 0 || superInstructions === contextEdits.instructions.expected);
+        if (settingsCommitted && instructionsCommitted && gameHistoryRef.current === gameHistory &&
             stateMutationAppliedRef.current === stateMutationRevisionRef.current &&
             historyMutationAppliedRef.current === historyMutationRevisionRef.current) {
             if (gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
                 gameplayMutationRevisionRef, gameState, gameStateRef.current)) {
-                if (hostHistoryHoldRef.current) {
-                    hostHistoryHoldRef.current();
-                    hostHistoryHoldRef.current = null;
-                    setSnapshotEpoch(epoch => epoch + 1);
-                }
+                contextEditGenerationRef.current++;
+                contextEdits.settings.revision = contextEdits.settings.applied = 0;
+                contextEdits.instructions.revision = contextEdits.instructions.applied = 0;
+                const releaseHistory = hostHistoryHoldRef.current;
+                const releaseContext = hostContextHoldRef.current;
+                hostHistoryHoldRef.current = null;
+                hostContextHoldRef.current = null;
+                releaseHistory?.();
+                releaseContext?.();
+                if (releaseHistory || releaseContext || gameState?.networkRole === 'host') setSnapshotEpoch(epoch => epoch + 1);
             }
         }
-    }, [gameState, gameHistory, gameplayMutationEpoch]);
+    }, [gameState, gameHistory, gameSettings, superInstructions, gameplayMutationEpoch, contextEditEpoch]);
 
     useEffect(() => {
         if (gameState) {
@@ -421,6 +479,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const restoreFromSaveData = useCallback((data: SaveFile, isNetworkSync: boolean = false, networkIdentityOverride?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => {
         syncRevisionRef.current += 1;
         if (!isNetworkSync) {
+            clearPendingContextEdits();
             localPreferencesRef.current = {};
             presentationJournalRef.current.clear();
             pendingClientSyncRef.current = null;
@@ -949,7 +1008,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
         return restored;
 
-    }, [setLanguage, t, setGameState, setWorldState, setGameSettings, setSuperInstructions, setGameHistory, setGameLog, setCombatLog, setLastJsonResponse, setSceneImagePrompt, setWorldMap, setVisitedLocations, setTurnNumber, setIsLoading, setError, language]);
+    }, [clearPendingContextEdits, setLanguage, t, setGameState, setWorldState, setGameSettings, setSuperInstructions, setGameHistory, setGameLog, setCombatLog, setLastJsonResponse, setSceneImagePrompt, setWorldMap, setVisitedLocations, setTurnNumber, setIsLoading, setError, language]);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastSavedTurnRef = useRef<number | null>(null);
@@ -1319,7 +1378,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         // unrelated in-flight snapshot.
         if (syncRequestId) queuedHostSyncRequestsRef.current.add(syncRequestId);
         // An asynchronously retained snapshot must never receive a fresh grant.
-        if (saveData.gameState !== currentGameState) return Promise.resolve();
+        if (saveData.gameState !== currentGameState || gameplayMutationPendingRef.current) return Promise.resolve();
         const stamp = hostTurnAuthorityRef.current!.issue();
         // A pending React mutation means this snapshot might be stale. The
         // state-change effect publishes the committed snapshot after render.
@@ -1416,6 +1475,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 hostConnectionRef,
                 setIsLoading,
                 activeTurnRef,
+                gameplayMutationPendingRef,
                 abortControllerRef,
                 turnPhaseRef,
                 hostTurnAuthority: hostTurnAuthorityRef.current!,
@@ -1556,12 +1616,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const updateGameSettings = useCallback((newSettings: Partial<GameSettings>) => {
         // Local display/media preferences are not game-rule edits. Shared
         // rules must stay host-owned until they have an authoritative protocol.
-        if (Object.keys(newSettings).some(key => !isLocalPreferenceKey(key)) && userGameplayActionBlocked()) return;
+        const shared = Object.keys(newSettings).some(key => !isLocalPreferenceKey(key));
+        if (shared && userGameplayActionBlocked()) return;
+        const applied = shared ? beginSharedContextEdit('settings') : null;
         // Record before scheduling the React update so a racing host snapshot
         // cannot erase a local preference that has not committed yet.
         updateLocalPreferences(localPreferencesRef.current, newSettings);
         setGameSettings(prevSettings => {
-            if (!prevSettings) return prevSettings;
+            if (!prevSettings) return applied ? applied(prevSettings) : prevSettings;
 
             if (newSettings.notificationSound === true && prevSettings.notificationSound === false) {
                 initializeAndPreviewSound();
@@ -1569,14 +1631,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             const updatedSettings = { ...prevSettings, ...newSettings };
 
-            return updatedSettings;
+            return applied ? applied(updatedSettings) : updatedSettings;
         });
-    }, [userGameplayActionBlocked]);
+    }, [userGameplayActionBlocked, beginSharedContextEdit]);
 
     const updateSuperInstructions = useCallback((newInstructions: string) => {
         if (userGameplayActionBlocked()) return;
-        setSuperInstructions(newInstructions);
-    }, [userGameplayActionBlocked]);
+        const applied = beginSharedContextEdit('instructions');
+        setSuperInstructions(() => applied(newInstructions));
+    }, [userGameplayActionBlocked, beginSharedContextEdit]);
 
     const editLocationData = (locationId: string, field: keyof Location, value: any) => {
         if (!gameSettings?.allowHistoryManipulation || userGameplayActionBlocked()) return;
@@ -1833,7 +1896,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         hostTurnAuthorityRef.current!.revoke();
         const saveData = allManagers.packageSaveData(gameState, false);
         if (saveData) void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
-    }, [gameState, snapshotEpoch, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt]);
+    }, [gameState, snapshotEpoch, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, worldState, worldMap, visitedLocations, turnNumber]);
 
     // A grant is usable only after React has committed the entire snapshot,
     // including the history/log closures used by the current turn manager.
