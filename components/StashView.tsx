@@ -71,6 +71,7 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                     const itemQuantityToTake = parseInt(quantities[item.existedId!] ?? '1', 10) || 1;
                     const itemTakeWeight = item.weight * itemQuantityToTake;
                     const canTake = playerCharacter.totalWeight + itemTakeWeight <= playerCharacter.maxWeight + playerCharacter.criticalExcessWeight;
+                    const requiresWholeStack = (item.isContainer || item.isSentient) && itemQuantityToTake < item.count;
                     const imagePrompt = item.custom_image_prompt || item.image_prompt || `game asset, inventory icon, ${item.quality} ${item.name}, fantasy art, plain background`;
 
                     return (
@@ -103,9 +104,9 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                                 )}
                                 <button
                                     onClick={() => onTake(item, itemQuantityToTake)}
-                                    disabled={!canTake}
+                                    disabled={!canTake || requiresWholeStack}
                                     className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold text-green-300 bg-green-600/20 rounded-md hover:bg-green-600/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600/20"
-                                    title={!canTake ? t("You still cannot carry this item. Drop something else first.") : t('Take')}
+                                    title={!canTake ? t("You still cannot carry this item. Drop something else first.") : requiresWholeStack ? t("Take the whole container or sentient stack.") : t('Take')}
                                 >
                                     <ArrowDownOnSquareIcon className="w-4 h-4" />
                                     {t('Take')}
