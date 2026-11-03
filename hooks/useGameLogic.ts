@@ -1505,6 +1505,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setIsLoading,
                 activeTurnRef,
                 gameplayMutationPendingRef,
+                hostRestorePendingRef,
                 abortControllerRef,
                 turnPhaseRef,
                 hostTurnAuthority: hostTurnAuthorityRef.current!,

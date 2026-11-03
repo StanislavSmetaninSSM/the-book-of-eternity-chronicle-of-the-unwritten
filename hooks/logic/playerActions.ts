@@ -358,12 +358,16 @@ export const createPlayerActionsManager = (
             const originalLocations = Object.values(prev) as Location[];
             delete newMap[locationId];
             Object.keys(newMap).forEach(key => {
-                if (newMap[key].adjacencyMap) {
-                    newMap[key].adjacencyMap = newMap[key].adjacencyMap!.filter(link => {
+                const location = newMap[key];
+                if (location.adjacencyMap) {
+                    const adjacencyMap = location.adjacencyMap.filter(link => {
                         if (link.targetLocationId) return link.targetLocationId !== locationId;
                         const targetLoc = resolveLinkTarget(link, originalLocations);
                         return targetLoc?.locationId !== locationId;
                     });
+                    if (adjacencyMap.length !== location.adjacencyMap.length) {
+                        newMap[key] = { ...location, adjacencyMap };
+                    }
                 }
             });
             if (gameContextRef.current) gameContextRef.current.worldMap = newMap;

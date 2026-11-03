@@ -33,6 +33,7 @@ interface MultiplayerManagerProps {
     setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
     activeTurnRef: React.MutableRefObject<symbol | null>;
     gameplayMutationPendingRef?: React.MutableRefObject<boolean>;
+    hostRestorePendingRef?: React.MutableRefObject<unknown | null>;
     abortControllerRef: React.MutableRefObject<AbortController | null>;
     turnPhaseRef: React.MutableRefObject<'idle' | 'generating' | 'sending' | 'committed' | 'awaiting-sync'>;
     hostTurnAuthority: HostTurnAuthority;
@@ -162,6 +163,45 @@ export const applyPlayerTurnResult = async (message: NetworkMessage, connectionI
     }
 };
 
+/** Validate cooperative actions against the connection and current host state.
+ * These legacy messages have no revision or delivery acknowledgement; this
+ * only prevents spoofed authors/targets and malformed payloads. */
+export function applyCoopMessage(state: GameState | null, conn: Pick<DataConnection, 'peer' | 'metadata'>, message: NetworkMessage): GameState | null {
+    if (!state || state.networkRole !== 'host' || conn.metadata?.role !== 'player' ||
+        message.senderId !== conn.peer || !Array.isArray(state.players)) return null;
+    const players = state.players.filter(player => player && player.playerId === conn.peer);
+    if (players.length !== 1 || !message.payload || typeof message.payload !== 'object' || Array.isArray(message.payload)) return null;
+    const payload = message.payload;
+    const text = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= 32000;
+    switch (message.type) {
+        case 'request_collective_action': {
+            if (state.collectiveActionState?.isActive || !text(payload.prompt) || !Array.isArray(payload.participantIds) ||
+                payload.participantIds.length === 0 || payload.participantIds.length > state.players.length ||
+                new Set(payload.participantIds).size !== payload.participantIds.length || !payload.participantIds.includes(conn.peer) ||
+                !payload.participantIds.every((id: unknown) => typeof id === 'string' && state.players.filter(player => player?.playerId === id).length === 1)) return null;
+            const collectiveActionState: CollectiveActionState = { isActive: true, initiatorId: conn.peer,
+                initiatorName: players[0].name, prompt: payload.prompt, participantIds: [...payload.participantIds], actions: {} };
+            return { ...state, collectiveActionState };
+        }
+        case 'submit_collective_action': {
+            const collective = state.collectiveActionState;
+            if (!collective?.isActive || !Array.isArray(collective.participantIds) || !collective.participantIds.includes(conn.peer) || !text(payload.action)) return null;
+            return { ...state, collectiveActionState: { ...collective, actions: { ...collective.actions, [conn.peer]: payload.action } } };
+        }
+        case 'request_simultaneous_action': {
+            if (state.simultaneousActionState?.isActive) return null;
+            const simultaneousActionState: SimultaneousActionState = { isActive: true, actions: {} };
+            return { ...state, simultaneousActionState };
+        }
+        case 'simultaneous_action_submit': {
+            const simultaneous = state.simultaneousActionState;
+            if (!simultaneous?.isActive || !text(payload.action)) return null;
+            return { ...state, simultaneousActionState: { ...simultaneous, actions: { ...simultaneous.actions, [conn.peer]: payload.action } } };
+        }
+        default: return null;
+    }
+}
+
 export const createMultiplayerManager = (
     {
         setGameState,
@@ -184,6 +224,7 @@ export const createMultiplayerManager = (
         setIsLoading,
         activeTurnRef,
         gameplayMutationPendingRef,
+        hostRestorePendingRef,
         abortControllerRef,
         turnPhaseRef,
         hostTurnAuthority,
@@ -200,6 +241,21 @@ export const createMultiplayerManager = (
         onChatMessage
     }: MultiplayerManagerProps
 ) => {
+
+    const dispatchCoopMessage = (conn: DataConnection, message: NetworkMessage) => {
+        if (hostRestorePendingRef?.current || !applyCoopMessage(gameStateRef.current, conn, message)) {
+            // A receipt that is explicitly refused is not an acknowledgement of
+            // other actions, nor a guarantee that this reply reaches the peer.
+            void sendOnOpenConnection(conn, { type: 'coop_action_rejected', payload: {} }).catch(error =>
+                console.warn('Could not deliver cooperative action rejection:', error));
+            return;
+        }
+        setGameState(previous => {
+            // Connection or participants can change before React applies the updater.
+            if (!conn.open || connectionsRef.current.get(conn.peer) !== conn) return previous;
+            return applyCoopMessage(previous, conn, message) ?? previous;
+        });
+    };
 
     const handlePeerClose = (conn: DataConnection) => {
         // A delayed close from an old connection must not remove a reconnect.
@@ -301,53 +357,11 @@ export const createMultiplayerManager = (
                         });
                         break;
                     }
-                    case 'request_collective_action': {
-                        const { participantIds, prompt, initiatorId, initiatorName } = message.payload;
-                        setGameState(prevState => {
-                            if (!prevState) return null;
-                            const newCollectiveState: CollectiveActionState = {
-                                isActive: true,
-                                initiatorId: initiatorId,
-                                initiatorName: initiatorName,
-                                prompt: prompt,
-                                participantIds: participantIds,
-                                actions: {}
-                            };
-                            return { ...prevState, collectiveActionState: newCollectiveState };
-                        });
-                        break;
-                    }
-                    case 'submit_collective_action': {
-                        const { action } = message.payload;
-                        const senderId = message.senderId!;
-                        setGameState(prevState => {
-                            if (!prevState || !prevState.collectiveActionState?.isActive) return prevState;
-                            const newActions = { ...prevState.collectiveActionState.actions, [senderId]: action };
-                            const newCollectiveState = { ...prevState.collectiveActionState, actions: newActions };
-                            return { ...prevState, collectiveActionState: newCollectiveState };
-                        });
-                        break;
-                    }
-                    case 'request_simultaneous_action': {
-                        setGameState(prevState => {
-                            if (!prevState) return null;
-                            const newSimultaneousState: SimultaneousActionState = {
-                                isActive: true,
-                                actions: {}
-                            };
-                            return { ...prevState, simultaneousActionState: newSimultaneousState };
-                        });
-                        break;
-                    }
+                    case 'request_collective_action':
+                    case 'submit_collective_action':
+                    case 'request_simultaneous_action':
                     case 'simultaneous_action_submit': {
-                        const { action } = message.payload;
-                        const senderId = message.senderId!;
-                        setGameState(prevState => {
-                            if (!prevState || !prevState.simultaneousActionState?.isActive) return prevState;
-                            const newActions = { ...prevState.simultaneousActionState.actions, [senderId]: action };
-                            const newSimultaneousState = { ...prevState.simultaneousActionState, actions: newActions };
-                            return { ...prevState, simultaneousActionState: newSimultaneousState };
-                        });
+                        dispatchCoopMessage(conn, message);
                         break;
                     }
                 }
@@ -427,6 +441,10 @@ export const createMultiplayerManager = (
                         requestSyncFromHost();
                         break;
                     }
+
+                    case 'coop_action_rejected':
+                        setError(t('coop_action_rejected'));
+                        break;
 
                     case 'chat_message':
                         onChatMessage(message.payload);
@@ -626,53 +644,11 @@ export const createMultiplayerManager = (
                         }
                         break;
                     }
-                    case 'request_collective_action': {
-                        const { participantIds, prompt, initiatorId, initiatorName } = message.payload;
-                        setGameState(prevState => {
-                            if (!prevState) return null;
-                            const newCollectiveState: CollectiveActionState = {
-                                isActive: true,
-                                initiatorId: initiatorId,
-                                initiatorName: initiatorName,
-                                prompt: prompt,
-                                participantIds: participantIds,
-                                actions: {}
-                            };
-                            return { ...prevState, collectiveActionState: newCollectiveState };
-                        });
-                        break;
-                    }
-                    case 'submit_collective_action': {
-                        const { action } = message.payload;
-                        const senderId = message.senderId!;
-                        setGameState(prevState => {
-                            if (!prevState || !prevState.collectiveActionState?.isActive) return prevState;
-                            const newActions = { ...prevState.collectiveActionState.actions, [senderId]: action };
-                            const newCollectiveState = { ...prevState.collectiveActionState, actions: newActions };
-                            return { ...prevState, collectiveActionState: newCollectiveState };
-                        });
-                        break;
-                    }
-                    case 'request_simultaneous_action': {
-                        setGameState(prevState => {
-                            if (!prevState) return null;
-                            const newSimultaneousState: SimultaneousActionState = {
-                                isActive: true,
-                                actions: {}
-                            };
-                            return { ...prevState, simultaneousActionState: newSimultaneousState };
-                        });
-                        break;
-                    }
+                    case 'request_collective_action':
+                    case 'submit_collective_action':
+                    case 'request_simultaneous_action':
                     case 'simultaneous_action_submit': {
-                        const { action } = message.payload;
-                        const senderId = message.senderId!;
-                        setGameState(prevState => {
-                            if (!prevState || !prevState.simultaneousActionState?.isActive) return prevState;
-                            const newActions = { ...prevState.simultaneousActionState.actions, [senderId]: action };
-                            const newSimultaneousState = { ...prevState.simultaneousActionState, actions: newActions };
-                            return { ...prevState, simultaneousActionState: newSimultaneousState };
-                        });
+                        dispatchCoopMessage(conn, message);
                         break;
                     }
                 }

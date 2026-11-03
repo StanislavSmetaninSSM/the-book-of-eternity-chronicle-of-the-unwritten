@@ -1363,6 +1363,7 @@ export type NetworkMessageType =
   'submit_collective_action' |
   'request_simultaneous_action' |
   'simultaneous_action_submit' |
+  'coop_action_rejected' |
   'turn_result_from_player' |
   'turn_result_ack';
 
