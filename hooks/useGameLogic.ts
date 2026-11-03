@@ -91,7 +91,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const hostContextHoldRef = useRef<(() => void) | null>(null);
     const contextEditRef = useRef({
         settings: { revision: 0, applied: 0, expected: null as GameSettings | null },
-        instructions: { revision: 0, applied: 0, expected: '' }
+        instructions: { revision: 0, applied: 0, expected: '' },
+        world: { revision: 0, applied: 0, expected: null as WorldState | null },
+        map: { revision: 0, applied: 0, expected: {} as Record<string, Location> },
+        visited: { revision: 0, applied: 0, expected: [] as Location[] }
     });
     const [contextEditEpoch, setContextEditEpoch] = useState(0);
     const contextEditGenerationRef = useRef(0);
@@ -214,7 +217,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // Separate context setters must invalidate authority before React can defer
     // them. Track each field independently so a partial commit cannot release
     // the hold. Local UI preference updates are intentionally not included.
-    const beginSharedContextEdit = useCallback((field: 'settings' | 'instructions') => {
+    const beginSharedContextEdit = useCallback((field: 'settings' | 'instructions' | 'world' | 'map' | 'visited') => {
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
             gameStateRef.current?.networkRole, turnPhaseRef.current);
         if (revision === null) throw new Error('Shared context mutation unexpectedly blocked');
@@ -244,6 +247,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const edits = contextEditRef.current;
         edits.settings.revision = edits.settings.applied = 0;
         edits.instructions.revision = edits.instructions.applied = 0;
+        edits.world.revision = edits.world.applied = 0;
+        edits.map.revision = edits.map.applied = 0;
+        edits.visited.revision = edits.visited.applied = 0;
         // Other pending user edits have their own state/history commit checks.
         gameplayMutationAppliedRef.current = gameplayMutationRevisionRef.current;
         hostContextHoldRef.current?.();
@@ -295,6 +301,20 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [worldMap, setWorldMap] = useState<Record<string, Location>>({});
     const [visitedLocations, setVisitedLocations] = useState<Location[]>([]);
     const [turnNumber, setTurnNumber] = useState<number | null>(null);
+    // These wrappers are only passed to guarded user actions. Turn/restore
+    // setters keep their separate lifecycle and must not self-cancel.
+    const setUserWorldState = useCallback((action: React.SetStateAction<WorldState | null>) => {
+        const applied = beginSharedContextEdit('world');
+        setWorldState(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
+    const setUserWorldMap = useCallback((action: React.SetStateAction<Record<string, Location>>) => {
+        const applied = beginSharedContextEdit('map');
+        setWorldMap(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
+    const setUserVisitedLocations = useCallback((action: React.SetStateAction<Location[]>) => {
+        const applied = beginSharedContextEdit('visited');
+        setVisitedLocations(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
     const [autosaveTimestamp, setAutosaveTimestamp] = useState<string | null>(null);
     const [crashRecoveryInfo, setCrashRecoveryInfo] = useState<CrashRecoveryMetadata | null>(null);
     const [crashRecoveryMarker, setCrashRecoveryMarker] = useState<CrashRecoveryMarker | null>(null);
@@ -360,7 +380,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             (contextEdits.settings.revision === 0 || sharedSettingsEqual(gameSettings, contextEdits.settings.expected));
         const instructionsCommitted = contextEdits.instructions.applied === contextEdits.instructions.revision &&
             (contextEdits.instructions.revision === 0 || superInstructions === contextEdits.instructions.expected);
-        if (settingsCommitted && instructionsCommitted && gameHistoryRef.current === gameHistory &&
+        const worldCommitted = contextEdits.world.applied === contextEdits.world.revision &&
+            (contextEdits.world.revision === 0 || worldState === contextEdits.world.expected);
+        const mapCommitted = contextEdits.map.applied === contextEdits.map.revision &&
+            (contextEdits.map.revision === 0 || worldMap === contextEdits.map.expected);
+        const visitedCommitted = contextEdits.visited.applied === contextEdits.visited.revision &&
+            (contextEdits.visited.revision === 0 || visitedLocations === contextEdits.visited.expected);
+        if (settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameHistoryRef.current === gameHistory &&
             stateMutationAppliedRef.current === stateMutationRevisionRef.current &&
             historyMutationAppliedRef.current === historyMutationRevisionRef.current) {
             if (gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
@@ -368,6 +394,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 contextEditGenerationRef.current++;
                 contextEdits.settings.revision = contextEdits.settings.applied = 0;
                 contextEdits.instructions.revision = contextEdits.instructions.applied = 0;
+                contextEdits.world.revision = contextEdits.world.applied = 0;
+                contextEdits.map.revision = contextEdits.map.applied = 0;
+                contextEdits.visited.revision = contextEdits.visited.applied = 0;
                 const releaseHistory = hostHistoryHoldRef.current;
                 const releaseContext = hostContextHoldRef.current;
                 hostHistoryHoldRef.current = null;
@@ -377,7 +406,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 if (releaseHistory || releaseContext || gameState?.networkRole === 'host') setSnapshotEpoch(epoch => epoch + 1);
             }
         }
-    }, [gameState, gameHistory, gameSettings, superInstructions, gameplayMutationEpoch, contextEditEpoch]);
+    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameplayMutationEpoch, contextEditEpoch]);
 
     useEffect(() => {
         if (gameState) {
@@ -1442,8 +1471,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setGameState, gameContextRef, t, gameState
             }), userGameplayActionBlocked),
             ...guardGameplayActions(createPlayerActionsManager({
-                setGameState, setGameHistory, setUserGameHistory, setGameLog, setCombatLog, setVisitedLocations,
-                setWorldMap, setWorldState, gameSettings, gameContextRef, t
+                setGameState, setGameHistory, setUserGameHistory, setGameLog, setCombatLog, setVisitedLocations: setUserVisitedLocations,
+                setWorldMap: setUserWorldMap, setWorldState: setUserWorldState, gameSettings, gameContextRef, t
             }), userGameplayActionBlocked),
             ...createMusicManager({
                 gameContextRef, setError, t, setGameLog, setMusicPrompt,
@@ -1644,7 +1673,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const editLocationData = (locationId: string, field: keyof Location, value: any) => {
         if (!gameSettings?.allowHistoryManipulation || userGameplayActionBlocked()) return;
 
-        setWorldMap(prevMap => {
+        setUserWorldMap(prevMap => {
             const newMap = { ...prevMap };
             if (newMap[locationId]) {
                 newMap[locationId] = { ...newMap[locationId], [field]: value };
@@ -1655,7 +1684,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return newMap;
         });
 
-        setVisitedLocations(prev => {
+        setUserVisitedLocations(prev => {
             const newLocations = prev.map(loc => loc.locationId === locationId ? { ...loc, [field]: value } : loc);
             if (gameContextRef.current) {
                 gameContextRef.current.visitedLocations = newLocations;
@@ -2350,7 +2379,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return location;
         };
 
-        setWorldMap(prevMap => {
+        setUserWorldMap(prevMap => {
             const newMap = { ...prevMap };
             if (newMap[locationId]) {
                 newMap[locationId] = updater(newMap[locationId]);
@@ -2373,7 +2402,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return prevState;
         });
 
-        setVisitedLocations(prev => {
+        setUserVisitedLocations(prev => {
             const newLocations = prev.map(loc => loc.locationId === locationId ? updater(loc) : loc);
             if (gameContextRef.current) {
                 gameContextRef.current.visitedLocations = newLocations;
@@ -2381,7 +2410,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return newLocations;
         });
 
-    }, [gameSettings, setGameState, setWorldMap, setVisitedLocations]);
+    }, [gameSettings, setGameState, setUserWorldMap, setUserVisitedLocations, userGameplayActionBlocked]);
 
     const deleteFactionBonus = useCallback((factionId: string, bonusIdentifier: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
