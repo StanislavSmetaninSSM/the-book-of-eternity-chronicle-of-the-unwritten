@@ -117,6 +117,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const pendingPeerCharactersRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
     const pendingPeerCharacterIdsRef = useRef(new Set<string>());
     const pendingPeerCharacterCommitsRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
+    const pendingPeerJoinCommitsRef = useRef(new Map<string, { peer: PeerInfo; connection: DataConnection }>());
     const [hostRestoreEpoch, setHostRestoreEpoch] = useState(0);
     const clearHostRestorePending = useCallback(() => {
         hostRestorePendingRef.current = null;
@@ -125,6 +126,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         pendingPeerCharactersRef.current.clear();
         pendingPeerCharacterIdsRef.current.clear();
         pendingPeerCharacterCommitsRef.current.clear();
+        pendingPeerJoinCommitsRef.current.clear();
         hostHistoryHoldRef.current?.();
         hostHistoryHoldRef.current = null;
         hostContextHoldRef.current?.();
@@ -1223,6 +1225,24 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
         }
     }, [gameState, gameplayMutationEpoch, setUserGameHistory, t]);
+
+    useEffect(() => {
+        if (gameplayMutationPendingRef.current || hostRestorePendingRef.current ||
+            gameState?.networkRole !== 'host' || gameState !== gameStateRef.current) return;
+        for (const [peerId, entry] of pendingPeerJoinCommitsRef.current) {
+            pendingPeerJoinCommitsRef.current.delete(peerId);
+            if (gameState.peers.includes(entry.peer)) {
+                setUserGameHistory(previous => [...previous, {
+                    sender: 'system', content: t('player_has_connected', { name: entry.peer.name })
+                }]);
+            }
+        }
+        // A connection can open before the host's initial state exists.
+        for (const [peerId, connection] of pendingNewPeersRef.current) {
+            pendingNewPeersRef.current.delete(peerId);
+            if (connection.open && connectionsRef.current.get(peerId) === connection) syncNewPeerRef.current(connection);
+        }
+    }, [gameState, gameplayMutationEpoch, hostRestoreEpoch, setUserGameHistory, t]);
 
     const removePlayer = useCallback((playerIdToRemove: string) => {
         setGameState(prevState => {
@@ -2564,34 +2584,23 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const closeCinemaPlayer = stopPlayingCinematic;
 
     const syncNewPeer = useCallback((conn: DataConnection) => {
-        if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
+        if (!conn.open || connectionsRef.current.get(conn.peer) !== conn) return;
+        const current = gameStateRef.current;
+        if (!current || hostRestorePendingRef.current) {
             pendingNewPeersRef.current.set(conn.peer, conn);
             return;
         }
-        const newPeer: PeerInfo = { id: conn.peer, name: conn.metadata.playerName || `Player-${conn.peer.slice(-4)}` };
-
+        if (current.networkRole !== 'host') return;
+        const newPeer: PeerInfo = { id: conn.peer, name: conn.metadata?.playerName || `Player-${conn.peer.slice(-4)}` };
+        pendingPeerJoinCommitsRef.current.set(conn.peer, { peer: newPeer, connection: conn });
         setGameState(prev => {
-            if (!prev) {
-                console.warn("syncNewPeer called before gameState is initialized. Peer will not be synced yet.");
-                return null;
-            }
+            if (!prev || prev.networkRole !== 'host' || !conn.open || connectionsRef.current.get(conn.peer) !== conn) return prev;
             const updatedPeers = [...prev.peers.filter(p => p.id !== newPeer.id), newPeer];
             return { ...prev, peers: updatedPeers };
         });
-
-        const connectMessage: ChatMessage = { sender: 'system', content: t('player_has_connected', { name: newPeer.name }) };
-        setGameHistory(prev => [...prev, connectMessage]);
-
-        // CRITICAL FIX: When syncing a new peer, we perform a full save package BUT with performGC=false.
-        // This is safer/faster and prevents any potential image loss during the sync process.
-        const saveData = allManagers.packageSaveData(gameStateRef.current!, false);
-        
-        if (saveData) {
-            void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
-        } else {
-            console.warn("Could not package save data for new peer, game state might be null. This can happen if a player connects during initial world generation.");
-        }
-    }, [allManagers, t, setGameState, setGameHistory]);
+        // The normal post-commit host effect publishes the fresh snapshot.
+        // Sending here would package a possibly stale React closure.
+    }, [setGameState]);
 
     useEffect(() => {
         syncNewPeerRef.current = syncNewPeer;
