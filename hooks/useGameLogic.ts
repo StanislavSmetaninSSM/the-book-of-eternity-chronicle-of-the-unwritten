@@ -118,6 +118,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const pendingPeerCharacterIdsRef = useRef(new Set<string>());
     const pendingPeerCharacterCommitsRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
     const pendingPeerJoinCommitsRef = useRef(new Map<string, { peer: PeerInfo; connection: DataConnection }>());
+    const pendingPeerDisconnectCommitsRef = useRef(new Map<string, PeerInfo>());
     const [hostRestoreEpoch, setHostRestoreEpoch] = useState(0);
     const clearHostRestorePending = useCallback(() => {
         hostRestorePendingRef.current = null;
@@ -127,6 +128,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         pendingPeerCharacterIdsRef.current.clear();
         pendingPeerCharacterCommitsRef.current.clear();
         pendingPeerJoinCommitsRef.current.clear();
+        pendingPeerDisconnectCommitsRef.current.clear();
         hostHistoryHoldRef.current?.();
         hostHistoryHoldRef.current = null;
         hostContextHoldRef.current?.();
@@ -1237,6 +1239,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 }]);
             }
         }
+        for (const [peerId, peer] of pendingPeerDisconnectCommitsRef.current) {
+            pendingPeerDisconnectCommitsRef.current.delete(peerId);
+            if (!connectionsRef.current.has(peerId) && !gameState.peers.some(entry => entry.id === peerId)) {
+                setUserGameHistory(previous => [...previous, {
+                    sender: 'system', content: t('player_has_disconnected', { name: peer.name || peerId })
+                }]);
+            }
+        }
         // A connection can open before the host's initial state exists.
         for (const [peerId, connection] of pendingNewPeersRef.current) {
             pendingNewPeersRef.current.delete(peerId);
@@ -1287,13 +1297,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             pendingRemovedPeersRef.current.add(peerId);
             return;
         }
+        const peer = gameStateRef.current.peers.find(entry => entry.id === peerId);
+        if (!peer) return;
+        pendingPeerDisconnectCommitsRef.current.set(peerId, peer);
         setGameState(prev => {
-            if (!prev || !prev.peers.some(peer => peer.id === peerId)) return prev;
-            const peer = prev.peers.find(entry => entry.id === peerId);
-            setGameHistory(history => [...history, { sender: 'system', content: t('player_has_disconnected', { name: peer?.name || peerId }) }]);
+            // A reconnect can happen after the close handler, before React
+            // executes this updater. Never remove the replacement peer.
+            if (!prev || prev.networkRole !== 'host' || connectionsRef.current.has(peerId) ||
+                !prev.peers.some(entry => entry.id === peerId)) return prev;
             return { ...prev, peers: prev.peers.filter(entry => entry.id !== peerId) };
         });
-    }, [setGameState, setGameHistory, t]);
+    }, [setGameState]);
     const handlePeerDisconnectedRef = useRef(handlePeerDisconnected);
     handlePeerDisconnectedRef.current = handlePeerDisconnected;
 
