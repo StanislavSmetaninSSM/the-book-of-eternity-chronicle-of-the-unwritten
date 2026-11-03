@@ -94,7 +94,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         instructions: { revision: 0, applied: 0, expected: '' },
         world: { revision: 0, applied: 0, expected: null as WorldState | null },
         map: { revision: 0, applied: 0, expected: {} as Record<string, Location> },
-        visited: { revision: 0, applied: 0, expected: [] as Location[] }
+        visited: { revision: 0, applied: 0, expected: [] as Location[] },
+        gameLog: { revision: 0, applied: 0, expected: [] as string[] },
+        combatLog: { revision: 0, applied: 0, expected: [] as string[] }
     });
     const [contextEditEpoch, setContextEditEpoch] = useState(0);
     const contextEditGenerationRef = useRef(0);
@@ -217,7 +219,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // Separate context setters must invalidate authority before React can defer
     // them. Track each field independently so a partial commit cannot release
     // the hold. Local UI preference updates are intentionally not included.
-    const beginSharedContextEdit = useCallback((field: 'settings' | 'instructions' | 'world' | 'map' | 'visited') => {
+    const beginSharedContextEdit = useCallback((field: 'settings' | 'instructions' | 'world' | 'map' | 'visited' | 'gameLog' | 'combatLog') => {
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
             gameStateRef.current?.networkRole, turnPhaseRef.current);
         if (revision === null) throw new Error('Shared context mutation unexpectedly blocked');
@@ -250,6 +252,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         edits.world.revision = edits.world.applied = 0;
         edits.map.revision = edits.map.applied = 0;
         edits.visited.revision = edits.visited.applied = 0;
+        edits.gameLog.revision = edits.gameLog.applied = 0;
+        edits.combatLog.revision = edits.combatLog.applied = 0;
         // Other pending user edits have their own state/history commit checks.
         gameplayMutationAppliedRef.current = gameplayMutationRevisionRef.current;
         hostContextHoldRef.current?.();
@@ -296,6 +300,27 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [lastRequestJson, setLastRequestJson] = useState<string | null>(null);
     const [gameLog, setGameLog] = useState<string[]>([]);
     const [combatLog, setCombatLog] = useState<string[]>([]);
+    // User log clearing shares the same pre-commit authority barrier as other
+    // gameplay edits. Independent media messages may prepend to its result.
+    const setUserGameLog = useCallback((action: React.SetStateAction<string[]>) => {
+        const applied = beginSharedContextEdit('gameLog');
+        setGameLog(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
+    const setUserCombatLog = useCallback((action: React.SetStateAction<string[]>) => {
+        const applied = beginSharedContextEdit('combatLog');
+        setCombatLog(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
+    const setPresentationGameLog = useCallback((action: React.SetStateAction<string[]>) => {
+        setGameLog(previous => {
+            const next = typeof action === 'function' ? action(previous) : action;
+            const pending = contextEditRef.current.gameLog;
+            if (pending.revision !== 0 && pending.applied === pending.revision && previous === pending.expected) {
+                pending.expected = next;
+                queueMicrotask(() => setContextEditEpoch(epoch => epoch + 1));
+            }
+            return next;
+        });
+    }, []);
     const [sceneImagePrompt, setSceneImagePrompt] = useState<string | null>(null);
     const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
     const [worldMap, setWorldMap] = useState<Record<string, Location>>({});
@@ -386,7 +411,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             (contextEdits.map.revision === 0 || worldMap === contextEdits.map.expected);
         const visitedCommitted = contextEdits.visited.applied === contextEdits.visited.revision &&
             (contextEdits.visited.revision === 0 || visitedLocations === contextEdits.visited.expected);
-        if (settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameHistoryRef.current === gameHistory &&
+        const gameLogCommitted = contextEdits.gameLog.applied === contextEdits.gameLog.revision &&
+            (contextEdits.gameLog.revision === 0 || gameLog === contextEdits.gameLog.expected);
+        const combatLogCommitted = contextEdits.combatLog.applied === contextEdits.combatLog.revision &&
+            (contextEdits.combatLog.revision === 0 || combatLog === contextEdits.combatLog.expected);
+        if (settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameLogCommitted && combatLogCommitted && gameHistoryRef.current === gameHistory &&
             stateMutationAppliedRef.current === stateMutationRevisionRef.current &&
             historyMutationAppliedRef.current === historyMutationRevisionRef.current) {
             if (gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
@@ -397,6 +426,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 contextEdits.world.revision = contextEdits.world.applied = 0;
                 contextEdits.map.revision = contextEdits.map.applied = 0;
                 contextEdits.visited.revision = contextEdits.visited.applied = 0;
+                contextEdits.gameLog.revision = contextEdits.gameLog.applied = 0;
+                contextEdits.combatLog.revision = contextEdits.combatLog.applied = 0;
                 const releaseHistory = hostHistoryHoldRef.current;
                 const releaseContext = hostContextHoldRef.current;
                 hostHistoryHoldRef.current = null;
@@ -406,7 +437,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 if (releaseHistory || releaseContext || gameState?.networkRole === 'host') setSnapshotEpoch(epoch => epoch + 1);
             }
         }
-    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameplayMutationEpoch, contextEditEpoch]);
+    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameLog, combatLog, gameplayMutationEpoch, contextEditEpoch]);
 
     useEffect(() => {
         if (gameState) {
@@ -464,7 +495,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 });
     
                 if (questsWereUpdated) {
-                    setGameLog(currentLog => [...newLogs, ...currentLog]);
+                    setPresentationGameLog(currentLog => [...newLogs, ...currentLog]);
                     return {
                         ...currentGameState,
                         activeQuests: updatedActiveQuests
@@ -474,7 +505,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return currentGameState;
             });
         }
-    }, [gameState, language, setGameState, setGameLog, t]);
+    }, [gameState, language, setGameState, setPresentationGameLog, t]);
 
     useEffect(() => {
         // This effect is the SINGLE SOURCE OF TRUTH for synchronizing all relevant states to gameContextRef.
@@ -1471,11 +1502,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setGameState, gameContextRef, t, gameState
             }), userGameplayActionBlocked),
             ...guardGameplayActions(createPlayerActionsManager({
-                setGameState, setGameHistory, setUserGameHistory, setGameLog, setCombatLog, setVisitedLocations: setUserVisitedLocations,
+                setGameState, setGameHistory, setUserGameHistory, setGameLog: setUserGameLog, setCombatLog: setUserCombatLog, setVisitedLocations: setUserVisitedLocations,
                 setWorldMap: setUserWorldMap, setWorldState: setUserWorldState, gameSettings, gameContextRef, t
             }), userGameplayActionBlocked),
             ...createMusicManager({
-                gameContextRef, setError, t, setGameLog, setMusicPrompt,
+                gameContextRef, setError, t, setGameLog: setPresentationGameLog, setMusicPrompt,
                 setIsMusicLoading, setIsMusicPlayerVisible, previousMusicQueries
             }),
             ...createMultiplayerManager({
@@ -1527,7 +1558,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         };
     }, [
         gameState, gameHistory, isLoading, error, combatLog, gameLog, lastJsonResponse, sceneImagePrompt,
-        gameSettings, superInstructions, language, t, restoreFromSaveData, setGameState, setGameHistory, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, setSuperInstructions, setGameSettings, setLanguage, setAutosaveTimestamp, setDbSaveSlots, setMusicPrompt, setIsMusicLoading, setIsMusicPlayerVisible,
+        gameSettings, superInstructions, language, t, restoreFromSaveData, setGameState, setGameHistory, setUserGameLog, setUserCombatLog, setPresentationGameLog, setUserWorldMap, setUserWorldState, setUserVisitedLocations, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, setSuperInstructions, setGameSettings, setLanguage, setAutosaveTimestamp, setDbSaveSlots, setMusicPrompt, setIsMusicLoading, setIsMusicPlayerVisible,
         setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, broadcastFullSync
     ]);
 
@@ -2966,9 +2997,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             a.download = filename;
             a.click();
              URL.revokeObjectURL(url);
-            setGameLog(prev => [t('CinematicExported', { filename }), ...prev]);
+            setPresentationGameLog(prev => [t('CinematicExported', { filename }), ...prev]);
         }
-    }, [t, setGameLog, gameStateRef]);
+    }, [t, setPresentationGameLog, gameStateRef]);
 
     const importCinematic = useCallback(() => {
         const input = document.createElement('input');
@@ -2991,7 +3022,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                                     return prev;
                                 }
                                 const cinematics = [...(prev.cinematics || []), cinematic];
-                                setGameLog(p => [t('CinematicImported'), ...p]);
+                                setPresentationGameLog(p => [t('CinematicImported'), ...p]);
                                 return { ...prev, cinematics };
                             });
                         } else {
@@ -3006,16 +3037,16 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
         };
         input.click();
-    }, [t, setError, setGameLog, setPresentationState]);
+    }, [t, setError, setPresentationGameLog, setPresentationState]);
 
     const deleteCinematic = useCallback((cinematicId: string) => {
         setPresentationState(prev => {
             if (!prev) return null;
             const cinematics = (prev.cinematics || []).filter(c => c.id !== cinematicId);
-            setGameLog(p => [t('CinematicDeleted'), ...p]);
+            setPresentationGameLog(p => [t('CinematicDeleted'), ...p]);
             return { ...prev, cinematics };
         });
-    }, [setPresentationState, setGameLog, t]);
+    }, [setPresentationState, setPresentationGameLog, t]);
 
     const updateCinematic = useCallback((cinematicId: string, updates: Partial<Omit<Cinematic, 'id'>>) => {
         setPresentationState(prev => {
@@ -3026,10 +3057,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 }
                 return c;
             });
-            setGameLog(p => [t('CinematicUpdated'), ...p]);
+            setPresentationGameLog(p => [t('CinematicUpdated'), ...p]);
             return { ...prev, cinematics: newCinematics };
         });
-    }, [setPresentationState, setGameLog, t]);
+    }, [setPresentationState, setPresentationGameLog, t]);
 
     const regenerateCinemaFrame = useCallback(async (cinematicId: string, frameIndex: number, newPrompt: string): Promise<boolean> => {
         if (gameSettings?.disableImageGeneration || gameContextRef.current?.gameSettings?.disableImageGeneration) return false;
