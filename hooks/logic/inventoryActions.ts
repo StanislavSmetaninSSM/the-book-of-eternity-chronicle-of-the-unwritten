@@ -168,6 +168,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
           if (!prevState) return null;
           let newGameState = dropItemUtil(itemToDrop, prevState);
+          if (newGameState === prevState) return prevState;
           let pc = recalculateAllWeights(newGameState.playerCharacter);
           pc = recalculateDerivedStats(pc);
           newGameState.playerCharacter = pc;
@@ -182,6 +183,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
           if (!prevState) return null;
           let newGameState = moveItemUtil(itemToMove, destinationContainerId, prevState);
+            if (newGameState === prevState) return prevState;
           let pc = recalculateAllWeights(newGameState.playerCharacter);
           pc = recalculateDerivedStats(pc);
           newGameState.playerCharacter = pc;
@@ -196,6 +198,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
             let newGameState = splitItemUtil(itemToSplit, splitAmount, prevState);
+            if (newGameState === prevState) return prevState;
             let pc = recalculateAllWeights(newGameState.playerCharacter);
             pc = recalculateDerivedStats(pc);
             newGameState.playerCharacter = pc;
@@ -210,6 +213,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
             let newGameState = mergeItemUtil(sourceItem, targetItem, prevState);
+            if (newGameState === prevState) return prevState;
             let pc = recalculateAllWeights(newGameState.playerCharacter);
             pc = recalculateDerivedStats(pc);
             newGameState.playerCharacter = pc;

@@ -84,31 +84,22 @@ export const unequipItem = (itemToUnequip: Item, currentState: GameState): GameS
 };
 
 export const dropItem = (itemToDrop: Item, currentState: GameState): GameState => {
-    const newState = JSON.parse(JSON.stringify(currentState));
-    const pc = newState.playerCharacter as PlayerCharacter;
+    const id = itemToDrop.existedId;
+    if (!id) return currentState;
+    const matches = currentState.playerCharacter.inventory.filter(item => item.existedId === id);
+    // A stale UI object is only an identifier, not a source of item data. Never
+    // remove multiple records or overwrite an existing stash record with this ID.
+    if (matches.length !== 1 || currentState.temporaryStash?.some(item => item.existedId === id)) return currentState;
 
-    // 1. Unequip the item if it was equipped
+    const newState = JSON.parse(JSON.stringify(currentState)) as GameState;
+    const pc = newState.playerCharacter;
+    const item = pc.inventory.find(entry => entry.existedId === id)!;
     Object.keys(pc.equippedItems).forEach(slot => {
-        if (pc.equippedItems[slot] === itemToDrop.existedId) {
-            pc.equippedItems[slot] = null;
-        }
+        if (pc.equippedItems[slot] === id) pc.equippedItems[slot] = null;
     });
-
-    // 2. Remove the item from inventory
-    pc.inventory = pc.inventory.filter(i => i.existedId !== itemToDrop.existedId);
-
-    // 3. Add the item to the temporary stash
-    if (!newState.temporaryStash) {
-        newState.temporaryStash = [];
-    }
-    
-    // Ensure the item isn't already there before adding
-    if (!newState.temporaryStash.find(i => i.existedId === itemToDrop.existedId)) {
-        // Dropped items should not have a contentsPath. When taken back, they go to root inventory.
-        const itemForStash = { ...itemToDrop, contentsPath: null };
-        newState.temporaryStash.push(itemForStash);
-    }
-
+    pc.inventory = pc.inventory.filter(entry => entry.existedId !== id);
+    if (!newState.temporaryStash) newState.temporaryStash = [];
+    newState.temporaryStash.push({ ...item, contentsPath: null });
     return newState;
 };
 
