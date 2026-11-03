@@ -51,11 +51,11 @@ interface MultiplayerManagerProps {
 }
 
 
-export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; }
+export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; allowedGameLogs?: WeakSet<string[]>; }
 
 type GameContextWorldState = SaveFile['gameContext']['worldState'] | null;
 
-export function snapshotMatchesRendered(snapshot: SaveFile, rendered: { gameState: GameState | null; currentGameState: GameState | null; gameHistory: ChatMessage[]; gameLog: string[]; combatLog: string[]; lastJsonResponse: string | null; sceneImagePrompt: string | null; worldState: GameContextWorldState; gameSettings: GameSettings | null; superInstructions: string; worldMap: SaveFile['gameContext']['worldMap']; visitedLocations: SaveFile['gameContext']['visitedLocations']; turnNumber: number | null }): boolean {
+export function snapshotMatchesRendered(snapshot: SaveFile, rendered: { gameState: GameState | null; currentGameState: GameState | null; gameHistory: ChatMessage[]; gameLog: string[]; combatLog: string[]; lastJsonResponse: string | null; sceneImagePrompt: string | null; worldState: GameContextWorldState; gameSettings: GameSettings | null; superInstructions: string; worldMap: SaveFile['gameContext']['worldMap']; visitedLocations: SaveFile['gameContext']['visitedLocations']; turnNumber: number | null }, allowedGameLogs?: WeakSet<string[]>): boolean {
     // A superseded task can append a local system warning after restoration.
     // Its suffix is safe; the authoritative history must still be the prefix.
     const historyMatches = Array.isArray(snapshot.gameHistory) && rendered.gameHistory.length >= snapshot.gameHistory.length &&
@@ -82,13 +82,13 @@ export function snapshotMatchesRendered(snapshot: SaveFile, rendered: { gameStat
         rendered.superInstructions === context.superInstructions && rendered.worldMap === context.worldMap &&
         rendered.visitedLocations === context.visitedLocations && rendered.turnNumber === context.currentTurnNumber;
     return contextMatches && stateMatches && rendered.currentGameState === rendered.gameState &&
-        historyMatches && rendered.gameLog === snapshot.gameLog &&
+        historyMatches && (rendered.gameLog === snapshot.gameLog || allowedGameLogs?.has(rendered.gameLog) === true) &&
         rendered.combatLog === snapshot.combatLog && rendered.lastJsonResponse === snapshot.lastJsonResponse &&
         rendered.sceneImagePrompt === snapshot.sceneImagePrompt;
 }
 
 export function commitClientSnapshot(pending: PendingClientSync | null, rendered: Parameters<typeof snapshotMatchesRendered>[1]): TurnSyncStamp | null {
-    return pending && snapshotMatchesRendered(pending.snapshot, rendered) ? pending.stamp : null;
+    return pending && snapshotMatchesRendered(pending.snapshot, rendered, pending.allowedGameLogs) ? pending.stamp : null;
 }
 
 // Invalidate the usable grant before restoration. A grant is made usable only

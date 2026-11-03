@@ -1,3 +1,4 @@
+import { recordPresentationLog, type PendingPresentationLog } from '../utils/presentationLogSync';
 import { sanitizeGameState } from '../utils/sanitizeGameState';
 import { networkSafeSaveFile } from '../utils/networkSavePrivacy';
 import { isLocalPreferenceKey, mergeNetworkLocalPreferences, updateLocalPreferences, sharedSettingsEqual } from '../utils/localGamePreferences';
@@ -112,7 +113,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const pendingSyncRequestRef = useRef<string | null>(null);
     const queuedHostSyncRequestsRef = useRef(new Set<string>());
     const presentationJournalRef = useRef(new PresentationJournal());
-    const hostRestorePendingRef = useRef<{ snapshot: SaveFile | null; release: () => void } | null>(null);
+    const hostRestorePendingRef = useRef<(PendingPresentationLog & { release: () => void }) | null>(null);
     const pendingNewPeersRef = useRef(new Map<string, DataConnection>());
     const pendingRemovedPeersRef = useRef(new Set<string>());
     const pendingPeerCharactersRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
@@ -312,6 +313,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const setPresentationGameLog = useCallback((action: React.SetStateAction<string[]>) => {
         setGameLog(previous => {
             const next = typeof action === 'function' ? action(previous) : action;
+            recordPresentationLog(hostRestorePendingRef.current, previous, next);
+            recordPresentationLog(pendingClientSyncRef.current, previous, next);
             const pending = contextEditRef.current.gameLog;
             if (pending.revision !== 0 && pending.applied === pending.revision && previous === pending.expected) {
                 pending.expected = next;
@@ -2048,7 +2051,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             gameState, currentGameState: gameStateRef.current, gameHistory, gameLog,
             combatLog, lastJsonResponse, sceneImagePrompt, worldState, gameSettings, superInstructions,
             worldMap, visitedLocations, turnNumber
-        })) return;
+        }, pending.allowedGameLogs)) return;
         hostRestorePendingRef.current = null;
         pending.release();
         for (const peerId of pendingRemovedPeersRef.current) {
