@@ -39,6 +39,9 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
             let newState = action(prevState);
+            // A rejected helper can return the original state. Recalculating
+            // into it would mutate the already rendered snapshot in place.
+            if (newState === prevState) return prevState;
             
             newState.playerCharacter = recalculateAllWeights(newState.playerCharacter);
             newState.playerCharacter = recalculateDerivedStats(newState.playerCharacter);
@@ -116,6 +119,7 @@ export const createInventoryActions = (
             if (!prevState) return null;
             
             const potentialNewState = equipItemUtil(itemToEquip, slot, prevState);
+            if (potentialNewState === prevState) return prevState;
             const newPc = potentialNewState.playerCharacter;
             const inventory = newPc.inventory;
 

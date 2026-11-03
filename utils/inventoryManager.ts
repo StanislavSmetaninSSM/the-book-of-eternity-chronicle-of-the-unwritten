@@ -324,6 +324,10 @@ export const transferItemBetweenCharacters = (
     quantity: number,
     currentState: GameState
 ): GameState => {
+    // A negative, fractional or non-finite amount can create items in the
+    // source or corrupt counts. Do not mutate either side on invalid input.
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 ||
+        !['player', 'npc'].includes(sourceType) || !['player', 'npc'].includes(targetType) || sourceType === targetType) return currentState;
     const newState = JSON.parse(JSON.stringify(currentState));
     const player = newState.playerCharacter as PlayerCharacter;
     const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === npcId);
@@ -347,6 +351,7 @@ export const transferItemBetweenCharacters = (
     if (sourceItemIndex === -1) return currentState;
 
     const sourceItem = sourceInventory[sourceItemIndex];
+    if (!Number.isSafeInteger(sourceItem.count) || sourceItem.count <= 0) return currentState;
     const validQuantity = Math.min(quantity, sourceItem.count);
 
     // Create the item being moved
@@ -355,6 +360,8 @@ export const transferItemBetweenCharacters = (
     // Add to target
     const existingTargetStackIndex = targetInventory.findIndex((i: Item) => i.name === movedItemStack.name && !i.equipmentSlot);
     if (existingTargetStackIndex > -1) {
+        const targetCount = targetInventory[existingTargetStackIndex].count;
+        if (!Number.isSafeInteger(targetCount) || targetCount < 0 || !Number.isSafeInteger(targetCount + validQuantity)) return currentState;
         targetInventory[existingTargetStackIndex].count += validQuantity;
     } else {
         targetInventory.push(movedItemStack);
