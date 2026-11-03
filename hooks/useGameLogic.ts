@@ -1,3 +1,4 @@
+import { reconcileHostEditedCharacter } from '../utils/hostEditedCharacter';
 import { recordPresentationLog, type PendingPresentationLog } from '../utils/presentationLogSync';
 import { sanitizeGameState } from '../utils/sanitizeGameState';
 import { networkSafeSaveFile } from '../utils/networkSavePrivacy';
@@ -183,7 +184,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
         stateMutationRevisionRef.current = revision;
         setGameStateInternal(previous => {
-            try { return typeof action === 'function' ? action(previous) : action; }
+            try {
+                const next = typeof action === 'function' ? action(previous) : action;
+                return reconcileHostEditedCharacter(previous, next);
+            }
             finally {
                 stateMutationAppliedRef.current = Math.max(stateMutationAppliedRef.current, revision);
                 gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, revision);
