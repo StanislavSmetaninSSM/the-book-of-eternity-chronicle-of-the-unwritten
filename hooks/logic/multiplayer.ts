@@ -330,6 +330,13 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
+                        // A spectator connection is not entitled to submit a turn,
+                        // even if its peer ID matches a remembered player.
+                        if (conn.metadata?.role !== 'player') {
+                            void sendOnOpenConnection(conn, { type: 'turn_result_ack', payload: { turnId: message.payload?.submission?.turnId, status: 'unauthorized' } }).catch(error =>
+                                console.warn('Could not deliver turn acknowledgement:', error));
+                            break;
+                        }
                         void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
@@ -617,6 +624,13 @@ export const createMultiplayerManager = (
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
                     case 'turn_result_from_player': {
+                        // A spectator connection is not entitled to submit a turn,
+                        // even if its peer ID matches a remembered player.
+                        if (conn.metadata?.role !== 'player') {
+                            void sendOnOpenConnection(conn, { type: 'turn_result_ack', payload: { turnId: message.payload?.submission?.turnId, status: 'unauthorized' } }).catch(error =>
+                                console.warn('Could not deliver turn acknowledgement:', error));
+                            break;
+                        }
                         void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
