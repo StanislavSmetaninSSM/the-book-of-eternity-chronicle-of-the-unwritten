@@ -356,9 +356,26 @@ export const transferItemBetweenCharacters = (
 
     // Create the item being moved
     const movedItemStack = { ...sourceItem, count: validQuantity, existedId: generateId('item'), contentsPath: null };
+    // Like the existing split and GM transfer rules, the partially used unit
+    // stays in the source stack when only part of a stack is moved.
+    if (validQuantity < sourceItem.count && movedItemStack.resource !== undefined && movedItemStack.maximumResource !== undefined) {
+        movedItemStack.resource = movedItemStack.maximumResource;
+    }
     
     // Add to target
-    const existingTargetStackIndex = targetInventory.findIndex((i: Item) => i.name === movedItemStack.name && !i.equipmentSlot);
+    // Name alone does not identify an equivalent stack: merging distinct
+    // properties, resources, sentient items or containers would discard data.
+    // A conservative mismatch creates a separate stack instead.
+    const stackMetadata = (item: Item) => {
+        const { existedId: _id, count: _count, ...metadata } = item;
+        return JSON.stringify(metadata);
+    };
+    const existingTargetStackIndex = targetInventory.findIndex((item: Item) =>
+        !item.equipmentSlot && !movedItemStack.equipmentSlot && !item.isContainer && !movedItemStack.isContainer &&
+        !item.isSentient && !movedItemStack.isSentient &&
+        (item.resource === undefined || item.resource === item.maximumResource) &&
+        (movedItemStack.resource === undefined || movedItemStack.resource === movedItemStack.maximumResource) &&
+        stackMetadata(item) === stackMetadata(movedItemStack));
     if (existingTargetStackIndex > -1) {
         const targetCount = targetInventory[existingTargetStackIndex].count;
         if (!Number.isSafeInteger(targetCount) || targetCount < 0 || !Number.isSafeInteger(targetCount + validQuantity)) return currentState;
