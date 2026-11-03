@@ -1,3 +1,4 @@
+import { sanitizeGameState } from '../utils/sanitizeGameState';
 import { networkSafeSaveFile } from '../utils/networkSavePrivacy';
 import { isLocalPreferenceKey, mergeNetworkLocalPreferences, updateLocalPreferences, sharedSettingsEqual } from '../utils/localGamePreferences';
 import { PresentationJournal } from '../utils/presentationJournal';
@@ -146,16 +147,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         _setGameState(prevState => {
           let changed = true;
           try {
-            const newState = typeof action === 'function' ? (action as (prevState: GameState | null) => GameState | null)(prevState) : action;
-
-            if (newState) {
-                if (Array.isArray(newState.encounteredNPCs)) {
-                    newState.encounteredNPCs = newState.encounteredNPCs.filter(isObject);
-                }
-                if (Array.isArray(newState.encounteredFactions)) {
-                    newState.encounteredFactions = newState.encounteredFactions.filter(isObject);
-                }
-            }
+            const proposed = typeof action === 'function' ? (action as (prevState: GameState | null) => GameState | null)(prevState) : action;
+            const newState = sanitizeGameState(proposed);
 
             changed = newState !== prevState;
             gameStateRef.current = newState;
@@ -790,7 +783,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameContext.currentLocation);
         ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameState?.currentLocationData);
         gameContextRef.current = data.gameContext;
-        const loadedGameState = data.gameState;
+        let loadedGameState = data.gameState;
 
         // --- NETWORK STATE RESET ON LOAD ---
         if (!isNetworkSync) {
@@ -1042,6 +1035,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             console.log("🌐 NETWORK SYNC: Preserving network connections");
         }
 
+        // The commit barrier must expect the same sanitized snapshot that React receives.
+        loadedGameState = sanitizeGameState(loadedGameState)!;
         setGameStateInternal(loadedGameState);
         setWorldState(data.gameContext.worldState);
         setGameSettings(loadedSettings);
