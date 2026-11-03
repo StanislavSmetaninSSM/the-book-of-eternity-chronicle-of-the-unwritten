@@ -694,67 +694,45 @@ export const createPlayerActionsManager = (
     };
     
     const placeAsStorage = (itemToPlace: Item) => {
-        if (!gameSettings?.allowHistoryManipulation) return;
+        if (!gameSettings?.allowHistoryManipulation || !itemToPlace.existedId) return;
+        // React may evaluate an updater more than once; its new identity must
+        // remain stable across evaluations of the same user action.
+        const storageId = generateId('storage');
         setGameState(prevState => {
-            if (!prevState) return null;
-
-            let newPc = { ...prevState.playerCharacter };
+            if (!prevState || !prevState.currentLocationData) return prevState;
+            const previousPc = prevState.playerCharacter;
+            const matches = previousPc.inventory.filter(item => item.existedId === itemToPlace.existedId);
+            if (matches.length !== 1 || prevState.currentLocationData.locationStorages?.some(storage => storage.storageId === storageId)) return prevState;
+            const item = matches[0];
+            const equippedItems = { ...previousPc.equippedItems };
             let wasEquipped = false;
-            Object.keys(newPc.equippedItems).forEach(slot => {
-                if (newPc.equippedItems[slot] === itemToPlace.existedId) {
-                    newPc.equippedItems[slot] = null;
+            Object.keys(equippedItems).forEach(slot => {
+                if (equippedItems[slot] === item.existedId) {
+                    equippedItems[slot] = null;
                     wasEquipped = true;
                 }
             });
-
-            const itemIndex = newPc.inventory.findIndex(i => i.existedId === itemToPlace.existedId);
-            if (itemIndex === -1) {
-                console.warn("Item to place as storage not found in inventory.");
-                return prevState;
-            }
-            newPc.inventory.splice(itemIndex, 1);
-            
-            const newLocation = { ...prevState.currentLocationData };
-            if (!newLocation.locationStorages) {
-                newLocation.locationStorages = [];
-            }
-
+            let newPc = { ...previousPc, equippedItems, inventory: previousPc.inventory.filter(entry => entry !== item) };
             const newStorage: LocationStorage = {
-                storageId: generateId('storage'),
-                name: itemToPlace.name,
-                description: itemToPlace.description,
-                image_prompt: itemToPlace.image_prompt,
-                capacity: itemToPlace.capacity,
-                volume: itemToPlace.volume,
-                owner: {
-                    ownerType: 'Player',
-                    ownerId: newPc.playerId,
-                    ownerName: newPc.name,
-                },
+                storageId,
+                name: item.name,
+                description: item.description,
+                image_prompt: item.image_prompt,
+                capacity: item.capacity,
+                volume: item.volume,
+                owner: { ownerType: 'Player', ownerId: newPc.playerId, ownerName: newPc.name },
                 authorizedUsers: [],
-                contents: [], // starts empty
+                contents: [],
                 hasFullAccess: true,
             };
-
-            newLocation.locationStorages.push(newStorage);
-            
+            const newLocation = { ...prevState.currentLocationData, locationStorages: [...(prevState.currentLocationData.locationStorages || []), newStorage] };
             newPc = recalculateAllWeights(newPc);
-            if (wasEquipped) {
-                newPc = recalculateDerivedStats(newPc);
-            }
-            
-            const newState = {
-                ...prevState,
-                playerCharacter: newPc,
-                currentLocationData: newLocation,
-            };
-
+            if (wasEquipped) newPc = recalculateDerivedStats(newPc);
             if (gameContextRef.current) {
                 gameContextRef.current.playerCharacter = newPc;
                 gameContextRef.current.currentLocation = newLocation;
             }
-
-            return newState;
+            return { ...prevState, playerCharacter: newPc, currentLocationData: newLocation };
         });
     };
 

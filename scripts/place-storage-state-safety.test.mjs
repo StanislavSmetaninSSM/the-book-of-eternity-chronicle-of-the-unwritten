@@ -1,0 +1,16 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {createServer} from 'vite';
+test('placing storage does not mutate the previous state and uses current item metadata',async()=>{
+ const server=await createServer({configFile:false,optimizeDeps:{noDiscovery:true,include:[]},server:{middlewareMode:true},appType:'custom',logLevel:'silent'});
+ try {
+  const {createPlayerActionsManager}=await server.ssrLoadModule('/hooks/logic/playerActions.ts');const {createInitialContext}=await server.ssrLoadModule('/utils/gameContext.ts');
+  const ctx=createInitialContext({universe:'fantasy',playerName:'Test',race:'Human',charClass:'Warrior',initialPrompt:'Start',startingYear:1000,startingMonth:'January',startingDay:1,startTime:'08:00',weather:'Clear'},'en');
+  const item={existedId:'box',name:'Current box',description:'Actual',isContainer:true,capacity:10,volume:12,count:1,weight:1,contentsPath:null};
+  const run=(inventory,arg)=>{const pc={...ctx.playerCharacter,inventory,equippedItems:{...ctx.playerCharacter.equippedItems,Back:'box'}};const location={locationId:'l',locationStorages:[{storageId:'existing',name:'Existing'}]};const state={playerCharacter:pc,currentLocationData:location},before=structuredClone(state),ref={current:{playerCharacter:pc,currentLocation:location}};let next=state;const noop=()=>{};const manager=createPlayerActionsManager({setGameState:f=>{next=f(state)},setGameHistory:noop,setGameLog:noop,setCombatLog:noop,setVisitedLocations:noop,setWorldMap:noop,setWorldState:noop,gameSettings:{allowHistoryManipulation:true},gameContextRef:ref,t:k=>k});manager.placeAsStorage(arg);assert.deepEqual(state,before,'previous state must remain unchanged');return {next,state,ref};};
+  let result=run([item],{...item,name:'Stale name',capacity:999});assert.equal(result.next.playerCharacter.inventory.length,0);assert.equal(result.next.playerCharacter.equippedItems.Back,null);assert.equal(result.next.currentLocationData.locationStorages[1].name,'Current box');assert.equal(result.next.currentLocationData.locationStorages[1].capacity,10);assert.equal(result.ref.current.currentLocation,result.next.currentLocationData);
+  for(const inventory of [[],[item,item]]){result=run(inventory,item);assert.equal(result.next,result.state);assert.equal(result.ref.current.playerCharacter,result.state.playerCharacter);}
+  const original={playerCharacter:{...ctx.playerCharacter,inventory:[item]},currentLocationData:{locationId:'l',locationStorages:[]}},ref={current:{playerCharacter:original.playerCharacter}};let update;const noop=()=>{};
+  const manager=createPlayerActionsManager({setGameState:f=>{update=f},setGameHistory:noop,setGameLog:noop,setCombatLog:noop,setVisitedLocations:noop,setWorldMap:noop,setWorldState:noop,gameSettings:{allowHistoryManipulation:true},gameContextRef:ref,t:k=>k});manager.placeAsStorage(item);
+  const first=update(original),second=update(original);assert.equal(first.currentLocationData.locationStorages[0].storageId,second.currentLocationData.locationStorages[0].storageId,'React replay uses the same generated identity');assert.equal(original.playerCharacter.inventory.length,1);assert.equal(original.currentLocationData.locationStorages.length,0);
+
+ } finally {await server.close()}
+});
