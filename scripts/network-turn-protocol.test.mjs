@@ -61,3 +61,20 @@ test('late, replayed, concurrent and incompatible player results cannot overwrit
     assert.equal(acceptHostStamp(null, {}), 'invalid');
   } finally { await server.close(); }
 });
+
+test('a release from a previous authority session cannot unlock a new session', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' });
+  try {
+    const { HostTurnAuthority } = await server.ssrLoadModule('/utils/networkTurnProtocol.ts');
+    let session = 0;
+    const authority = new HostTurnAuthority(() => `session-${++session}`);
+    const finishOld = authority.beginMutation();
+    authority.reset();
+    const finishNew = authority.beginMutation();
+    assert.equal(authority.issue(), null);
+    finishOld();
+    assert.equal(authority.issue(), null, 'old-session release must not decrement the new hold');
+    finishNew();
+    assert.ok(authority.issue());
+  } finally { await server.close(); }
+});

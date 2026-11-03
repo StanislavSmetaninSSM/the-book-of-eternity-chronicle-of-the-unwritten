@@ -19,11 +19,13 @@ export class HostTurnAuthority {
     private revision = 0;
     private issuedRevision: number | null = null;
     private pendingMutations = 0;
+    private generation = 0;
     private accepted = new Map<string, { senderId: string; outcome: 'accepted' | 'unknown' }>();
     constructor(private readonly newId: () => string = () => crypto.randomUUID()) {
         this.sessionId = newId();
     }
     reset(): void {
+        this.generation++;
         this.sessionId = this.newId(); this.revision = 0; this.issuedRevision = null;
         this.pendingMutations = 0; this.accepted.clear();
     }
@@ -31,9 +33,14 @@ export class HostTurnAuthority {
     beginMutation(): () => void {
         this.revision++; this.issuedRevision = null; this.pendingMutations++;
         let finished = false;
+        const generation = this.generation;
         return () => {
             if (finished) return;
-            finished = true; this.pendingMutations = Math.max(0, this.pendingMutations - 1);
+            finished = true;
+            // A delayed callback from a prior hosting session must never
+            // decrement holds or revoke grants in the replacement session.
+            if (generation !== this.generation) return;
+            this.pendingMutations = Math.max(0, this.pendingMutations - 1);
             this.revision++; this.issuedRevision = null;
         };
     }
