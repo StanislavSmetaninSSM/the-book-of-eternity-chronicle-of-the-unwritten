@@ -113,6 +113,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const pendingNetworkTurnRef = useRef<string | null>(null);
     const pendingSyncRequestRef = useRef<string | null>(null);
     const queuedHostSyncRequestsRef = useRef(new Set<string>());
+    const pendingHostSyncNoticesRef = useRef<ChatMessage[]>([]);
+    const [hostSyncNoticeEpoch, setHostSyncNoticeEpoch] = useState(0);
     const presentationJournalRef = useRef(new PresentationJournal());
     const hostRestorePendingRef = useRef<(PendingPresentationLog & { release: () => void }) | null>(null);
     const pendingNewPeersRef = useRef(new Map<string, DataConnection>());
@@ -138,6 +140,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         hostContextHoldRef.current = null;
         pendingSyncRequestRef.current = null;
         queuedHostSyncRequestsRef.current.clear();
+        pendingHostSyncNoticesRef.current = [];
         presentationJournalRef.current.clear();
     }, []);
 
@@ -1256,6 +1259,21 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
     }, [gameState, gameplayMutationEpoch, hostRestoreEpoch, setUserGameHistory, t]);
 
+    // Request notices are history, not evidence that a queued sync was sent.
+    // Defer them while a host turn/restore or another edit is in progress;
+    // then use the history commit barrier without cancelling an active turn.
+    const queueHostSyncNotice = useCallback((name: string) => {
+        pendingHostSyncNoticesRef.current.push({ sender: 'system', content: t('sync_requested_by_player', { name }) });
+        setHostSyncNoticeEpoch(epoch => epoch + 1);
+    }, [t]);
+    useEffect(() => {
+        if (gameState?.networkRole !== 'host' || gameState !== gameStateRef.current || isLoading ||
+            activeTurnRef.current || hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+            pendingHostSyncNoticesRef.current.length === 0) return;
+        const notices = pendingHostSyncNoticesRef.current.splice(0);
+        setUserGameHistory(previous => [...previous, ...notices]);
+    }, [gameState, isLoading, hostRestoreEpoch, gameplayMutationEpoch, hostSyncNoticeEpoch, setUserGameHistory]);
+
     const removePlayer = useCallback((playerIdToRemove: string) => {
         setGameState(prevState => {
             if (!prevState || prevState.players.length <= 1) return prevState;
@@ -1605,6 +1623,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 pendingClientSyncRef,
                 pendingSyncRequestRef,
                 scheduleClientSyncCommit,
+                queueHostSyncNotice,
                 clearHostRestorePending,
                 syncNewPeerRef,
                 sendMessageRef,
@@ -1618,7 +1637,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [
         gameState, gameHistory, isLoading, error, combatLog, gameLog, lastJsonResponse, sceneImagePrompt,
         gameSettings, superInstructions, language, t, restoreFromSaveData, setGameState, setGameHistory, setUserGameLog, setUserCombatLog, setPresentationGameLog, setUserWorldMap, setUserWorldState, setUserVisitedLocations, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, setSuperInstructions, setGameSettings, setLanguage, setAutosaveTimestamp, setDbSaveSlots, setMusicPrompt, setIsMusicLoading, setIsMusicPlayerVisible,
-        setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, broadcastFullSync
+        setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, broadcastFullSync, queueHostSyncNotice
     ]);
 
     const resumeInterruptedGameTurn = useCallback(async () => {

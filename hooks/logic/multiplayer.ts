@@ -48,6 +48,7 @@ interface MultiplayerManagerProps {
     sendMessageRef: React.MutableRefObject<(message: string, image?: { data: string; mimeType: string; } | null) => void>;
     gameStateRef: React.RefObject<GameState | null>;
     onChatMessage: (message: NetworkChatMessage) => void;
+    queueHostSyncNotice: (name: string) => void;
 }
 
 
@@ -238,7 +239,8 @@ export const createMultiplayerManager = (
         syncNewPeerRef,
         sendMessageRef,
         gameStateRef,
-        onChatMessage
+        onChatMessage,
+        queueHostSyncNotice
     }: MultiplayerManagerProps
 ) => {
 
@@ -347,12 +349,11 @@ export const createMultiplayerManager = (
                     case 'request_full_sync': {
                         console.log(`Received sync request from ${conn.peer}. Broadcasting full state.`);
                         hostTurnAuthority.revoke();
+                        queueHostSyncNotice(typeof conn.metadata?.playerName === 'string' ? conn.metadata.playerName : conn.peer);
                         const saveData = packageSaveData(gameStateRef.current);
                         if (saveData) {
-                            Promise.resolve(broadcastFullSync(saveData, typeof message.payload?.syncRequestId === 'string' ? message.payload.syncRequestId : undefined)).then(() => {
-                                const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
-                                setGameHistory(prev => [...prev, systemMessage]);
-                            }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
+                            Promise.resolve(broadcastFullSync(saveData, typeof message.payload?.syncRequestId === 'string' ? message.payload.syncRequestId : undefined))
+                                .catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
                         }
                         break;
                     }
@@ -649,12 +650,11 @@ export const createMultiplayerManager = (
                     case 'request_full_sync': {
                         console.log(`Received sync request from ${conn.peer}. Broadcasting full state.`);
                         hostTurnAuthority.revoke();
+                        queueHostSyncNotice(typeof conn.metadata?.playerName === 'string' ? conn.metadata.playerName : conn.peer);
                         const saveData = packageSaveData(gameStateRef.current);
                         if (saveData) {
-                            Promise.resolve(broadcastFullSync(saveData, typeof message.payload?.syncRequestId === 'string' ? message.payload.syncRequestId : undefined)).then(() => {
-                                const systemMessage: ChatMessage = { sender: 'system', content: t('sync_requested_by_player', { name: conn.metadata.playerName }) };
-                                setGameHistory(prev => [...prev, systemMessage]);
-                            }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
+                            Promise.resolve(broadcastFullSync(saveData, typeof message.payload?.syncRequestId === 'string' ? message.payload.syncRequestId : undefined))
+                                .catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
                         }
                         break;
                     }
