@@ -2199,7 +2199,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => w.woundId !== woundId);
                  if (gameContextRef.current) {
-                    gameContextRef.current.playerCharacter.playerWounds = pc.playerWounds;
+                    gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerWounds: pc.playerWounds };
                 }
             } else if (characterType === 'npc' && characterId) {
                 const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === characterId);
@@ -2267,7 +2267,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => !w.healingState || w.healingState.currentState !== 'Healed');
                  if (gameContextRef.current) {
-                    gameContextRef.current.playerCharacter.playerWounds = pc.playerWounds;
+                    gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerWounds: pc.playerWounds };
                 }
             } else if (characterType === 'npc' && characterId) {
                 const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === characterId);
@@ -2427,7 +2427,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             
             if (gameContextRef.current) {
                 gameContextRef.current.playerCustomStates = newPlayerCustomStates;
-                gameContextRef.current.playerCharacter.playerCustomStates = newPlayerCustomStates;
+                gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerCustomStates: newPlayerCustomStates };
             }
             
             return newState;
