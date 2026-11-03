@@ -68,7 +68,7 @@ export const createPlayerActionsManager = (
             if (!prevState) return null;
             const newPc = { ...prevState.playerCharacter, autoCombatSkill: skillName };
             if (gameContextRef.current) {
-                gameContextRef.current.playerCharacter.autoCombatSkill = skillName;
+                gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, autoCombatSkill: skillName };
             }
             return { ...prevState, playerCharacter: newPc };
         });
@@ -116,7 +116,7 @@ export const createPlayerActionsManager = (
             if (!prevState) return null;
             const newInventory = prevState.playerCharacter.inventory.map(item => item.existedId === itemId ? { ...item, [field]: value } : item);
             const newPc = { ...prevState.playerCharacter, inventory: newInventory };
-            if (gameContextRef.current) gameContextRef.current.playerCharacter.inventory = newInventory;
+            if (gameContextRef.current) gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, inventory: newInventory };
             return { ...prevState, playerCharacter: newPc };
         });
     };
@@ -411,7 +411,7 @@ export const createPlayerActionsManager = (
             
             if (gameContextRef.current) {
                 gameContextRef.current.playerCustomStates = newPlayerCustomStates;
-                gameContextRef.current.playerCharacter.playerCustomStates = newPlayerCustomStates;
+                gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerCustomStates: newPlayerCustomStates };
             }
             
             return newState;
