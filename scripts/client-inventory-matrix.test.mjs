@@ -1,0 +1,8 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import ts from 'typescript';
+test('inventory audit has one individually named row for every public manager action',async()=>{
+ const text=await readFile(new URL('../hooks/logic/inventoryActions.ts',import.meta.url),'utf8'),doc=await readFile(new URL('../docs/client-edit-inventory-matrix.md',import.meta.url),'utf8'),src=ts.createSourceFile('inventory.ts',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);let result;
+ function visit(n){if(ts.isReturnStatement(n)&&n.expression&&ts.isObjectLiteralExpression(n.expression)&&(!result||n.expression.properties.length>result.properties.length))result=n.expression;ts.forEachChild(n,visit)}visit(src);assert.ok(result);assert.ok(result.properties.length>=20);
+ for(const prop of result.properties){assert.ok(ts.isShorthandPropertyAssignment(prop));assert.match(doc,new RegExp('\\| `'+prop.name.text+'` \\|'),`missing matrix row ${prop.name.text}`)}
+ const app=await readFile(new URL('../App.tsx',import.meta.url),'utf8'),inventory=await readFile(new URL('../components/InventoryScreen.tsx',import.meta.url),'utf8'),hook=await readFile(new URL('../hooks/useGameLogic.ts',import.meta.url),'utf8');
+ assert.match(hook,/guardGameplayActions\(createInventoryActions/);assert.match(app,/onEquip=\{equipItem\}/);assert.match(app,/onTransferItem=\{handleTransferItem\}/);assert.match(inventory,/onDropItem=\{\(item\) => onTransferItem!\('npc', 'player'/);assert.match(inventory,/onGiveItem=\{\(item, quantity\) => onTransferItem!\('player', 'npc'/);
+});
