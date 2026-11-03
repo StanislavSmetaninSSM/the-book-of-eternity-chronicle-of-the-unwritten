@@ -116,6 +116,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const pendingRemovedPeersRef = useRef(new Set<string>());
     const pendingPeerCharactersRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
     const pendingPeerCharacterIdsRef = useRef(new Set<string>());
+    const pendingPeerCharacterCommitsRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
     const [hostRestoreEpoch, setHostRestoreEpoch] = useState(0);
     const clearHostRestorePending = useCallback(() => {
         hostRestorePendingRef.current = null;
@@ -123,6 +124,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         pendingRemovedPeersRef.current.clear();
         pendingPeerCharactersRef.current.clear();
         pendingPeerCharacterIdsRef.current.clear();
+        pendingPeerCharacterCommitsRef.current.clear();
         hostHistoryHoldRef.current?.();
         hostHistoryHoldRef.current = null;
         hostContextHoldRef.current?.();
@@ -1180,13 +1182,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 }
             );
 
+        if (connection) pendingPeerCharacterCommitsRef.current.set(connection.peer, { player: newPlayer, connection });
         setGameState(prevState => {
             if (!prevState) return null;
+            // A connection can close or be replaced while React defers this
+            // updater. Never create a character for that obsolete connection.
+            if (connection && (prevState.networkRole !== 'host' || !connection.open ||
+                connectionsRef.current.get(connection.peer) !== connection ||
+                prevState.players.some(player => player.playerId === connection.peer))) return prevState;
             const updatedPlayers = [...prevState.players, newPlayer];
             return { ...prevState, players: updatedPlayers };
         });
 
-        setGameHistory(prevHistory => {
+        if (!connection) setGameHistory(prevHistory => {
             const systemMessage: ChatMessage = {
                 sender: 'system',
                 content: t('player_joined', { name: newPlayer.name }),
@@ -1200,6 +1208,21 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // and guards rather than the render that created the connection.
     const addPlayerRef = useRef(addPlayer);
     addPlayerRef.current = addPlayer;
+
+    // Publish a join notice only after the matching character really commits.
+    // The history setter acquires its own host hold before queuing the notice.
+    useEffect(() => {
+        if (gameplayMutationPendingRef.current || gameState !== gameStateRef.current) return;
+        for (const [peerId, entry] of pendingPeerCharacterCommitsRef.current) {
+            pendingPeerCharacterCommitsRef.current.delete(peerId);
+            pendingPeerCharacterIdsRef.current.delete(peerId);
+            if (gameState?.networkRole === 'host' && gameState.players.includes(entry.player)) {
+                setUserGameHistory(previous => [...previous, {
+                    sender: 'system', content: t('player_joined', { name: entry.player.name })
+                }]);
+            }
+        }
+    }, [gameState, gameplayMutationEpoch, setUserGameHistory, t]);
 
     const removePlayer = useCallback((playerIdToRemove: string) => {
         setGameState(prevState => {
