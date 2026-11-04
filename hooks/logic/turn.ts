@@ -444,7 +444,9 @@ export const createTurnManager = (
         }
         setLastRequestJson(JSON.stringify(newContext, null, 2));
         
-        handleTurn(newContext, newHistory, baseState);
+        // The caller may hold cross-tab coordination until generation and
+        // delivery finish. The turn still starts synchronously as before.
+        return handleTurn(newContext, newHistory, baseState);
     };
 
     const initializeAndRunFirstTurn = (creationData: any, networkConfig: { role: NetworkRole, peerId?: string } = { role: 'none' }) => {

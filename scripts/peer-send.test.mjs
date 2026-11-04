@@ -17,6 +17,9 @@ test('peer send detects closed connections and synchronous or async failures; br
     await assert.rejects(sendOnOpenConnection(rejected, {}), /async failure/); assert.equal(rejected.listenerCount('error'), 0);
     const closing = connection(true, function() { this.open = false; });
     await assert.rejects(sendOnOpenConnection(closing, {}), /delivery is unknown/);
+    const stalled = connection(true, () => new Promise(() => {}));
+    const timed = await Promise.race([sendOnOpenConnection(stalled, {}, 10).then(() => 'sent', error => error.message), new Promise(resolve => setTimeout(() => resolve('not timed out'), 100))]);
+    assert.match(timed, /Send timed out/); assert.equal(stalled.listenerCount('error'), 0, 'timeout removes the temporary listener');
     const good1 = connection(true, () => { attempted++; });
     const good2 = connection(true, () => { attempted++; });
     await assert.rejects(broadcastToConnections([closed, good1, emitted, good2], { type: 'full_sync' }), error => {
