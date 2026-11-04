@@ -2,7 +2,7 @@ import { isClientEditCommand, type ClientEditCommand } from './clientEditProtoco
 
 export type ClientEditIntentStatus = 'draft' | 'pending' | 'unknown' | 'conflict' | 'rejected' | 'committed';
 export type ClientEditIntent = { command: ClientEditCommand; hostPeerId: string; createdAt: string; revision: number; status: ClientEditIntentStatus; reason?: string };
-const DB = 'book-client-edit-intents-v1', STORE = 'intents', LIMIT = 128;
+const DB = 'book-client-edit-intents-v1', STORE = 'intents', EPOCHS = 'hostEpochs', LIMIT = 128;
 const transitions: Record<ClientEditIntentStatus, ClientEditIntentStatus[]> = {
     draft: ['pending'], pending: ['unknown', 'conflict', 'rejected', 'committed'],
     unknown: ['conflict', 'rejected', 'committed'], conflict: [], rejected: [], committed: [],
@@ -11,8 +11,8 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 function openIntentDb(): Promise<IDBDatabase> {
     if (!dbPromise) {
         dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-            const req = indexedDB.open(DB, 1);
-            req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: 'command.commandId' }); };
+            const req = indexedDB.open(DB, 2);
+            req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: 'command.commandId' }); if (!req.result.objectStoreNames.contains(EPOCHS)) req.result.createObjectStore(EPOCHS); };
             req.onerror = () => reject(req.error || new Error('Cannot open intent storage'));
             req.onblocked = () => reject(new Error('Intent storage upgrade is blocked by another tab'));
             req.onsuccess = () => { req.result.onversionchange = () => { req.result.close(); dbPromise = null; }; resolve(req.result); };
@@ -31,6 +31,25 @@ const sameIntent = (a: ClientEditIntent, b: ClientEditIntent) => validIntent(a) 
 function finished(tx: IDBTransaction): Promise<void> {
     return new Promise((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error || new Error('Intent transaction failed')); tx.onabort = () => reject(tx.error || new Error('Intent transaction aborted')); });
 }
+// The epoch and intent mutation share one IndexedDB transaction. A tab that
+// never observed an intent can still detect its creation and later removal.
+function bumpEpoch(tx: IDBTransaction, host: string): void {
+    const store = tx.objectStore(EPOCHS), request = store.get(host);
+    request.onsuccess = () => {
+        const value = request.result === undefined ? 0 : request.result;
+        if (!Number.isSafeInteger(value) || value < 0 || value >= Number.MAX_SAFE_INTEGER) { tx.abort(); return; }
+        store.put(value + 1, host);
+    };
+}
+export async function getClientEditEpoch(host: string): Promise<number> {
+    if (!validPeer(host)) throw new Error('Invalid host identity');
+    const db = await openIntentDb(), tx = db.transaction(EPOCHS, 'readonly'), request = tx.objectStore(EPOCHS).get(host);
+    let value: unknown;
+    request.onsuccess = () => { value = request.result === undefined ? 0 : request.result; };
+    await finished(tx);
+    if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error('Invalid host edit epoch');
+    return value as number;
+}
 export class ClientEditIntentAlreadyExists extends Error {
     constructor() { super('An unresolved intent already exists for this host'); this.name = 'ClientEditIntentAlreadyExists'; }
 }
@@ -39,13 +58,13 @@ export async function createClientEditIntent(input: { hostPeerId: string; comman
     const intent: ClientEditIntent = { command: JSON.parse(JSON.stringify(input.command)), hostPeerId: input.hostPeerId, createdAt: new Date().toISOString(), revision: 0, status: 'draft' };
     // IndexedDB serializes readwrite transactions across tabs. Checking and
     // creating in the same transaction closes the check-then-create race.
-    const db = await openIntentDb(), tx = db.transaction(STORE, 'readwrite'), store = tx.objectStore(STORE), all = store.getAll();
+    const db = await openIntentDb(), tx = db.transaction([STORE, EPOCHS], 'readwrite'), store = tx.objectStore(STORE), all = store.getAll();
     let blocked = false, corrupt = false;
     all.onsuccess = () => {
         if (!Array.isArray(all.result) || all.result.length > LIMIT || all.result.some(value => !validIntent(value))) { corrupt = true; tx.abort(); }
         else if (all.result.some(value => value.hostPeerId === input.hostPeerId && value.status !== 'committed')) { blocked = true; tx.abort(); }
         else if (all.result.length >= LIMIT) tx.abort();
-        else store.add(intent);
+        else { store.add(intent); bumpEpoch(tx, input.hostPeerId); }
     };
     try { await finished(tx); } catch (error) {
         if (blocked) throw new ClientEditIntentAlreadyExists();
@@ -64,11 +83,11 @@ export async function listClientEditIntents(): Promise<ClientEditIntent[]> {
 }
 export async function transitionClientEditIntent(expected: ClientEditIntent, status: ClientEditIntentStatus, reason?: string): Promise<ClientEditIntent | null> {
     if (!validIntent(expected) || !transitions[expected.status].includes(status) || (reason !== undefined && !/^[a-z_]{1,64}$/.test(reason))) return null;
-    const db = await openIntentDb(), tx = db.transaction(STORE, 'readwrite'), store = tx.objectStore(STORE), request = store.get(expected.command.commandId);
+    const db = await openIntentDb(), tx = db.transaction([STORE, EPOCHS], 'readwrite'), store = tx.objectStore(STORE), request = store.get(expected.command.commandId);
     let updated: ClientEditIntent | null = null;
     request.onsuccess = () => {
         if (sameIntent(request.result, expected) && expected.revision < Number.MAX_SAFE_INTEGER) {
-            updated = { ...expected, status, revision: expected.revision + 1, ...(reason ? { reason } : {}) }; store.put(updated);
+            updated = { ...expected, status, revision: expected.revision + 1, ...(reason ? { reason } : {}) }; store.put(updated); bumpEpoch(tx, expected.hostPeerId);
         }
     };
     await finished(tx);
@@ -78,9 +97,9 @@ export async function transitionClientEditIntent(expected: ClientEditIntent, sta
  * never asserts that a pending or unknown delivery did not reach the host. */
 export async function deleteClientEditIntent(expected: ClientEditIntent, explicit: boolean): Promise<boolean> {
     if (!validIntent(expected) || (!explicit && expected.status !== 'committed')) return false;
-    const db = await openIntentDb(), tx = db.transaction(STORE, 'readwrite'), store = tx.objectStore(STORE), request = store.get(expected.command.commandId);
+    const db = await openIntentDb(), tx = db.transaction([STORE, EPOCHS], 'readwrite'), store = tx.objectStore(STORE), request = store.get(expected.command.commandId);
     let deleted = false;
-    request.onsuccess = () => { if (sameIntent(request.result, expected)) { store.delete(expected.command.commandId); deleted = true; } };
+    request.onsuccess = () => { if (sameIntent(request.result, expected)) { store.delete(expected.command.commandId); bumpEpoch(tx, expected.hostPeerId); deleted = true; } };
     await finished(tx);
     return deleted;
 }

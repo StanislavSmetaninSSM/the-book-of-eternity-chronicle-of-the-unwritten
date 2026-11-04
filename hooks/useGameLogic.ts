@@ -1,5 +1,5 @@
 import { ClientCoordinationBusy, ClientCoordinationUnavailable, withClientHostLock } from '../utils/clientEditCoordination';
-import { ClientEditIntentAlreadyExists, createClientEditIntent, listClientEditIntents, transitionClientEditIntent, deleteClientEditIntent, type ClientEditIntent, type ClientEditIntentStatus } from '../utils/clientEditIntentStore';
+import { ClientEditIntentAlreadyExists, createClientEditIntent, listClientEditIntents, getClientEditEpoch, transitionClientEditIntent, deleteClientEditIntent, type ClientEditIntent, type ClientEditIntentStatus } from '../utils/clientEditIntentStore';
 import { HostEditLedger, CLIENT_EDIT_CAPABILITY, STACK_EDIT_CAPABILITY, MOVE_EDIT_CAPABILITY, canConfirmEdit, type ClientEditCommand, type EquipmentEditOperation, type StackEditOperation, type MoveEditOperation } from '../utils/clientEditProtocol';
 import { applyAuthoritativeEquipment } from '../utils/clientEquipment';
 import { applyAuthoritativeSplit, applyAuthoritativeMerge } from '../utils/clientInventoryStack';
@@ -147,6 +147,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const clientEditCapabilityRef = useRef<{ sessionId: string; enabled: boolean; stacks: boolean; move: boolean } | null>(null);
     const clientEditTasksRef = useRef<Promise<void>>(Promise.resolve());
     const requestClientSyncRef = useRef<() => void>(() => {});
+    const clientEpochBaselineRef = useRef(new Map<string, number>());
+    const clientEpochSyncRef = useRef<{ host: string; epoch: number; requestId: string } | null>(null);
     const pendingNetworkTurnRef = useRef<string | null>(null);
     const pendingSyncRequestRef = useRef<string | null>(null);
     const queuedHostSyncRequestsRef = useRef(new Set<string>());
@@ -474,6 +476,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [t]);
     const intentStorageFailureRef = useRef(intentStorageFailure);
     intentStorageFailureRef.current = intentStorageFailure;
+    const requestClientEpochSync = useCallback((host: string, epoch: number) => {
+        if (gameStateRef.current?.networkRole !== 'player' || gameStateRef.current.hostPeerId !== host || !hostConnectionRef.current?.open) return;
+        requestClientSyncRef.current();
+        const requestId = pendingSyncRequestRef.current;
+        if (requestId) clientEpochSyncRef.current = { host, epoch, requestId };
+    }, []);
+    const ensureClientEditEpoch = useCallback(async (host: string): Promise<boolean> => {
+        const epoch = await getClientEditEpoch(host);
+        if ((clientEpochBaselineRef.current.get(host) ?? 0) === epoch) return true;
+        requestClientEpochSync(host, epoch);
+        setError(t('network_sync_not_ready'));
+        return false;
+    }, [requestClientEpochSync, t]);
     const reloadClientIntents = useCallback(async (invalidateOnMissing = true) => {
         const previous = clientEditIntentsRef.current;
         const intents = await listClientEditIntents();
@@ -519,8 +534,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             const deleted = status === 'committed' && intent.status === 'committed' && await deleteClientEditIntent(intent, false);
             await reloadClientIntents(!deleted);
+            if (deleted && gameStateRef.current?.hostPeerId === intent.hostPeerId)
+                requestClientEpochSync(intent.hostPeerId, await getClientEditEpoch(intent.hostPeerId));
         }).catch(intentStorageFailure);
-    }, [queueClientIntentTask, reloadClientIntents, intentStorageFailure]);
+    }, [queueClientIntentTask, reloadClientIntents, intentStorageFailure, requestClientEpochSync]);
     const hasBlockingClientIntent = useCallback(() => {
         const state = gameStateRef.current;
         return state?.networkRole === 'player' && (!clientEditStorageReadyRef.current || clientEditBusyRef.current ||
@@ -1974,6 +1991,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         try {
             await withClientHostLock(state.hostPeerId, true, async () => {
                 sentIntent = await queueClientIntentTask(async () => {
+                    if (!await ensureClientEditEpoch(state.hostPeerId!)) return null;
+                    if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) { setError(t('client_edit_session_changed')); return null; }
                     const draft = await createClientEditIntent({ hostPeerId: state.hostPeerId!, command });
                     await reloadClientIntents();
                     if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
@@ -2012,7 +2031,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         } finally {
             clientEditBusyRef.current = false;
         }
-    }, [allManagers, hasBlockingClientIntent, isLoading, t, queueClientIntentTask, reloadClientIntents, resolveClientIntent, intentStorageFailure]);
+    }, [allManagers, hasBlockingClientIntent, isLoading, t, queueClientIntentTask, reloadClientIntents, resolveClientIntent, intentStorageFailure, ensureClientEditEpoch]);
     const equipItemForClient = useCallback((item: Item, slot: string) => {
         if (gameStateRef.current?.networkRole !== 'player') return allManagers.equipItem(item, slot);
         void submitClientEdit({ type: 'equip', itemId: item.existedId || '', slot });
@@ -2044,20 +2063,20 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const intent = clientEditIntentsRef.current.find(i => i.command.commandId === commandId);
             if (!intent) return;
             await withClientHostLock(intent.hostPeerId, intent.status === 'pending' || intent.status === 'unknown', async () => {
-                // Invalidate before deletion. The host orders the sync request
-                // with commands on this connection and revokes the old grant.
+                // Revoke locally before deletion; send the nonce-bound refresh
+                // after the epoch and deletion have committed together.
                 if (intent.status !== 'draft' && gameStateRef.current?.networkRole === 'player') {
                     clientTurnStampRef.current = null;
-                    if (hostConnectionRef.current?.open) allManagers.requestSyncFromHost();
                 }
                 if (!await deleteClientEditIntent(intent, true)) throw new Error('Intent changed in another tab');
                 await reloadClientIntents(false);
+                requestClientEpochSync(intent.hostPeerId, await getClientEditEpoch(intent.hostPeerId));
             });
         }).catch(error => {
             if (error instanceof ClientCoordinationBusy || error instanceof ClientCoordinationUnavailable) setError(t('client_edit_coordination_unavailable'));
             else intentStorageFailure();
         });
-    }, [queueClientIntentTask, reloadClientIntents, allManagers, intentStorageFailure, t]);
+    }, [queueClientIntentTask, reloadClientIntents, intentStorageFailure, requestClientEpochSync, t]);
     const reconcileClientEditIntent = useCallback((commandId: string) => {
         const intent = clientEditIntentsRef.current.find(i => i.command.commandId === commandId), state = gameStateRef.current, conn = hostConnectionRef.current;
         if (!intent || state?.networkRole !== 'player' || !conn?.open || state.hostPeerId !== intent.hostPeerId ||
@@ -2581,6 +2600,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setClientSyncEpoch(epoch => epoch + 1);
             }
             return;
+        }
+        const epochSync = clientEpochSyncRef.current;
+        if (epochSync && epochSync.host === gameState.hostPeerId && epochSync.requestId === pending.syncRequestId) {
+            clientEpochBaselineRef.current.set(epochSync.host, epochSync.epoch);
+            clientEpochSyncRef.current = null;
         }
         clientTurnStampRef.current = stamp;
         clientEditCapabilityRef.current = { sessionId: stamp.sessionId, enabled: pending.editCapability === true, stacks: pending.stackEditCapability === true, move: pending.moveEditCapability === true };
@@ -3194,6 +3218,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 try { await queueClientIntentTask(reloadClientIntents); }
                 catch { intentStorageFailure(); isTurnSubmitPendingRef.current = false; return undefined; }
                 if (hasBlockingClientIntent()) { setError(t('client_edit_pending_turn')); isTurnSubmitPendingRef.current = false; return undefined; }
+                try { if (!await ensureClientEditEpoch(identity.hostPeerId!)) { isTurnSubmitPendingRef.current = false; return undefined; } }
+                catch { intentStorageFailure(); isTurnSubmitPendingRef.current = false; return undefined; }
                 if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
                     setError(t('turn_session_changed_before_start')); isTurnSubmitPendingRef.current = false; return undefined;
                 }
@@ -3203,7 +3229,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (error instanceof ClientCoordinationBusy) { setError(t('client_edit_coordination_unavailable')); isTurnSubmitPendingRef.current = false; return undefined; }
             throw error;
         }
-    }, [queueClientIntentTask, reloadClientIntents, hasBlockingClientIntent, intentStorageFailure, t]);
+    }, [queueClientIntentTask, reloadClientIntents, hasBlockingClientIntent, intentStorageFailure, ensureClientEditEpoch, t]);
 
     const sendMessageWithStashClear = useCallback(async (message: string, image?: { data: string; mimeType: string; } | null, clearCollective = false) => {
         if (!beginTurnSubmission()) return;

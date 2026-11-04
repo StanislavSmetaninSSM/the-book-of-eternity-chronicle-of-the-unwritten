@@ -56,7 +56,7 @@ interface MultiplayerManagerProps {
 }
 
 
-export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; allowedGameLogs?: WeakSet<string[]>; editCapability?: boolean; stackEditCapability?: boolean; moveEditCapability?: boolean; editReceipts?: unknown[]; }
+export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; allowedGameLogs?: WeakSet<string[]>; editCapability?: boolean; stackEditCapability?: boolean; moveEditCapability?: boolean; syncRequestId?: string; editReceipts?: unknown[]; }
 
 type GameContextWorldState = SaveFile['gameContext']['worldState'] | null;
 
@@ -105,12 +105,14 @@ export function stageHostFullSync(message: NetworkMessage, identity: { role: Net
     // A duplicate can satisfy this request only if that snapshot is still staged.
     if (decision === 'duplicate' && props.pendingClientSyncRef.current &&
         props.pendingSyncRequestRef?.current && message.payload?.syncRequestId === props.pendingSyncRequestRef.current) {
+        props.pendingClientSyncRef.current.syncRequestId = message.payload.syncRequestId;
         props.pendingSyncRequestRef.current = null;
         props.scheduleClientSyncCommit();
         return 'ignored';
     }
     if (decision !== 'accept') return 'ignored';
     const previousObservedStamp = props.observedHostStampRef.current;
+    const previousSyncRequestId = props.pendingClientSyncRef.current?.syncRequestId;
     props.clientTurnStampRef.current = null;
     props.pendingClientSyncRef.current = null;
     if (props.activeTurnRef.current) props.abortControllerRef.current?.abort();
@@ -119,7 +121,7 @@ export function stageHostFullSync(message: NetworkMessage, identity: { role: Net
     try {
         const snapshot = props.restoreFromSaveData(message.payload.saveFile, true, identity);
         const stamp = message.payload.protocol as TurnSyncStamp;
-        props.pendingClientSyncRef.current = { stamp, snapshot, editCapability: hasClientEditCapability(message.payload?.editCapability), stackEditCapability: hasStackEditCapability(message.payload?.stackEditCapability), moveEditCapability: hasMoveEditCapability(message.payload?.moveEditCapability),
+        props.pendingClientSyncRef.current = { stamp, snapshot, editCapability: hasClientEditCapability(message.payload?.editCapability), stackEditCapability: hasStackEditCapability(message.payload?.stackEditCapability), moveEditCapability: hasMoveEditCapability(message.payload?.moveEditCapability), syncRequestId: props.pendingSyncRequestRef?.current && message.payload?.syncRequestId === props.pendingSyncRequestRef.current ? message.payload.syncRequestId : previousSyncRequestId,
             editReceipts: Array.isArray(message.payload?.editReceipts) && message.payload.editReceipts.length <= 256 ? message.payload.editReceipts : [] };
         props.observedHostStampRef.current = stamp;
         if (props.pendingSyncRequestRef?.current && message.payload.syncRequestId === props.pendingSyncRequestRef.current) {
