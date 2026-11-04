@@ -1,8 +1,10 @@
 import { isClientEditCommand, type ClientEditCommand } from './clientEditProtocol';
+import { isHostTurnCommand, type HostTurnCommand } from './hostTurnCommand';
+import { isTurnSyncStamp, type TurnSyncStamp } from './networkTurnProtocol';
 
 export type ClientEditIntentStatus = 'draft' | 'pending' | 'unknown' | 'conflict' | 'rejected' | 'committed';
 export type ClientEditIntent = { command: ClientEditCommand; hostPeerId: string; createdAt: string; revision: number; status: ClientEditIntentStatus; reason?: string };
-const DB = 'book-client-edit-intents-v1', STORE = 'intents', EPOCHS = 'hostEpochs', LIMIT = 128;
+const DB = 'book-client-edit-intents-v1', STORE = 'intents', TURNS = 'turnIntents', EPOCHS = 'hostEpochs', LIMIT = 128;
 const transitions: Record<ClientEditIntentStatus, ClientEditIntentStatus[]> = {
     draft: ['pending'], pending: ['unknown', 'conflict', 'rejected', 'committed'],
     unknown: ['conflict', 'rejected', 'committed'], conflict: [], rejected: [], committed: [],
@@ -11,10 +13,11 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 function openIntentDb(): Promise<IDBDatabase> {
     if (!dbPromise) {
         dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-            const req = indexedDB.open(DB, 3);
+            const req = indexedDB.open(DB, 4);
             let abandoned = false;
             req.onupgradeneeded = () => {
                 if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: 'command.commandId' });
+                if (!req.result.objectStoreNames.contains(TURNS)) req.result.createObjectStore(TURNS, { keyPath: 'command.commandId' });
                 if (!req.result.objectStoreNames.contains(EPOCHS)) req.result.createObjectStore(EPOCHS);
                 else {
                     // Upgrade the short-lived v2 numeric markers without
@@ -76,14 +79,18 @@ export async function createClientEditIntent(input: { hostPeerId: string; comman
     const intent: ClientEditIntent = { command: JSON.parse(JSON.stringify(input.command)), hostPeerId: input.hostPeerId, createdAt: new Date().toISOString(), revision: 0, status: 'draft' };
     // IndexedDB serializes readwrite transactions across tabs. Checking and
     // creating in the same transaction closes the check-then-create race.
-    const db = await openIntentDb(), tx = db.transaction([STORE, EPOCHS], 'readwrite'), store = tx.objectStore(STORE), all = store.getAll();
+    const db = await openIntentDb(), tx = db.transaction([STORE, TURNS, EPOCHS], 'readwrite'), store = tx.objectStore(STORE), all = store.getAll(), turns = tx.objectStore(TURNS).getAll();
     let blocked = false, corrupt = false;
-    all.onsuccess = () => {
-        if (!Array.isArray(all.result) || all.result.length > LIMIT || all.result.some(value => !validIntent(value))) { corrupt = true; tx.abort(); }
-        else if (all.result.some(value => value.hostPeerId === input.hostPeerId && value.status !== 'committed')) { blocked = true; tx.abort(); }
-        else if (all.result.length >= LIMIT) tx.abort();
+    let editsResult: unknown[] | null = null, turnsResult: unknown[] | null = null;
+    const check = () => {
+        if (!editsResult || !turnsResult) return;
+        if (editsResult.length + turnsResult.length > LIMIT || editsResult.some(value => !validIntent(value)) || turnsResult.some(value => !validTurnIntent(value))) { corrupt = true; tx.abort(); }
+        else if ([...editsResult, ...turnsResult].some((value: any) => value.hostPeerId === input.hostPeerId && value.status !== 'committed')) { blocked = true; tx.abort(); }
+        else if (editsResult.length + turnsResult.length >= LIMIT) tx.abort();
         else { store.add(intent); bumpEpoch(tx, input.hostPeerId); }
     };
+    all.onsuccess = () => { if (!Array.isArray(all.result)) { corrupt = true; tx.abort(); } else { editsResult = all.result; check(); } };
+    turns.onsuccess = () => { if (!Array.isArray(turns.result)) { corrupt = true; tx.abort(); } else { turnsResult = turns.result; check(); } };
     try { await finished(tx); } catch (error) {
         if (blocked) throw new ClientEditIntentAlreadyExists();
         if (corrupt) throw new Error('Client edit intent storage contains invalid data');
@@ -120,4 +127,63 @@ export async function deleteClientEditIntent(expected: ClientEditIntent, explici
     request.onsuccess = () => { if (sameIntent(request.result, expected)) { store.delete(expected.command.commandId); bumpEpoch(tx, expected.hostPeerId); deleted = true; } };
     await finished(tx);
     return deleted;
+}
+
+/** Minimal turn receipt tracking intentionally omits text and image bytes. A
+ * reload cannot replay the action; an unknown outcome requires reconciliation. */
+type TurnIntentCommand = { sessionId: string; commandId: string; playerId: string; base: TurnSyncStamp; kind: 'action' | 'question' };
+export type ClientTurnIntent = { command: TurnIntentCommand; hostPeerId: string; createdAt: string; revision: number; status: ClientEditIntentStatus; reason?: string };
+function validTurnIntent(value: any): value is ClientTurnIntent {
+    const c = value?.command;
+    return !!value && typeof value === 'object' && ['command,createdAt,hostPeerId,revision,status','command,createdAt,hostPeerId,reason,revision,status'].includes(Object.keys(value).sort().join(',')) &&
+        !!c && typeof c === 'object' && Object.keys(c).sort().join(',') === 'base,commandId,kind,playerId,sessionId' &&
+        validPeer(c.sessionId) && validPeer(c.playerId) && typeof c.commandId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(c.commandId) &&
+        !!c.base && Object.keys(c.base).sort().join(',') === 'revision,sessionId,version' && isTurnSyncStamp(c.base) && c.base.sessionId === c.sessionId &&
+        (c.kind === 'action' || c.kind === 'question') && validPeer(value.hostPeerId) && typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt)) &&
+        Number.isSafeInteger(value.revision) && value.revision >= 0 && Object.prototype.hasOwnProperty.call(transitions, value.status) &&
+        (value.reason === undefined || typeof value.reason === 'string' && /^[a-z_]{1,64}$/.test(value.reason));
+}
+const sameTurnIntent = (a: ClientTurnIntent, b: ClientTurnIntent) => validTurnIntent(a) && validTurnIntent(b) && JSON.stringify(a) === JSON.stringify(b);
+export async function createClientTurnIntent(input: { hostPeerId: string; command: HostTurnCommand }): Promise<ClientTurnIntent> {
+    if (!validPeer(input.hostPeerId) || !isHostTurnCommand(input.command)) throw new Error('Invalid client turn intent');
+    const c = input.command, intent: ClientTurnIntent = { command: { sessionId: c.sessionId, commandId: c.commandId, playerId: c.playerId, base: { version: 1, sessionId: c.base.sessionId, revision: c.base.revision }, kind: c.kind }, hostPeerId: input.hostPeerId, createdAt: new Date().toISOString(), revision: 0, status: 'draft' };
+    const db = await openIntentDb(), tx = db.transaction([STORE, TURNS, EPOCHS], 'readwrite'), store = tx.objectStore(TURNS), edits = tx.objectStore(STORE).getAll(), turns = store.getAll();
+    let blocked = false, corrupt = false, editsResult: unknown[] | null = null, turnsResult: unknown[] | null = null;
+    const check = () => {
+        if (!editsResult || !turnsResult) return;
+        if (editsResult.length + turnsResult.length > LIMIT || editsResult.some(value => !validIntent(value)) || turnsResult.some(value => !validTurnIntent(value))) { corrupt = true; tx.abort(); }
+        else if ([...editsResult, ...turnsResult].some((value: any) => value.hostPeerId === input.hostPeerId && value.status !== 'committed')) { blocked = true; tx.abort(); }
+        else if (editsResult.length + turnsResult.length >= LIMIT) tx.abort();
+        else { store.add(intent); bumpEpoch(tx, input.hostPeerId); }
+    };
+    edits.onsuccess = () => { if (!Array.isArray(edits.result)) { corrupt = true; tx.abort(); } else { editsResult = edits.result; check(); } };
+    turns.onsuccess = () => { if (!Array.isArray(turns.result)) { corrupt = true; tx.abort(); } else { turnsResult = turns.result; check(); } };
+    try { await finished(tx); } catch (error) {
+        if (blocked) throw new ClientEditIntentAlreadyExists();
+        if (corrupt) throw new Error('Client intent storage contains invalid data');
+        throw error;
+    }
+    return intent;
+}
+export async function listClientTurnIntents(): Promise<ClientTurnIntent[]> {
+    const db = await openIntentDb(), tx = db.transaction(TURNS, 'readonly'), request = tx.objectStore(TURNS).getAll();
+    let result: ClientTurnIntent[] = []; let corrupt = false;
+    request.onsuccess = () => { if (!Array.isArray(request.result) || request.result.length > LIMIT || request.result.some(item => !validTurnIntent(item))) corrupt = true; else result = request.result; };
+    await finished(tx);
+    if (corrupt) throw new Error('Client turn intent storage contains invalid data');
+    return result.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.command.commandId.localeCompare(b.command.commandId));
+}
+export async function transitionClientTurnIntent(expected: ClientTurnIntent, status: ClientEditIntentStatus, reason?: string): Promise<ClientTurnIntent | null> {
+    if (!validTurnIntent(expected) || !transitions[expected.status].includes(status) || (reason !== undefined && !/^[a-z_]{1,64}$/.test(reason))) return null;
+    const db = await openIntentDb(), tx = db.transaction([TURNS, EPOCHS], 'readwrite'), store = tx.objectStore(TURNS), request = store.get(expected.command.commandId);
+    let updated: ClientTurnIntent | null = null;
+    request.onsuccess = () => { if (sameTurnIntent(request.result, expected) && expected.revision < Number.MAX_SAFE_INTEGER) { updated = { ...expected, status, revision: expected.revision + 1, ...(reason ? { reason } : {}) }; store.put(updated); bumpEpoch(tx, expected.hostPeerId); } };
+    await finished(tx); return updated;
+}
+export async function deleteClientTurnIntent(expected: ClientTurnIntent, explicit: boolean): Promise<boolean> {
+    if (!validTurnIntent(expected) || (!explicit && expected.status !== 'committed')) return false;
+    const db = await openIntentDb(), tx = db.transaction([TURNS, EPOCHS], 'readwrite'), store = tx.objectStore(TURNS), request = store.get(expected.command.commandId);
+    let deleted = false;
+    request.onsuccess = () => { if (sameTurnIntent(request.result, expected)) { store.delete(expected.command.commandId); bumpEpoch(tx, expected.hostPeerId); deleted = true; } };
+    await finished(tx); return deleted;
 }
