@@ -94,6 +94,15 @@ export class HostTurnCommandLedger {
         if (session !== this.sessionId || !entry || entry.outcome !== 'pending' || !['committed', 'rejected', 'unknown'].includes(outcome)) return false;
         entry.outcome = outcome; entry.release(); return true;
     }
+    /** Record uncertainty without releasing the authority hold: React writes
+     * may still be queued even when asynchronous generation has finished. */
+    markUnknownWhileHeld(session: string, commandId: string): boolean {
+        this.refresh();
+        const entry = this.entries.get(commandId);
+        if (session !== this.sessionId || !entry || entry.outcome !== 'pending') return false;
+        entry.outcome = 'unknown';
+        return true;
+    }
     status(session: string, commandId: string, ctx: Context): Outcome {
         this.refresh();
         const entry = this.entries.get(commandId);
