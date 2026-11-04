@@ -14,3 +14,6 @@ test('host merge preserves exact metadata and rejects unsafe source or target',a
  assert.equal(applyAuthoritativeMerge({...state,temporaryStash:[{...item}]},request,settings).status,'rejected');assert.equal(applyAuthoritativeMerge({...state,temporaryStash:[item]},request,settings).status,'rejected');assert.equal(applyAuthoritativeMerge(state,{...request,targetId:'a'},settings).status,'rejected');assert.equal(applyAuthoritativeMerge(state,{...request,targetId:'missing'},settings).status,'rejected');assert.equal(applyAuthoritativeMerge(state,request,{cooperativeGameType:'MultiplePersonalities'}).status,'rejected');
  }finally{await v.close()}
 });
+test('global id scan detects aliases of parent arrays and objects',async()=>{
+ const v=await createServer({configFile:false,server:{middlewareMode:true},appType:'custom',logLevel:'silent'});try{const {idOccurrences}=await v.ssrLoadModule('/utils/clientInventoryStack.ts');const item={existedId:'x'},array=[item];assert.equal(idOccurrences({a:array,b:array},'x'),2);const parent={inventory:[item]};assert.equal(idOccurrences({a:parent,b:parent},'x'),2);const cycle={};cycle.self=cycle;assert.equal(idOccurrences(cycle,'x'),-1)}finally{await v.close()}
+});

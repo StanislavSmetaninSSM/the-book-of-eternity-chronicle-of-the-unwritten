@@ -8,18 +8,20 @@ type Result = { status: 'applied'; state: GameState } | { status: 'rejected'; st
 /** Fail closed if an ID already occurs anywhere in the state, or traversal is
  * unreasonably large. The state may contain shared references. */
 export function idOccurrences(state: unknown, id: string): number {
-    const seen = new WeakSet<object>(), todo: unknown[] = [state];
-    let count = 0, occurrences = 0;
+    const ancestors = new WeakSet<object>();
+    const todo: { value: unknown; leave?: boolean }[] = [{ value: state }];
+    let visited = 0, occurrences = 0;
     while (todo.length) {
-        const value = todo.pop();
+        const entry = todo.pop()!, value = entry.value;
         if (!value || typeof value !== 'object') continue;
-        // Count every reference to an item, even when two containers share
-        // the same object. Serializing such aliases creates duplicate IDs.
+        if (entry.leave) { ancestors.delete(value); continue; }
+        // Traverse each path, not just each identity: serialization duplicates
+        // an entire aliased parent subtree. Cycles or excessive fanout fail closed.
+        if (ancestors.has(value) || ++visited > 200000) return -1;
         if (!Array.isArray(value) && (value as { existedId?: unknown }).existedId === id) occurrences++;
-        if (seen.has(value)) continue;
-        if (++count > 200000) return -1;
-        seen.add(value);
-        for (const entry of Object.values(value)) if (entry && typeof entry === 'object') todo.push(entry);
+        ancestors.add(value);
+        todo.push({ value, leave: true });
+        for (const child of Object.values(value)) if (child && typeof child === 'object') todo.push({ value: child });
     }
     return occurrences;
 }
