@@ -402,6 +402,7 @@ export const createMultiplayerManager = (
     };
 
     const joinGame = (hostPeerId: string, role: NetworkRole, playerName: string) => {
+        if (hostConnectionRef.current) onClientEditDisconnect?.();
         clearHostRestorePending();
         clientTurnStampRef.current = null;
         observedHostStampRef.current = null;
@@ -713,6 +714,7 @@ export const createMultiplayerManager = (
         clearHostRestorePending();
         hostTurnAuthority.reset();
         const role = gameStateRef.current?.networkRole;
+        if (role === 'player' || role === 'spectator') onClientEditDisconnect?.();
         
         setGameHistory(prev => [...prev, { sender: 'system', content: t('disconnecting_message') }]);
     
