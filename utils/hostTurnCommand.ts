@@ -35,6 +35,7 @@ type Outcome = 'pending' | 'committed' | 'rejected' | 'unknown';
 type Entry = { actor: string; digest: string; baseRevision: number; resultRevision?: number; outcome: Outcome; release: () => void };
 export class HostTurnCommandLedger {
     private entries = new Map<string, Entry>();
+    private inFlightHashes = 0;
     private sessionId: string;
     constructor(private authority: HostTurnAuthority, private limit = 64,
         private digest: (data: Uint8Array<ArrayBuffer>) => Promise<ArrayBuffer> = data => crypto.subtle.digest('SHA-256', data)) {
@@ -60,11 +61,18 @@ export class HostTurnCommandLedger {
         const command: HostTurnCommand = Object.freeze({ version: 1, sessionId: raw.sessionId, commandId: raw.commandId, playerId: raw.playerId,
             base: Object.freeze({ version: 1, sessionId: raw.base.sessionId, revision: raw.base.revision }), kind: raw.kind, text: raw.text, image: raw.image ? Object.freeze({ data: raw.image.data, mimeType: raw.image.mimeType }) : null });
         if (!this.authorized(getContext(), command.playerId)) return { status: 'unauthorized' };
+        // Hashing images is asynchronous: bound concurrent work independently
+        // of the ledger so a peer cannot queue unlimited large requests.
+        if (this.inFlightHashes >= 4) return { status: 'busy' };
+        this.inFlightHashes++;
         let hash: string;
         try {
             const bytes = new TextEncoder().encode(JSON.stringify(command));
-            hash = Array.from(new Uint8Array(await this.digest(bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+            const digest = new Uint8Array(await this.digest(bytes));
+            if (digest.length !== 32) return { status: 'invalid' };
+            hash = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
         } catch { return { status: 'invalid' }; }
+        finally { this.inFlightHashes--; }
         this.refresh();
         const ctx = getContext();
         if (!this.authorized(ctx, command.playerId)) return { status: 'unauthorized' };
