@@ -537,6 +537,9 @@ export const createTurnManager = (
         const historyWithQuestion = [...gameHistory, questionMessage];
         setGameHistory(historyWithQuestion);
     
+        // The OOC instruction is a one-request override, not a new campaign
+        // instruction. Preserve the pre-question value in the resulting save.
+        const retainedSuperInstructions = gameContextRef.current.superInstructions;
         let context: GameContext = {
             ...gameContextRef.current, 
             message: question,
@@ -621,7 +624,7 @@ export const createTurnManager = (
             const currentRole = baseState.networkRole;
     
             if (currentRole === 'player') {
-                const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning);
+                const nextContext = buildNextContext({ ...context, superInstructions: retainedSuperInstructions }, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning);
                 const newSaveData: SaveFile = {
                     gameContext: nextContext,
                     gameState: newState,
@@ -674,7 +677,7 @@ export const createTurnManager = (
                     setCombatLog(prev => [...prev, ...combatLogsToAdd]);
                 }
                 
-                const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning);
+                const nextContext = buildNextContext({ ...context, superInstructions: retainedSuperInstructions }, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning);
                 if (currentRole === 'host') restoreHostView(newState, nextContext, baseState.myPeerId);
                 gameContextRef.current = nextContext;
     
