@@ -67,3 +67,13 @@ export function hostTurnResultCommitted(candidate: HostTurnCandidate | null, ren
         return snapshotMatchesRendered({ ...snapshot, gameLog: rendered.gameLog, combatLog: rendered.combatLog, sceneImagePrompt: rendered.sceneImagePrompt }, rendered);
     } catch { return false; }
 }
+
+/** Validate the baseline immediately before applying an isolated turn.
+ * Unlike a post-commit receipt, a baseline cannot permit a system suffix:
+ * restoring the generated candidate would otherwise erase that suffix. The
+ * caller must also check authority/session, queued mutations and connection. */
+export function hostTurnBaseUnchanged(candidate: HostTurnCandidate | null, rendered: Rendered): boolean {
+    return !!candidate && Array.isArray(rendered.gameHistory) &&
+        rendered.gameHistory.length === candidate.snapshot.gameHistory.length &&
+        hostTurnResultCommitted(candidate, rendered);
+}

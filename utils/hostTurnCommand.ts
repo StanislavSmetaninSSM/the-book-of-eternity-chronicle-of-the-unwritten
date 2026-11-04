@@ -32,7 +32,7 @@ export function isHostTurnCommand(x: unknown): x is HostTurnCommand {
 type Connection = { peer: string; open: boolean; metadata?: { role?: string } };
 type Context = { connection: Connection; connections: Map<string, Connection>; state: GameState | null; busy: boolean };
 type Outcome = 'pending' | 'committed' | 'rejected' | 'unknown';
-type Entry = { actor: string; digest: string; baseRevision: number; resultRevision?: number; outcome: Outcome; release: () => void };
+type Entry = { actor: string; digest: string; baseRevision: number; reservationRevision: number; resultRevision?: number; outcome: Outcome; release: () => void };
 export class HostTurnCommandLedger {
     private entries = new Map<string, Entry>();
     private inFlightHashes = 0;
@@ -84,8 +84,19 @@ export class HostTurnCommandLedger {
         if (this.entries.size >= this.limit) return { status: 'capacity' };
         const reservation = this.authority.beginEdit(command.base, ctx.busy);
         if (reservation.status !== 'pending') return { status: reservation.status };
-        this.entries.set(command.commandId, { actor: command.playerId, digest: hash, baseRevision: command.base.revision, outcome: 'pending', release: reservation.release });
+        this.entries.set(command.commandId, { actor: command.playerId, digest: hash, baseRevision: command.base.revision, reservationRevision: reservation.reservationRevision, outcome: 'pending', release: reservation.release });
         return { status: 'reserved', command };
+    }
+    /** Recheck the original connection and active actor after async generation.
+     * This is necessary but not sufficient: the caller must also prove the
+     * rendered baseline has not changed or accumulated queued React writes. */
+    canApply(session: string, commandId: string, ctx: Context): boolean {
+        this.refresh();
+        const entry = this.entries.get(commandId), state = ctx.state;
+        return session === this.sessionId && !!entry && entry.outcome === 'pending' && !ctx.busy &&
+            this.authorized(ctx, entry.actor) && !!state && Number.isSafeInteger(state.activePlayerIndex) &&
+            state.players[state.activePlayerIndex]?.playerId === entry.actor &&
+            this.authority.isSoleReservation(session, entry.reservationRevision);
     }
     /** A caller may settle committed only after the complete host snapshot has committed. */
     settle(session: string, commandId: string, outcome: Exclude<Outcome, 'pending'>): boolean {

@@ -7,6 +7,7 @@ test('host turn execution stays reserved until the generated result actually com
  try {
   const {HostTurnExecutionCoordinator}=await v.ssrLoadModule('/utils/hostTurnExecutionCoordinator.ts');
   const {HostTurnCommandLedger}=await v.ssrLoadModule('/utils/hostTurnCommand.ts');
+  const {captureHostTurnResult}=await v.ssrLoadModule('/utils/hostTurnResultBarrier.ts');
   const {HostTurnAuthority}=await v.ssrLoadModule('/utils/networkTurnProtocol.ts');
   const authority=new HostTurnAuthority(()=>'session'),base=authority.issue();
   const command={version:1,sessionId:'session',commandId:'00000000-0000-4000-8000-000000000001',playerId:'guest',base,kind:'action',text:'Go',image:null};
@@ -21,7 +22,7 @@ test('host turn execution stays reserved until the generated result actually com
   let staged=false;
   const coordinator=new HostTurnExecutionCoordinator(ledger);
   assert.equal((await coordinator.start(command,ctx,async (_command,stage)=>{staged=stage(snapshot);await gate.promise})).status,'reserved');
-  assert.equal(staged,true);assert.equal(coordinator.observe(rendered),'pending','execution completion and React commit are both necessary');
+  assert.equal(staged,true);const capturedBase=captureHostTurnResult(snapshot);assert.equal(coordinator.canApply(ctx(),capturedBase,rendered),true);assert.equal(coordinator.canApply(ctx(),capturedBase,{...rendered,gameHistory:[...history,{sender:'system',content:'later'}]}),false);assert.equal(coordinator.canApply({...ctx(),busy:true},capturedBase,rendered),false);assert.equal(coordinator.observe(rendered),'pending','execution completion and React commit are both necessary');
   assert.equal(authority.issue(),null);assert.equal(ledger.status('session',command.commandId,ctx()),'pending');
   assert.equal((await coordinator.start(command,ctx,async()=>{assert.fail('duplicate must not execute')})).status,'pending');
   assert.equal((await coordinator.start({...command,text:'Changed'},ctx,async()=>{assert.fail('collision must not execute')})).status,'collision');

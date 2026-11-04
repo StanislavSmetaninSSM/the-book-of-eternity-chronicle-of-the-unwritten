@@ -47,10 +47,16 @@ export class HostTurnAuthority {
     /** Session identity is exposed for edit-ledger scoping, not authentication. */
     getSessionId(): string { return this.sessionId; }
     /** Reserve a command on exactly the last published base, synchronously. */
-    beginEdit(base: TurnSyncStamp, busy = false): { status: 'pending'; release: () => void } | { status: 'busy' | 'stale' } {
+    beginEdit(base: TurnSyncStamp, busy = false): { status: 'pending'; release: () => void; reservationRevision: number } | { status: 'busy' | 'stale' } {
         if (busy || this.pendingMutations !== 0) return { status: 'busy' };
         if (!isTurnSyncStamp(base) || base.sessionId !== this.sessionId || base.revision !== this.issuedRevision || this.issuedRevision !== this.revision) return { status: 'stale' };
-        return { status: 'pending', release: this.beginMutation() };
+        const release = this.beginMutation();
+        return { status: 'pending', release, reservationRevision: this.revision };
+    }
+    /** A prepared async operation may apply only while its own hold is the
+     * sole mutation and no intervening revocation/mutation has occurred. */
+    isSoleReservation(session: string, revision: number): boolean {
+        return session === this.sessionId && revision === this.revision && this.pendingMutations === 1;
     }
     /** Force a new grant when a client requests sync, even if state did not change. */
     revoke(): void { this.revision++; this.issuedRevision = null; }

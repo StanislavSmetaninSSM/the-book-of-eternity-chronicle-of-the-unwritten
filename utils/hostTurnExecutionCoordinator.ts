@@ -1,5 +1,5 @@
 import type { SaveFile } from '../types';
-import { captureHostTurnResult, hostTurnResultCommitted } from './hostTurnResultBarrier';
+import { captureHostTurnResult, hostTurnResultCommitted, hostTurnBaseUnchanged } from './hostTurnResultBarrier';
 import { HostTurnCommandLedger, type HostTurnCommand } from './hostTurnCommand';
 
 type Context = Parameters<HostTurnCommandLedger['begin']>[1];
@@ -51,6 +51,16 @@ export class HostTurnExecutionCoordinator {
         // Without a post-commit failure barrier, keep the hold indefinitely.
         pending.uncertain = true;
         this.ledger.markUnknownWhileHeld(pending.command.sessionId, pending.command.commandId);
+    }
+
+    /** Immediately before scheduling an isolated result, callers must use
+     * committed render refs and include every competing mutation in busy.
+     * Passing this check does not itself reserve or enqueue a React update. */
+    canApply(context: Parameters<HostTurnCommandLedger['canApply']>[2], base: Candidate | null, rendered: Rendered): boolean {
+        const pending = this.pending;
+        return !!pending && !pending.uncertain &&
+            this.ledger.canApply(pending.command.sessionId, pending.command.commandId, context) &&
+            hostTurnBaseUnchanged(base, rendered);
     }
 
     /** Called from the post-commit effect with *current* committed refs. */
