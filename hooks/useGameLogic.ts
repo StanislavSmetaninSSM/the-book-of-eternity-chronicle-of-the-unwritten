@@ -1,3 +1,4 @@
+import { captureTurnSubmissionIdentity, sameTurnSubmissionIdentity } from '../utils/turnSubmissionIdentity';
 import { reconcileHostEditedCharacter } from '../utils/hostEditedCharacter';
 import { recordPresentationLog, type PendingPresentationLog } from '../utils/presentationLogSync';
 import { sanitizeGameState } from '../utils/sanitizeGameState';
@@ -2718,7 +2719,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (gameStateRef.current.networkRole === 'spectator') { setError(t('spectator_cannot_submit_turn')); return false; }
         if (hostRestorePendingRef.current) { setError(t('host_sync_not_ready')); return false; }
         if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return false; }
-        if (gameStateRef.current.networkRole === 'player' && !clientTurnStampRef.current) {
+        if (gameStateRef.current.networkRole === 'player' && (!clientTurnStampRef.current || !hostConnectionRef.current?.open)) {
             setError(t('network_sync_not_ready'));
             return false;
         }
@@ -2732,11 +2733,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         const startingRevision = syncRevisionRef.current;
         const startingGameplayRevision = gameplayMutationRevisionRef.current;
+        const startingIdentity = captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current);
         try {
             await savePreActionCrashRecovery();
             if (gameStateRef.current?.networkRole === 'spectator') {
                 isTurnSubmitPendingRef.current = false;
                 setError(t('spectator_cannot_submit_turn'));
+                return;
+            }
+            if (!sameTurnSubmissionIdentity(startingIdentity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
+                isTurnSubmitPendingRef.current = false;
+                setError(t('turn_session_changed_before_start'));
                 return;
             }
             if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
@@ -2764,11 +2771,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         const startingRevision = syncRevisionRef.current;
         const startingGameplayRevision = gameplayMutationRevisionRef.current;
+        const startingIdentity = captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current);
         try {
             await savePreActionCrashRecovery();
             if (gameStateRef.current?.networkRole === 'spectator') {
                 isTurnSubmitPendingRef.current = false;
                 setError(t('spectator_cannot_submit_turn'));
+                return;
+            }
+            if (!sameTurnSubmissionIdentity(startingIdentity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
+                isTurnSubmitPendingRef.current = false;
+                setError(t('turn_session_changed_before_start'));
                 return;
             }
             if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
