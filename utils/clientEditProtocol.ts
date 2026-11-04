@@ -1,13 +1,9 @@
 import { HostTurnAuthority, isTurnSyncStamp, type TurnSyncStamp } from './networkTurnProtocol';
 
-export type ClientEditCommand = {
-    version: 1;
-    sessionId: string;
-    commandId: string;
-    playerId: string;
-    base: TurnSyncStamp;
-    command: { type: 'equip'; itemId: string; slot: string } | { type: 'unequip'; itemId: string };
-};
+export type EquipmentEditOperation = { type: 'equip'; itemId: string; slot: string } | { type: 'unequip'; itemId: string };
+export type StackEditOperation = { type: 'split'; itemId: string; quantity: number } | { type: 'merge'; itemId: string; targetItemId: string };
+type EditEnvelope = { sessionId: string; commandId: string; playerId: string; base: TurnSyncStamp };
+export type ClientEditCommand = (EditEnvelope & { version: 1; command: EquipmentEditOperation }) | (EditEnvelope & { version: 2; command: StackEditOperation });
 export type EditOutcome = 'pending' | 'committed' | 'rejected' | 'unknown';
 export type EditDecision = EditOutcome | 'reserved' | 'invalid' | 'unauthorized' | 'expired' | 'collision' | 'busy' | 'stale' | 'capacity';
 
@@ -22,13 +18,15 @@ const identifier = (value: unknown): value is string => typeof value === 'string
 export function isClientEditCommand(input: unknown): input is ClientEditCommand {
     try {
         if (!object(input) || new TextEncoder().encode(JSON.stringify(input)).length > 4096 ||
-            !fields(input, ['version', 'sessionId', 'commandId', 'playerId', 'base', 'command']) || input.version !== 1 ||
+            !fields(input, ['version', 'sessionId', 'commandId', 'playerId', 'base', 'command']) || (input.version !== 1 && input.version !== 2) ||
             !identifier(input.sessionId) || !identifier(input.playerId) || typeof input.commandId !== 'string' ||
             !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(input.commandId) ||
             !object(input.base) || !fields(input.base, ['version', 'sessionId', 'revision']) || !isTurnSyncStamp(input.base) ||
             input.base.sessionId !== input.sessionId || !object(input.command) || !identifier(input.command.itemId)) return false;
-        if (input.command.type === 'equip') return fields(input.command, ['type', 'itemId', 'slot']) && identifier(input.command.slot);
-        if (input.command.type === 'unequip') return fields(input.command, ['type', 'itemId']);
+        if (input.version === 1 && input.command.type === 'equip') return fields(input.command, ['type', 'itemId', 'slot']) && identifier(input.command.slot);
+        if (input.version === 1 && input.command.type === 'unequip') return fields(input.command, ['type', 'itemId']);
+        if (input.version === 2 && input.command.type === 'split') return fields(input.command, ['type', 'itemId', 'quantity']) && Number.isSafeInteger(input.command.quantity) && (input.command.quantity as number) > 0;
+        if (input.version === 2 && input.command.type === 'merge') return fields(input.command, ['type', 'itemId', 'targetItemId']) && identifier(input.command.targetItemId) && input.command.itemId !== input.command.targetItemId;
         return false;
     } catch { return false; }
 }
@@ -36,7 +34,7 @@ export function isClientEditCommand(input: unknown): input is ClientEditCommand 
 // Canonical field order makes JSON object key ordering irrelevant for dedupe.
 const fingerprint = (c: ClientEditCommand) => JSON.stringify([
     c.version, c.sessionId, c.commandId, c.playerId, c.base.version, c.base.sessionId, c.base.revision,
-    c.command.type, c.command.itemId, c.command.type === 'equip' ? c.command.slot : null,
+    c.command.type, c.command.itemId, c.command.type === 'equip' ? c.command.slot : c.command.type === 'split' ? c.command.quantity : c.command.type === 'merge' ? c.command.targetItemId : null,
 ]);
 
 type Connection = { peer: string; open: boolean; metadata?: { role?: string } };
@@ -77,13 +75,14 @@ export class HostEditLedger {
         if (this.entries.size >= this.limit) return { status: 'capacity' };
         const reservation = this.authority.beginEdit(raw.base, ctx.busy);
         if (reservation.status !== 'pending') return { status: reservation.status };
-        const command: ClientEditCommand = Object.freeze({
-            version: 1, sessionId: raw.sessionId, commandId: raw.commandId, playerId: raw.playerId,
-            base: Object.freeze({ version: 1, sessionId: raw.base.sessionId, revision: raw.base.revision }),
-            command: Object.freeze(raw.command.type === 'equip'
-                ? { type: 'equip' as const, itemId: raw.command.itemId, slot: raw.command.slot }
-                : { type: 'unequip' as const, itemId: raw.command.itemId }),
-        });
+        // Validation excludes arbitrary fields. Clone the exact validated
+        // operation, then freeze it so later caller mutation cannot alter it.
+        const operation = Object.freeze({ ...raw.command });
+        const command = Object.freeze({
+            version: raw.version, sessionId: raw.sessionId, commandId: raw.commandId, playerId: raw.playerId,
+            base: Object.freeze({ version: 1 as const, sessionId: raw.base.sessionId, revision: raw.base.revision }),
+            command: operation,
+        }) as ClientEditCommand;
         this.entries.set(command.commandId, { sessionId: command.sessionId, actor: ctx.connection.peer, fingerprint: fingerprint(command), baseRevision: command.base.revision, outcome: 'pending', release: reservation.release });
         return { status: 'reserved', command };
     }
@@ -121,6 +120,11 @@ export class HostEditLedger {
 export const CLIENT_EDIT_CAPABILITY = Object.freeze({ protocol: 'host-edit', version: 1 } as const);
 export function hasClientEditCapability(value: unknown): boolean {
     return object(value) && fields(value, ['protocol', 'version']) && value.protocol === 'host-edit' && value.version === 1;
+}
+/** New groups require separate opt-in; legacy v1 hosts do not support stacks. */
+export const STACK_EDIT_CAPABILITY = Object.freeze({ protocol: 'host-stack-edit', version: 2 } as const);
+export function hasStackEditCapability(value: unknown): boolean {
+    return object(value) && fields(value, ['protocol', 'version']) && value.protocol === 'host-stack-edit' && value.version === 2;
 }
 
 /** The caller must pass the stamp returned by commitClientSnapshot for the

@@ -12,10 +12,13 @@ function idOccurrences(state: unknown, id: string): number {
     let count = 0, occurrences = 0;
     while (todo.length) {
         const value = todo.pop();
-        if (!value || typeof value !== 'object' || seen.has(value)) continue;
+        if (!value || typeof value !== 'object') continue;
+        // Count every reference to an item, even when two containers share
+        // the same object. Serializing such aliases creates duplicate IDs.
+        if (!Array.isArray(value) && (value as { existedId?: unknown }).existedId === id) occurrences++;
+        if (seen.has(value)) continue;
         if (++count > 200000) return -1;
         seen.add(value);
-        if (!Array.isArray(value) && (value as { existedId?: unknown }).existedId === id) occurrences++;
         for (const entry of Object.values(value)) if (entry && typeof entry === 'object') todo.push(entry);
     }
     return occurrences;

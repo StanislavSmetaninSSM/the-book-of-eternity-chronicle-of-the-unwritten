@@ -8,7 +8,7 @@ type Result = { status: 'applied'; state: GameState } | { status: 'rejected'; st
 
 /** Pure candidate builder; caller must validate connection/base and commit the
  * returned state under the host authority hold before declaring success. */
-export function applyAuthoritativeEquipment(state: GameState, request: ClientEditCommand, settings: GameSettings): Result {
+export function applyAuthoritativeEquipment(state: GameState, request: Extract<ClientEditCommand, { version: 1 }>, settings: GameSettings): Result {
     const reject = (reason: string): Result => ({ status: 'rejected', state, reason });
     try {
         if (settings?.cooperativeGameType !== 'FullParty') return reject('unsupported_mode');
