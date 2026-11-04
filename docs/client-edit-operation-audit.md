@@ -6,6 +6,8 @@
 
 Поштучная матрица 20 операций инвентарного менеджера, их UI-маршруты и предусловия: [client-edit-inventory-matrix.md](client-edit-inventory-matrix.md). Проверка покрытия имён — `scripts/client-inventory-matrix.test.mjs`; она не проверяет полноту семантики или все пути UI.
 
+Поштучная [матрица player actions](client-edit-world-history-matrix.md) покрывает 45 экспортов мира, истории, сортировки и хранилищ; `scripts/client-world-history-matrix.test.mjs` сверяет имена и выбранные UI-связи. Это не проверка всех вызывающих путей или прав.
+
 ## Инвентарь и экипировка (`createInventoryActions`)
 
 | Действия | Данные, цель и побочные эффекты | Временный статус и дальнейшие требования |
