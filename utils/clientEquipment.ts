@@ -2,6 +2,7 @@ import type { GameState, GameSettings } from '../types';
 import type { ClientEditCommand } from './clientEditProtocol';
 import { equipItem, unequipItem, recalculateAllWeights } from './inventoryManager';
 import { recalculateDerivedStats } from './gameContext';
+import { canonical, idOccurrences } from './clientInventoryStack';
 
 const SLOTS = new Set(['Underwear_Top', 'Head', 'Accessory1', 'Underwear_Bottom', 'Neck', 'Accessory4', 'Back', 'Chest', 'Sigil', 'Wrists', 'Waist', 'Hands', 'MainHand', 'Legs', 'OffHand', 'Finger1', 'Feet', 'Finger2', 'Accessory2', 'Accessory3']);
 type Result = { status: 'applied'; state: GameState } | { status: 'rejected'; state: GameState; reason: string };
@@ -22,13 +23,15 @@ export function applyAuthoritativeEquipment(state: GameState, request: Extract<C
         if (!Array.isArray(player.inventory) || !player.equippedItems || typeof player.equippedItems !== 'object' || Array.isArray(player.equippedItems)) return reject('inventory');
         const inventory = player.inventory;
         if (inventory.some(item => !item || !Number.isSafeInteger(item.count) || item.count <= 0 ||
-            typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight < 0)) return reject('inventory');
+            typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight < 0 || !Number.isFinite(item.weight * item.count) || item.isContainer || item.contentsPath) ||
+            !Number.isFinite(inventory.reduce((sum, item) => sum + item.weight * item.count, 0))) return reject('inventory');
+        for (const entry of inventory) canonical(entry);
         const itemIds = inventory.map(item => item?.existedId);
         if (itemIds.some(id => !id) || new Set(itemIds).size !== itemIds.length) return reject('identity');
         const matches = inventory.filter(item => item.existedId === request.command.itemId);
-        if (matches.length !== 1) return reject('item');
+        if (matches.length !== 1 || idOccurrences(state, request.command.itemId) !== 1) return reject('item');
         const item = matches[0];
-        if (item.isContainer || typeof item.durability !== 'string' ||
+        if (item.isContainer || item.isSentient || item.initialId !== undefined || typeof item.durability !== 'string' ||
             (item.requiresTwoHands !== undefined && typeof item.requiresTwoHands !== 'boolean')) return reject('item');
 
         // Every occupied slot must resolve unambiguously, including displaced
@@ -64,6 +67,7 @@ export function applyAuthoritativeEquipment(state: GameState, request: Extract<C
         }
         if (proposed === temporary) return reject('item');
         const updated = recalculateDerivedStats(recalculateAllWeights(proposed.playerCharacter));
+        if (!Number.isFinite(updated.totalWeight)) return reject('inventory');
         const players = state.players.slice();
         players[index] = updated;
         return { status: 'applied', state: { ...state, players } };
