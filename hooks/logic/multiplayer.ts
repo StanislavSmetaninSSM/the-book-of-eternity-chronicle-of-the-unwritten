@@ -47,6 +47,7 @@ interface MultiplayerManagerProps {
     syncNewPeerRef: React.MutableRefObject<(conn: DataConnection) => void>;
     sendMessageRef: React.MutableRefObject<(message: string, image?: { data: string; mimeType: string; } | null) => void>;
     gameStateRef: React.RefObject<GameState | null>;
+    onClientEdit?: (conn: DataConnection, message: NetworkMessage) => void;
     onChatMessage: (message: NetworkChatMessage) => void;
     queueHostSyncNotice: (name: string) => void;
 }
@@ -240,6 +241,7 @@ export const createMultiplayerManager = (
         sendMessageRef,
         gameStateRef,
         onChatMessage,
+        onClientEdit,
         queueHostSyncNotice
     }: MultiplayerManagerProps
 ) => {
@@ -331,6 +333,11 @@ export const createMultiplayerManager = (
                 const message = data as NetworkMessage;
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
+                    case 'client_edit_command':
+                    case 'client_edit_status': {
+                        onClientEdit?.(conn, message);
+                        break;
+                    }
                     case 'turn_result_from_player': {
                         // A spectator connection is not entitled to submit a turn,
                         // even if its peer ID matches a remembered player.
@@ -624,6 +631,11 @@ export const createMultiplayerManager = (
                 const message = data as NetworkMessage;
                 console.log(`Data from ${conn.peer}:`, message.type);
                 switch (message.type) {
+                    case 'client_edit_command':
+                    case 'client_edit_status': {
+                        onClientEdit?.(conn, message);
+                        break;
+                    }
                     case 'turn_result_from_player': {
                         // A spectator connection is not entitled to submit a turn,
                         // even if its peer ID matches a remembered player.

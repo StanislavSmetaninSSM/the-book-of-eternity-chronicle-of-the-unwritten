@@ -1365,7 +1365,10 @@ export type NetworkMessageType =
   'simultaneous_action_submit' |
   'coop_action_rejected' |
   'turn_result_from_player' |
-  'turn_result_ack';
+  'turn_result_ack' |
+  'client_edit_command' |
+  'client_edit_status' |
+  'client_edit_result';
 
 export interface SaveFile {
   gameContext: GameContext;

@@ -41,7 +41,7 @@ const fingerprint = (c: ClientEditCommand) => JSON.stringify([
 
 type Connection = { peer: string; open: boolean; metadata?: { role?: string } };
 type Context = { connection: Connection; connections: Map<string, Connection>; state: { networkRole?: string; myPeerId?: string | null; players?: Array<{ playerId?: string }> } | null; busy: boolean };
-type Entry = { sessionId: string; actor: string; fingerprint: string; outcome: EditOutcome; release: () => void };
+type Entry = { sessionId: string; actor: string; fingerprint: string; baseRevision: number; resultRevision?: number; outcome: EditOutcome; release: () => void };
 
 /** In-memory session ledger. Calling settle('committed') is reserved for the
  * integration's post-React-commit barrier, never for send or queue receipt. */
@@ -84,7 +84,7 @@ export class HostEditLedger {
                 ? { type: 'equip' as const, itemId: raw.command.itemId, slot: raw.command.slot }
                 : { type: 'unequip' as const, itemId: raw.command.itemId }),
         });
-        this.entries.set(command.commandId, { sessionId: command.sessionId, actor: ctx.connection.peer, fingerprint: fingerprint(command), outcome: 'pending', release: reservation.release });
+        this.entries.set(command.commandId, { sessionId: command.sessionId, actor: ctx.connection.peer, fingerprint: fingerprint(command), baseRevision: command.base.revision, outcome: 'pending', release: reservation.release });
         return { status: 'reserved', command };
     }
     settle(sessionId: string, commandId: string, outcome: Exclude<EditOutcome, 'pending'>): boolean {
@@ -95,6 +95,19 @@ export class HostEditLedger {
         entry.outcome = outcome;
         entry.release();
         return true;
+    }
+    /** Attach the first published post-commit revision; receipts remain in
+     * later snapshots while this session ledger is retained. */
+    receipts(stamp: TurnSyncStamp): Array<{ version: 1; sessionId: string; commandId: string; resultRevision: number }> {
+        this.refreshSession();
+        if (!isTurnSyncStamp(stamp) || stamp.sessionId !== this.sessionId) return [];
+        const result: Array<{ version: 1; sessionId: string; commandId: string; resultRevision: number }> = [];
+        for (const [commandId, entry] of this.entries) {
+            if (entry.outcome !== 'committed' || stamp.revision <= entry.baseRevision) continue;
+            if (entry.resultRevision === undefined) entry.resultRevision = stamp.revision;
+            if (stamp.revision >= entry.resultRevision) result.push({ version: 1, sessionId: this.sessionId, commandId, resultRevision: entry.resultRevision });
+        }
+        return result;
     }
     status(commandId: string, sessionId: string, ctx: Context): EditOutcome {
         this.refreshSession();

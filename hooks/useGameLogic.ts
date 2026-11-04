@@ -1,3 +1,5 @@
+import { HostEditLedger, CLIENT_EDIT_CAPABILITY, type ClientEditCommand } from '../utils/clientEditProtocol';
+import { applyAuthoritativeEquipment } from '../utils/clientEquipment';
 import { captureTurnSubmissionIdentity, sameTurnSubmissionIdentity } from '../utils/turnSubmissionIdentity';
 import { reconcileHostEditedCharacter } from '../utils/hostEditedCharacter';
 import { recordPresentationLog, type PendingPresentationLog } from '../utils/presentationLogSync';
@@ -7,7 +9,7 @@ import { isLocalPreferenceKey, mergeNetworkLocalPreferences, updateLocalPreferen
 import { PresentationJournal } from '../utils/presentationJournal';
 import { beginGameplayMutation, gameplayMutationCommitted, clientLocalEditBlocked, guardGameplayActions } from '../utils/gameplayMutationGate';
 import { HostTurnAuthority, type TurnSyncStamp } from '../utils/networkTurnProtocol';
-import { broadcastToConnections } from '../utils/peerSend';
+import { broadcastToConnections, sendOnOpenConnection } from '../utils/peerSend';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // FIX: Imported missing types to resolve multiple "Cannot find name" errors.
 import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Quest, Wound, CustomState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item, CompletedActivity, AdjacencyMapEntry, Project, CompletedProject, StructuredBonus, ActiveThreat, Cinematic, FactionRank, NetworkChatMessage, CinemaFrame, SkillMastery, ImageCacheEntry, DayInfo, Month, NetworkRole, NetworkMessage, PeerInfo, CollectiveActionState, SimultaneousActionState } from '../types';
@@ -52,6 +54,8 @@ import { translate } from '../utils/localization';
 import { cancelInterruptedArenaGmRequest, requestArenaGmImage } from '../utils/arenaGmRelay';
 
 
+type HostEditCommit = { sessionId: string; commandId: string; playerId: string; outcome: 'applied' | 'rejected'; expectedPlayer?: PlayerCharacter; reason?: string };
+
 interface UseGameLogicProps {
     language: Language;
     setLanguage: (lang: Language) => void;
@@ -84,7 +88,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // Party transitions must change the active player, turn number and history
     // in one React update. Independent setters are still exposed to the rest of
     // the lifecycle, but share one ordered state queue.
-    const [core, setCore] = useState<{ gameState: GameState | null; gameHistory: ChatMessage[]; turnNumber: number | null; partyRevision: number }>({ gameState: null, gameHistory: [], turnNumber: null, partyRevision: 0 });
+    const [core, setCore] = useState<{ gameState: GameState | null; gameHistory: ChatMessage[]; turnNumber: number | null; partyRevision: number; hostEdit?: HostEditCommit }>({ gameState: null, gameHistory: [], turnNumber: null, partyRevision: 0 });
     const { gameState, gameHistory, turnNumber } = core;
     const _setGameState = useCallback((action: React.SetStateAction<GameState | null>) => setCore(previous => {
         const next = typeof action === 'function' ? action(previous.gameState) : action;
@@ -123,6 +127,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const contextEditGenerationRef = useRef(0);
     const hostTurnAuthorityRef = useRef<HostTurnAuthority | null>(null);
     if (!hostTurnAuthorityRef.current) hostTurnAuthorityRef.current = new HostTurnAuthority();
+    const hostEditLedgerRef = useRef<HostEditLedger | null>(null);
+    if (!hostEditLedgerRef.current) hostEditLedgerRef.current = new HostEditLedger(hostTurnAuthorityRef.current);
+    const pendingHostEditRef = useRef<{ command: ClientEditCommand; revision: number; baseline: GameState; connection: DataConnection; marker: PendingPresentationLog & { release: () => void } } | null>(null);
     const clientTurnStampRef = useRef<TurnSyncStamp | null>(null);
     const observedHostStampRef = useRef<TurnSyncStamp | null>(null);
     const pendingClientSyncRef = useRef<PendingClientSync | null>(null);
@@ -144,6 +151,21 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const pendingPeerDisconnectCommitsRef = useRef(new Map<string, PeerInfo>());
     const [hostRestoreEpoch, setHostRestoreEpoch] = useState(0);
     const clearHostRestorePending = useCallback(() => {
+        // A low-priority edit may already have an eagerly computed candidate
+        // when the session is reset. Undo only that exact, still-uncommitted
+        // player object in the same ordered queue before the reset proceeds.
+        const cancelled = pendingHostEditRef.current;
+        if (cancelled) setCore(previous => {
+            const result = previous.hostEdit;
+            const state = previous.gameState;
+            if (!result || result.sessionId !== cancelled.command.sessionId || result.commandId !== cancelled.command.commandId ||
+                result.outcome !== 'applied' || !state || !result.expectedPlayer) return previous;
+            const index = state.players.findIndex(p => p.playerId === result.playerId);
+            const original = cancelled.baseline.players.find(p => p.playerId === result.playerId);
+            if (index < 0 || state.players[index] !== result.expectedPlayer || !original) return previous;
+            const players = state.players.slice(); players[index] = original;
+            return { ...previous, gameState: { ...state, players } };
+        });
         hostRestorePendingRef.current = null;
         pendingNewPeersRef.current.clear();
         pendingRemovedPeersRef.current.clear();
@@ -478,7 +500,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             (contextEdits.gameLog.revision === 0 || gameLog === contextEdits.gameLog.expected);
         const combatLogCommitted = contextEdits.combatLog.applied === contextEdits.combatLog.revision &&
             (contextEdits.combatLog.revision === 0 || combatLog === contextEdits.combatLog.expected);
-        if (!pendingPartyTransitionRef.current && settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameLogCommitted && combatLogCommitted && gameHistoryRef.current === gameHistory &&
+        if (!pendingPartyTransitionRef.current && !pendingHostEditRef.current && settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameLogCommitted && combatLogCommitted && gameHistoryRef.current === gameHistory &&
             stateMutationAppliedRef.current === stateMutationRevisionRef.current &&
             historyMutationAppliedRef.current === historyMutationRevisionRef.current) {
             if (gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
@@ -500,7 +522,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 if (releaseHistory || releaseContext || gameState?.networkRole === 'host') setSnapshotEpoch(epoch => epoch + 1);
             }
         }
-    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameLog, combatLog, gameplayMutationEpoch, contextEditEpoch, core.partyRevision]);
+    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameLog, combatLog, gameplayMutationEpoch, contextEditEpoch, core.partyRevision, core.hostEdit]);
 
     useEffect(() => {
         if (gameState) {
@@ -598,6 +620,41 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
         }
     }, [gameState, gameSettings, superInstructions, worldState]);
+
+    // Complete a reserved host edit only from a committed React render, after
+    // the context synchronization effect above. No wire receipt is a commit.
+    useEffect(() => {
+        const pending = pendingHostEditRef.current;
+        const result = core.hostEdit;
+        if (!pending || !result || result.sessionId !== pending.command.sessionId || result.commandId !== pending.command.commandId) return;
+        const cancelled = hostRestorePendingRef.current !== pending.marker || hostTurnAuthorityRef.current!.getSessionId() !== result.sessionId;
+        if (!cancelled && gameStateRef.current !== pending.baseline && gameStateRef.current !== gameState) return;
+        if (!cancelled) gameStateRef.current = gameState;
+        const matched = !cancelled && result.outcome === 'applied' && !!gameState &&
+            gameState.players.find(p => p.playerId === result.playerId) === result.expectedPlayer &&
+            gameContextRef.current?.players === gameState.players && gameHistoryRef.current === gameHistory;
+        const outcome = cancelled ? 'unknown' : result.outcome === 'rejected' ? 'rejected' : matched ? 'committed' : 'unknown';
+        hostEditLedgerRef.current!.settle(result.sessionId, result.commandId, outcome);
+        if (hostRestorePendingRef.current === pending.marker) hostRestorePendingRef.current = null;
+        pendingHostEditRef.current = null;
+        stateMutationAppliedRef.current = Math.max(stateMutationAppliedRef.current, pending.revision);
+        gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, pending.revision);
+        setGameplayMutationEpoch(epoch => epoch + 1);
+        if (pending.connection.open && connectionsRef.current.get(pending.connection.peer) === pending.connection) {
+            void sendOnOpenConnection(pending.connection, { type: 'client_edit_result', payload: { version: 1, sessionId: result.sessionId, commandId: result.commandId, status: outcome, ...(result.reason ? { reason: result.reason } : {}) } }).catch(() => {});
+        }
+        // Connections delayed by the temporary host hold must be retried only
+        // after it is removed; each handler rechecks its live connection.
+        for (const peerId of pendingRemovedPeersRef.current) {
+            pendingRemovedPeersRef.current.delete(peerId);
+            handlePeerDisconnectedRef.current(peerId);
+        }
+        for (const [peerId, entry] of pendingPeerCharactersRef.current) {
+            pendingPeerCharactersRef.current.delete(peerId);
+            pendingPeerCharacterIdsRef.current.delete(peerId);
+            if (entry.connection.open && connectionsRef.current.get(peerId) === entry.connection) addPlayerRef.current(entry.player, entry.connection);
+        }
+    }, [core.hostEdit, gameState, gameHistory, gameplayMutationEpoch, hostRestoreEpoch]);
 
     const restoreFromSaveData = useCallback((data: SaveFile, isNetworkSync: boolean = false, networkIdentityOverride?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => {
         syncRevisionRef.current += 1;
@@ -1593,10 +1650,61 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         queuedHostSyncRequestsRef.current.clear();
         const ids: (string | undefined)[] = requests.length ? requests : [undefined];
         return Promise.all(ids.map(id => {
-            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: networkSafeSaveFile(saveData), protocol: stamp, ...(id ? { syncRequestId: id } : {}) } };
+            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: networkSafeSaveFile(saveData), protocol: stamp, editCapability: CLIENT_EDIT_CAPABILITY, editReceipts: hostEditLedgerRef.current!.receipts(stamp), ...(id ? { syncRequestId: id } : {}) } };
             return broadcastToConnections(connectionsRef.current.values(), syncMessage);
         })).then(() => undefined);
     }, []);
+
+    const onClientEdit = useCallback((connection: DataConnection, message: NetworkMessage) => {
+        const ledger = hostEditLedgerRef.current!;
+        const context = { connection, connections: connectionsRef.current, state: gameStateRef.current,
+            busy: !!activeTurnRef.current || isTurnSubmitPendingRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current || isLoading };
+        const reply = (payload: Record<string, unknown>) => {
+            void sendOnOpenConnection(connection, { type: 'client_edit_result', payload }).catch(() => {});
+        };
+        if (message.type === 'client_edit_status') {
+            const p = message.payload;
+            if (!p || typeof p !== 'object' || Array.isArray(p) || Object.keys(p).sort().join(',') !== 'commandId,sessionId,version' ||
+                p.version !== 1 || typeof p.sessionId !== 'string' || p.sessionId.length > 128 ||
+                typeof p.commandId !== 'string' || p.commandId.length > 128) return;
+            reply({ version: 1, sessionId: p.sessionId, commandId: p.commandId, status: ledger.status(p.commandId, p.sessionId, context) });
+            return;
+        }
+        const decision = ledger.begin(message.payload, context);
+        if (decision.status !== 'reserved') {
+            const p = message.payload;
+            reply({ version: 1, ...(typeof p?.sessionId === 'string' && p.sessionId.length <= 128 ? { sessionId: p.sessionId } : {}),
+                ...(typeof p?.commandId === 'string' && p.commandId.length <= 128 ? { commandId: p.commandId } : {}), status: decision.status });
+            return;
+        }
+        const command = decision.command;
+        const baseline = gameStateRef.current!;
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef, baseline.networkRole, turnPhaseRef.current);
+        if (revision === null) {
+            ledger.settle(command.sessionId, command.commandId, 'rejected');
+            reply({ version: 1, sessionId: command.sessionId, commandId: command.commandId, status: 'rejected' });
+            return;
+        }
+        stateMutationRevisionRef.current = revision;
+        const marker = { snapshot: null, release: () => {} };
+        hostRestorePendingRef.current = marker;
+        pendingHostEditRef.current = { command, revision, baseline, connection, marker };
+        const settings = gameContextRef.current?.gameSettings;
+        setCore(previous => {
+            const candidate = previous.gameState === baseline && settings && hostRestorePendingRef.current === marker &&
+                hostTurnAuthorityRef.current!.getSessionId() === command.sessionId && connection.open && connectionsRef.current.get(connection.peer) === connection
+                ? applyAuthoritativeEquipment(baseline, command, settings)
+                : { status: 'rejected' as const, state: baseline, reason: 'stale' };
+            const expectedPlayer = candidate.status === 'applied' ? candidate.state.players.find(p => p.playerId === command.playerId) : undefined;
+            return { ...previous, gameState: candidate.status === 'applied' ? candidate.state : previous.gameState,
+                hostEdit: { sessionId: command.sessionId, commandId: command.commandId, playerId: command.playerId,
+                    outcome: candidate.status, expectedPlayer, ...(candidate.status === 'rejected' ? { reason: candidate.reason } : {}) } };
+        });
+        setGameplayMutationEpoch(epoch => epoch + 1);
+        reply({ version: 1, sessionId: command.sessionId, commandId: command.commandId, status: 'pending' });
+    }, [isLoading]);
+    const onClientEditRef = useRef(onClientEdit);
+    onClientEditRef.current = onClientEdit;
 
     // A local file load resets network identity. Never tear down a live or
     // connecting session, or replace a state that changed while I/O was open.
@@ -1720,6 +1828,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 syncNewPeerRef,
                 sendMessageRef,
                 gameStateRef,
+                onClientEdit: (connection, message) => onClientEditRef.current(connection, message),
                 onChatMessage: (message: NetworkChatMessage) => {
                     setNetworkChatHistory(prev => [...prev, message]);
                 }
