@@ -2715,6 +2715,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const beginTurnSubmission = useCallback(() => {
         if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current) return false;
         if (!gameStateRef.current || !gameContextRef.current) return false;
+        if (gameStateRef.current.networkRole === 'spectator') { setError(t('spectator_cannot_submit_turn')); return false; }
         if (hostRestorePendingRef.current) { setError(t('host_sync_not_ready')); return false; }
         if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return false; }
         if (gameStateRef.current.networkRole === 'player' && !clientTurnStampRef.current) {
@@ -2733,6 +2734,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const startingGameplayRevision = gameplayMutationRevisionRef.current;
         try {
             await savePreActionCrashRecovery();
+            if (gameStateRef.current?.networkRole === 'spectator') {
+                isTurnSubmitPendingRef.current = false;
+                setError(t('spectator_cannot_submit_turn'));
+                return;
+            }
             if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
                 gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
                 isTurnSubmitPendingRef.current = false;
@@ -2760,6 +2766,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const startingGameplayRevision = gameplayMutationRevisionRef.current;
         try {
             await savePreActionCrashRecovery();
+            if (gameStateRef.current?.networkRole === 'spectator') {
+                isTurnSubmitPendingRef.current = false;
+                setError(t('spectator_cannot_submit_turn'));
+                return;
+            }
             if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
                 gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
                 isTurnSubmitPendingRef.current = false;

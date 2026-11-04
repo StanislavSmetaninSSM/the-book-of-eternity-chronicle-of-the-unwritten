@@ -216,6 +216,10 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
         return { isDisabled: isLoading, placeholderText: t("What do you do next?"), isMyTurn: true };
     }
     
+    if (gameState.networkRole === 'spectator') {
+        return { isDisabled: true, placeholderText: t('spectator_cannot_submit_turn'), isMyTurn: false };
+    }
+
     // If not in a network game, it's always the local player's turn and enabled.
     if (gameState.networkRole === 'none') {
         return { isDisabled: false, placeholderText: isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?"), isMyTurn: true };

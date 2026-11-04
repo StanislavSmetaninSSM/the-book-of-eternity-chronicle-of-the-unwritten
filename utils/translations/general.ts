@@ -1,5 +1,6 @@
 export const general = {
   en: {
+    "spectator_cannot_submit_turn": "Spectators cannot submit turns or questions. Ask the host to participate as a player.",
     "network_regeneration_unsupported": "Regenerating a previous turn is not supported in a network game. The current session has not been changed.",
     "client_edit_host_only": "This change is temporarily available only to the host. Ask the host to make it; client changes are blocked to prevent losing them during synchronization.",
     "game_state_updating": "A game change is still being applied. Wait for it to finish before starting a turn.",
@@ -242,6 +243,7 @@ export const general = {
   },
   ru: {
     "network_regeneration_unsupported": "Повторная генерация предыдущего хода в сетевой игре не поддерживается. Текущая сессия не изменена.",
+    "spectator_cannot_submit_turn": "Зрители не могут отправлять ходы или вопросы. Попросите хоста подключить вас как игрока.",
     "client_edit_host_only": "Это изменение временно доступно только хосту. Попросите хоста выполнить его: локальные изменения клиента заблокированы, чтобы они не терялись при синхронизации.",
     "game_state_updating": "Изменение игрового состояния ещё применяется. Дождитесь его завершения перед ходом.",
     "game_edit_blocked_delivery": "Ход отправляется или синхронизируется. Дождитесь хоста, прежде чем менять игровое состояние.",

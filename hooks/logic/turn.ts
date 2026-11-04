@@ -367,6 +367,7 @@ export const createTurnManager = (
     
     const sendMessage = (message: string, image?: { data: string; mimeType: string; } | null, clearCollective = false) => {
         if (isLoading || activeTurnRef.current) return;
+        if (gameStateRef.current?.networkRole === 'spectator') { setError(t('spectator_cannot_submit_turn')); return; }
         if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
         if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
         if (gameStateRef.current?.networkRole === 'player' && clientTurnStampRef && !clientTurnStampRef.current) {
@@ -462,6 +463,7 @@ export const createTurnManager = (
     const askQuestion = async (question: string, image?: { data: string; mimeType: string; } | null) => {
         const baseState: GameState | null = gameStateRef.current;
         if (!gameContextRef.current || isLoading || !baseState || activeTurnRef.current) return;
+        if (baseState.networkRole === 'spectator') { setError(t('spectator_cannot_submit_turn')); return; }
         if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
         if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
         const startingStamp = clientTurnStampRef?.current ? { ...clientTurnStampRef.current } : null;
