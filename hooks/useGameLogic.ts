@@ -1,8 +1,9 @@
 import { ClientCoordinationBusy, ClientCoordinationUnavailable, withClientHostLock } from '../utils/clientEditCoordination';
 import { ClientEditIntentAlreadyExists, createClientEditIntent, listClientEditIntents, transitionClientEditIntent, deleteClientEditIntent, type ClientEditIntent, type ClientEditIntentStatus } from '../utils/clientEditIntentStore';
-import { HostEditLedger, CLIENT_EDIT_CAPABILITY, STACK_EDIT_CAPABILITY, canConfirmEdit, type ClientEditCommand, type EquipmentEditOperation, type StackEditOperation } from '../utils/clientEditProtocol';
+import { HostEditLedger, CLIENT_EDIT_CAPABILITY, STACK_EDIT_CAPABILITY, MOVE_EDIT_CAPABILITY, canConfirmEdit, type ClientEditCommand, type EquipmentEditOperation, type StackEditOperation, type MoveEditOperation } from '../utils/clientEditProtocol';
 import { applyAuthoritativeEquipment } from '../utils/clientEquipment';
 import { applyAuthoritativeSplit, applyAuthoritativeMerge } from '../utils/clientInventoryStack';
+import { applyAuthoritativeMove } from '../utils/clientInventoryMove';
 import { captureTurnSubmissionIdentity, sameTurnSubmissionIdentity } from '../utils/turnSubmissionIdentity';
 import { reconcileHostEditedCharacter } from '../utils/hostEditedCharacter';
 import { recordPresentationLog, type PendingPresentationLog } from '../utils/presentationLogSync';
@@ -143,7 +144,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const clientEditStorageReadyRef = useRef(false);
     const clientEditBusyRef = useRef(false);
     const [clientEditStorageError, setClientEditStorageError] = useState<string | null>(null);
-    const clientEditCapabilityRef = useRef<{ sessionId: string; enabled: boolean; stacks: boolean } | null>(null);
+    const clientEditCapabilityRef = useRef<{ sessionId: string; enabled: boolean; stacks: boolean; move: boolean } | null>(null);
     const clientEditTasksRef = useRef<Promise<void>>(Promise.resolve());
     const requestClientSyncRef = useRef<() => void>(() => {});
     const pendingNetworkTurnRef = useRef<string | null>(null);
@@ -1751,7 +1752,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         queuedHostSyncRequestsRef.current.clear();
         const ids: (string | undefined)[] = requests.length ? requests : [undefined];
         return Promise.all(ids.map(id => {
-            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: networkSafeSaveFile(saveData), protocol: stamp, editCapability: CLIENT_EDIT_CAPABILITY, stackEditCapability: STACK_EDIT_CAPABILITY, editReceipts: hostEditLedgerRef.current!.receipts(stamp), ...(id ? { syncRequestId: id } : {}) } };
+            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: networkSafeSaveFile(saveData), protocol: stamp, editCapability: CLIENT_EDIT_CAPABILITY, stackEditCapability: STACK_EDIT_CAPABILITY, moveEditCapability: MOVE_EDIT_CAPABILITY, editReceipts: hostEditLedgerRef.current!.receipts(stamp), ...(id ? { syncRequestId: id } : {}) } };
             return broadcastToConnections(connectionsRef.current.values(), syncMessage);
         })).then(() => undefined);
     }, []);
@@ -1795,6 +1796,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const candidate = previous.gameState === baseline && settings && hostRestorePendingRef.current === marker &&
                 hostTurnAuthorityRef.current!.getSessionId() === command.sessionId && connection.open && connectionsRef.current.get(connection.peer) === connection
                 ? command.version === 1 ? applyAuthoritativeEquipment(baseline, command, settings)
+                    : command.version === 3 ? applyAuthoritativeMove(baseline, { playerId: command.playerId, itemId: command.command.itemId, destinationId: command.command.destinationId }, settings)
                     : command.command.type === 'split'
                         ? applyAuthoritativeSplit(baseline, { playerId: command.playerId, commandId: command.commandId, itemId: command.command.itemId, quantity: command.command.quantity }, settings)
                         : applyAuthoritativeMerge(baseline, { playerId: command.playerId, sourceId: command.command.itemId, targetId: command.command.targetItemId }, settings)
@@ -1951,7 +1953,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     // Client edits are explicit, durable intents. They never call the
     // local inventory manager or mutates the client character optimistically.
-    const submitClientEdit = useCallback(async (operation: EquipmentEditOperation | StackEditOperation) => {
+    const submitClientEdit = useCallback(async (operation: EquipmentEditOperation | StackEditOperation | MoveEditOperation) => {
         const state = gameStateRef.current, stamp = clientTurnStampRef.current, connection = hostConnectionRef.current;
         if (state?.networkRole !== 'player') return;
         if (hasBlockingClientIntent()) { setError(t('client_edit_pending_turn')); return; }
@@ -1959,11 +1961,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             !stamp || !connection?.open || !state.hostPeerId || !state.myPeerId || !operation.itemId) { setError(t('client_edit_unavailable')); return; }
         if (!clientEditCapabilityRef.current?.enabled || clientEditCapabilityRef.current.sessionId !== stamp.sessionId) { setError(t('client_edit_capability_missing')); return; }
         if ((operation.type === 'split' || operation.type === 'merge') && !clientEditCapabilityRef.current.stacks) { setError(t('client_edit_capability_missing')); return; }
+        if (operation.type === 'move' && !clientEditCapabilityRef.current.move) { setError(t('client_edit_capability_missing')); return; }
         if (gameContextRef.current?.gameSettings.cooperativeGameType !== 'FullParty') { setError(t('client_edit_unavailable')); return; }
         const identity = captureTurnSubmissionIdentity(state, stamp, connection);
         const envelope = { sessionId: stamp.sessionId, commandId: crypto.randomUUID(), playerId: state.myPeerId, base: { ...stamp } };
         const command: ClientEditCommand = operation.type === 'equip' || operation.type === 'unequip'
             ? { ...envelope, version: 1, command: operation }
+            : operation.type === 'move' ? { ...envelope, version: 3, command: operation }
             : { ...envelope, version: 2, command: operation };
         clientEditBusyRef.current = true;
         let sentIntent: ClientEditIntent | null = null;
@@ -2017,6 +2021,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (gameStateRef.current?.networkRole !== 'player') return allManagers.unequipItem(item);
         void submitClientEdit({ type: 'unequip', itemId: item.existedId || '' });
     }, [allManagers, submitClientEdit]);
+    const moveItemForClient = useCallback((item: Item, destinationId: string | null) => {
+        if (gameStateRef.current?.networkRole !== 'player') return allManagers.moveItem(item, destinationId);
+        if (destinationId !== null && (!destinationId || destinationId === item.existedId)) { setError(t('client_edit_unavailable')); return; }
+        void submitClientEdit({ type: 'move', itemId: item.existedId || '', destinationId });
+    }, [allManagers, submitClientEdit, t]);
     const splitItemForClient = useCallback((item: Item, quantity: number) => {
         if (gameStateRef.current?.networkRole !== 'player') return allManagers.splitItemStack(item, quantity);
         if (!Number.isSafeInteger(quantity) || quantity <= 0) { setError(t('client_edit_unavailable')); return; }
@@ -2574,7 +2583,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return;
         }
         clientTurnStampRef.current = stamp;
-        clientEditCapabilityRef.current = { sessionId: stamp.sessionId, enabled: pending.editCapability === true, stacks: pending.stackEditCapability === true };
+        clientEditCapabilityRef.current = { sessionId: stamp.sessionId, enabled: pending.editCapability === true, stacks: pending.stackEditCapability === true, move: pending.moveEditCapability === true };
         for (const intent of clientEditIntentsRef.current) {
             if ((intent.status === 'pending' || intent.status === 'unknown') && intent.hostPeerId === gameState.hostPeerId &&
                 intent.command.playerId === gameState.myPeerId && pending.editReceipts?.some(receipt => canConfirmEdit(
@@ -3779,6 +3788,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         ...allManagers,
         equipItem: equipItemForClient,
         unequipItem: unequipItemForClient,
+        moveItem: moveItemForClient,
         splitItemStack: splitItemForClient,
         mergeItemStacks: mergeItemsForClient,
         clientEditIntents,

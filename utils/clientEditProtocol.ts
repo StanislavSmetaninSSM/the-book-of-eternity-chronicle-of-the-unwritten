@@ -2,8 +2,9 @@ import { HostTurnAuthority, isTurnSyncStamp, type TurnSyncStamp } from './networ
 
 export type EquipmentEditOperation = { type: 'equip'; itemId: string; slot: string } | { type: 'unequip'; itemId: string };
 export type StackEditOperation = { type: 'split'; itemId: string; quantity: number } | { type: 'merge'; itemId: string; targetItemId: string };
+export type MoveEditOperation = { type: 'move'; itemId: string; destinationId: string | null };
 type EditEnvelope = { sessionId: string; commandId: string; playerId: string; base: TurnSyncStamp };
-export type ClientEditCommand = (EditEnvelope & { version: 1; command: EquipmentEditOperation }) | (EditEnvelope & { version: 2; command: StackEditOperation });
+export type ClientEditCommand = (EditEnvelope & { version: 1; command: EquipmentEditOperation }) | (EditEnvelope & { version: 2; command: StackEditOperation }) | (EditEnvelope & { version: 3; command: MoveEditOperation });
 export type EditOutcome = 'pending' | 'committed' | 'rejected' | 'unknown';
 export type EditDecision = EditOutcome | 'reserved' | 'invalid' | 'unauthorized' | 'expired' | 'collision' | 'busy' | 'stale' | 'capacity';
 
@@ -18,7 +19,7 @@ const identifier = (value: unknown): value is string => typeof value === 'string
 export function isClientEditCommand(input: unknown): input is ClientEditCommand {
     try {
         if (!object(input) || new TextEncoder().encode(JSON.stringify(input)).length > 4096 ||
-            !fields(input, ['version', 'sessionId', 'commandId', 'playerId', 'base', 'command']) || (input.version !== 1 && input.version !== 2) ||
+            !fields(input, ['version', 'sessionId', 'commandId', 'playerId', 'base', 'command']) || (input.version !== 1 && input.version !== 2 && input.version !== 3) ||
             !identifier(input.sessionId) || !identifier(input.playerId) || typeof input.commandId !== 'string' ||
             !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(input.commandId) ||
             !object(input.base) || !fields(input.base, ['version', 'sessionId', 'revision']) || !isTurnSyncStamp(input.base) ||
@@ -27,6 +28,7 @@ export function isClientEditCommand(input: unknown): input is ClientEditCommand 
         if (input.version === 1 && input.command.type === 'unequip') return fields(input.command, ['type', 'itemId']);
         if (input.version === 2 && input.command.type === 'split') return fields(input.command, ['type', 'itemId', 'quantity']) && Number.isSafeInteger(input.command.quantity) && (input.command.quantity as number) > 0;
         if (input.version === 2 && input.command.type === 'merge') return fields(input.command, ['type', 'itemId', 'targetItemId']) && identifier(input.command.targetItemId) && input.command.itemId !== input.command.targetItemId;
+        if (input.version === 3 && input.command.type === 'move') return fields(input.command, ['type', 'itemId', 'destinationId']) && (input.command.destinationId === null || identifier(input.command.destinationId) && input.command.destinationId !== input.command.itemId);
         return false;
     } catch { return false; }
 }
@@ -34,7 +36,7 @@ export function isClientEditCommand(input: unknown): input is ClientEditCommand 
 // Canonical field order makes JSON object key ordering irrelevant for dedupe.
 const fingerprint = (c: ClientEditCommand) => JSON.stringify([
     c.version, c.sessionId, c.commandId, c.playerId, c.base.version, c.base.sessionId, c.base.revision,
-    c.command.type, c.command.itemId, c.command.type === 'equip' ? c.command.slot : c.command.type === 'split' ? c.command.quantity : c.command.type === 'merge' ? c.command.targetItemId : null,
+    c.command.type, c.command.itemId, c.command.type === 'equip' ? c.command.slot : c.command.type === 'split' ? c.command.quantity : c.command.type === 'merge' ? c.command.targetItemId : c.command.type === 'move' ? c.command.destinationId : null,
 ]);
 
 type Connection = { peer: string; open: boolean; metadata?: { role?: string } };
@@ -125,6 +127,10 @@ export function hasClientEditCapability(value: unknown): boolean {
 export const STACK_EDIT_CAPABILITY = Object.freeze({ protocol: 'host-stack-edit', version: 2 } as const);
 export function hasStackEditCapability(value: unknown): boolean {
     return object(value) && fields(value, ['protocol', 'version']) && value.protocol === 'host-stack-edit' && value.version === 2;
+}
+export const MOVE_EDIT_CAPABILITY = Object.freeze({ protocol: 'host-move-edit', version: 3 } as const);
+export function hasMoveEditCapability(value: unknown): boolean {
+    return object(value) && fields(value, ['protocol', 'version']) && value.protocol === 'host-move-edit' && value.version === 3;
 }
 
 /** The caller must pass the stamp returned by commitClientSnapshot for the

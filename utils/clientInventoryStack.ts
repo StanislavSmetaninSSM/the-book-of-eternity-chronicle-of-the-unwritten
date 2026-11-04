@@ -7,7 +7,7 @@ type Result = { status: 'applied'; state: GameState } | { status: 'rejected'; st
 
 /** Fail closed if an ID already occurs anywhere in the state, or traversal is
  * unreasonably large. The state may contain shared references. */
-function idOccurrences(state: unknown, id: string): number {
+export function idOccurrences(state: unknown, id: string): number {
     const seen = new WeakSet<object>(), todo: unknown[] = [state];
     let count = 0, occurrences = 0;
     while (todo.length) {

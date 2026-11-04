@@ -1,4 +1,4 @@
-import { hasClientEditCapability, hasStackEditCapability } from '../../utils/clientEditProtocol';
+import { hasClientEditCapability, hasStackEditCapability, hasMoveEditCapability } from '../../utils/clientEditProtocol';
 
 import React from 'react';
 import { GameState, SaveFile, NetworkMessage, NetworkRole, PeerInfo, PlayerCharacter, GameSettings, ChatMessage, CollectiveActionState, SimultaneousActionState, NetworkChatMessage } from '../../types';
@@ -56,7 +56,7 @@ interface MultiplayerManagerProps {
 }
 
 
-export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; allowedGameLogs?: WeakSet<string[]>; editCapability?: boolean; stackEditCapability?: boolean; editReceipts?: unknown[]; }
+export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; allowedGameLogs?: WeakSet<string[]>; editCapability?: boolean; stackEditCapability?: boolean; moveEditCapability?: boolean; editReceipts?: unknown[]; }
 
 type GameContextWorldState = SaveFile['gameContext']['worldState'] | null;
 
@@ -119,7 +119,7 @@ export function stageHostFullSync(message: NetworkMessage, identity: { role: Net
     try {
         const snapshot = props.restoreFromSaveData(message.payload.saveFile, true, identity);
         const stamp = message.payload.protocol as TurnSyncStamp;
-        props.pendingClientSyncRef.current = { stamp, snapshot, editCapability: hasClientEditCapability(message.payload?.editCapability), stackEditCapability: hasStackEditCapability(message.payload?.stackEditCapability),
+        props.pendingClientSyncRef.current = { stamp, snapshot, editCapability: hasClientEditCapability(message.payload?.editCapability), stackEditCapability: hasStackEditCapability(message.payload?.stackEditCapability), moveEditCapability: hasMoveEditCapability(message.payload?.moveEditCapability),
             editReceipts: Array.isArray(message.payload?.editReceipts) && message.payload.editReceipts.length <= 256 ? message.payload.editReceipts : [] };
         props.observedHostStampRef.current = stamp;
         if (props.pendingSyncRequestRef?.current && message.payload.syncRequestId === props.pendingSyncRequestRef.current) {
