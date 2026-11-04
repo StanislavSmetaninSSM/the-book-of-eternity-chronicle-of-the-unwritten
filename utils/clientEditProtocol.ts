@@ -103,3 +103,25 @@ export class HostEditLedger {
         return entry && entry.actor === ctx.connection.peer ? entry.outcome : 'unknown';
     }
 }
+
+/** Capability negotiation is explicit; a turn stamp alone is insufficient. */
+export const CLIENT_EDIT_CAPABILITY = Object.freeze({ protocol: 'host-edit', version: 1 } as const);
+export function hasClientEditCapability(value: unknown): boolean {
+    return object(value) && fields(value, ['protocol', 'version']) && value.protocol === 'host-edit' && value.version === 1;
+}
+
+/** The caller must pass the stamp returned by commitClientSnapshot for the
+ * same snapshot carrying this receipt, never a receipt/ACK from the wire alone. */
+export function canConfirmEdit(
+    intent: { sessionId: string; commandId: string; baseRevision: number }, receipt: unknown,
+    snapshotStamp: unknown, committedStamp: unknown
+): boolean {
+    if (!object(receipt) || !fields(receipt, ['version', 'sessionId', 'commandId', 'resultRevision']) ||
+        receipt.version !== 1 || receipt.sessionId !== intent.sessionId || receipt.commandId !== intent.commandId ||
+        !Number.isSafeInteger(intent.baseRevision) || intent.baseRevision < 0 ||
+        !Number.isSafeInteger(receipt.resultRevision) || (receipt.resultRevision as number) <= intent.baseRevision || (receipt.resultRevision as number) < 0 ||
+        !isTurnSyncStamp(snapshotStamp) || !isTurnSyncStamp(committedStamp) ||
+        snapshotStamp.sessionId !== intent.sessionId || committedStamp.sessionId !== snapshotStamp.sessionId ||
+        committedStamp.revision !== snapshotStamp.revision) return false;
+    return snapshotStamp.revision >= (receipt.resultRevision as number);
+}
