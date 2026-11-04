@@ -2082,6 +2082,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(t('no_regeneration_data'));
             return false;
         }
+        // A peer may already be connecting before networkRole is committed.
+        // Reuse the local-restore guard before the synchronous teardown.
+        if (!beginLocalLoad()) return false;
 
         try {
             restoreFromSaveData(turnSaveToUse);
@@ -2090,7 +2093,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(formatError(e));
             return false;
         }
-    }, [lastTurnSaveFile, restoreFromSaveData, setError, t]);
+    }, [lastTurnSaveFile, restoreFromSaveData, beginLocalLoad, setError, t]);
 
     const passTurnManually = useCallback(() => {
         if (!gameState || !gameSettings || gameSettings.cooperativeGameType === 'None') return;
