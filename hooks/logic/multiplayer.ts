@@ -142,7 +142,7 @@ export function stageHostFullSync(message: NetworkMessage, identity: { role: Net
 
 export const applyPlayerTurnResult = async (message: NetworkMessage, connectionId: string, {
     gameStateRef, gameContextRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef
-}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't' | 'hostTurnAuthority' | 'activeTurnRef' | 'gameplayMutationPendingRef'> & Partial<Pick<MultiplayerManagerProps, 'gameContextRef'>>, acknowledge: (payload: any) => Promise<void>) => {
+}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'gameContextRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't' | 'hostTurnAuthority' | 'activeTurnRef' | 'gameplayMutationPendingRef'>, acknowledge: (payload: any) => Promise<void>) => {
     const current = gameStateRef.current;
     const submission = message.payload?.submission;
     const incoming = message.payload?.saveFile;
