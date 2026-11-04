@@ -1,10 +1,12 @@
-import type { Language, SaveFile } from '../types';
+import type { ChatMessage, GameContext, Language, SaveFile } from '../types';
 import { executeIsolatedHostTurn } from './isolatedHostTurnExecution';
 import { captureHostTurnResult, hostTurnResultCommitted, hostTurnBaseUnchanged } from './hostTurnResultBarrier';
 import { HostTurnCommandLedger, type HostTurnCommand } from './hostTurnCommand';
 
 type Context = Parameters<HostTurnCommandLedger['begin']>[1];
 type Rendered = Parameters<typeof hostTurnResultCommitted>[1];
+type ApplyContext = ReturnType<Context> & { history: ChatMessage[]; gameContext: GameContext | null };
+type ApplyContextGetter = () => ApplyContext;
 type Candidate = NonNullable<ReturnType<typeof captureHostTurnResult>>;
 type Pending = { command: HostTurnCommand; candidate: Candidate | null; staged: boolean; finished: boolean; uncertain: boolean; task: Promise<void> };
 
@@ -50,7 +52,7 @@ export class HostTurnExecutionCoordinator {
      * can therefore be rejected and released; a thrown/partial apply remains
      * unknown and retains the hold. read() must return one committed render;
      * apply() must synchronously enqueue a rebase-safe host restore. */
-    startIsolated(raw: unknown, context: Context, options: {
+    startIsolated(raw: unknown, context: ApplyContextGetter, options: {
         read: () => { snapshot: SaveFile; rendered: Rendered };
         apply: (candidate: SaveFile) => SaveFile;
         language: Language;
@@ -96,10 +98,10 @@ export class HostTurnExecutionCoordinator {
     /** Immediately before scheduling an isolated result, callers must use
      * committed render refs and include every competing mutation in busy.
      * Passing this check does not itself reserve or enqueue a React update. */
-    canApply(context: Parameters<HostTurnCommandLedger['canApply']>[2], base: Candidate | null, rendered: Rendered): boolean {
+    canApply(context: ApplyContext, base: Candidate | null, rendered: Rendered): boolean {
         const pending = this.pending;
-        return !!pending && !pending.uncertain &&
-            this.ledger.canApply(pending.command.sessionId, pending.command.commandId, context) &&
+        return !!pending && !pending.uncertain && context.state === rendered.currentGameState && context.history === rendered.gameHistory &&
+            context.gameContext === rendered.currentContext && this.ledger.canApply(pending.command.sessionId, pending.command.commandId, context) &&
             hostTurnBaseUnchanged(base, rendered);
     }
 
