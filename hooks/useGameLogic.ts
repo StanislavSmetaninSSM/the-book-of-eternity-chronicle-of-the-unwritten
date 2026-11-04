@@ -1640,8 +1640,39 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, broadcastFullSync, queueHostSyncNotice
     ]);
 
+    // The manager exposes a low-level recovery primitive for its own turn
+    // machinery. Do not expose it from the hook without checking the live
+    // session: the checkpoint's role is not the current connection's role.
+    const resumeInterruptedTurnSafely = useCallback((recovery: Parameters<typeof allManagers.resumeInterruptedTurn>[0]) => {
+        const role = gameStateRef.current?.networkRole;
+        if (recovery.baseState.networkRole !== 'none' || peerRef.current || hostConnectionRef.current ||
+            (role && role !== 'none') || activeTurnRef.current || hostRestorePendingRef.current || gameplayMutationPendingRef.current) {
+            setError(language === 'ru'
+                ? 'Возобновление прерванного хода доступно только в стабильной локальной игре без активного сетевого соединения.'
+                : 'Interrupted-turn recovery is only available in a stable local game without an active network connection.');
+            return;
+        }
+        return allManagers.resumeInterruptedTurn(recovery);
+    }, [allManagers, language, setError]);
+
     const resumeInterruptedGameTurn = useCallback(async () => {
+        const initialState = gameStateRef.current;
+        const initialSyncRevision = syncRevisionRef.current;
+        const initialGameplayRevision = gameplayMutationRevisionRef.current;
+        const blocked = () => !!peerRef.current || !!hostConnectionRef.current ||
+            (!!gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none') ||
+            !!activeTurnRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+            gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
+            gameplayMutationRevisionRef.current !== initialGameplayRevision;
+        const reject = () => {
+            setError(language === 'ru'
+                ? 'Возобновление прерванного хода доступно только в стабильной локальной игре без активного сетевого соединения. Состояние изменилось или игра занята; повторите запрос позже.'
+                : 'Interrupted-turn recovery requires a stable local game without an active network connection. The state changed or the game is busy; try again later.');
+            return false;
+        };
+        if (blocked()) return reject();
         const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
+        if (blocked()) return reject();
         if (!recovery) return false;
         if (recovery.baseState.networkRole !== 'none') {
             setError(language === 'ru'
@@ -1650,6 +1681,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return false;
         }
         await cancelInterruptedArenaGmRequest();
+        // Cancellation and checkpoint reads can both yield to a connection,
+        // restore, turn, or local edit. Do not clear the recovery on refusal.
+        if (blocked()) return reject();
         setInterruptedTurnRecovery(null);
         setError(null);
         void allManagers.resumeInterruptedTurn(recovery);
@@ -3224,6 +3258,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         isLoading,
         error,
         ...allManagers,
+        resumeInterruptedTurn: resumeInterruptedTurnSafely,
         sendMessage: sendMessageWithStashClear,
         askQuestion: askQuestionWithRecovery,
         lastJsonResponse,
