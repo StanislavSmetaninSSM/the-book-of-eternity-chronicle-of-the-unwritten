@@ -7,6 +7,7 @@ test('host equipment reducer targets only the unique requested player and handle
  for(const bad of [{...base,players:[host,{...guest,inventory:[sword,{...sword}]}]},{...base,players:[host,guest,{...guest}]},{...base,playerCharacter:guest},{...base,myPeerId:null}]){const out=apply(bad,cmd('equip','sword','MainHand'));assert.equal(out.status,'rejected');assert.equal(out.state,bad)}
  assert.equal(apply(base,cmd('equip','sword','MainHand'),{cooperativeGameType:'MultiplePersonalities'}).status,'rejected');
  const bag=item('bag',null,{isContainer:true,volume:10});for(const bad of [{...base,temporaryStash:guest.inventory},{...base,players:[host,{...guest,inventory:[sword,bag]}]},{...base,players:[host,{...guest,inventory:[{...sword,contentsPath:['Bag']}]}]},{...base,players:[host,{...guest,inventory:[{...sword,isSentient:true}]}]},{...base,players:[host,{...guest,inventory:[{...sword,count:Number.MAX_SAFE_INTEGER,weight:Number.MAX_VALUE}]}]}])assert.equal(apply(bad,cmd('equip','sword','MainHand')).status,'rejected');
+ assert.equal(apply({...base,players:[host,{...guest,customBad:NaN}]},cmd('equip','sword','MainHand')).status,'rejected','derived recalculation must not erase non-JSON character fields');
  const already=apply(base,cmd('equip','sword','MainHand')).state;assert.equal(apply(already,cmd('equip','sword','OffHand')).status,'rejected');
  }finally{await v.close()}
 });

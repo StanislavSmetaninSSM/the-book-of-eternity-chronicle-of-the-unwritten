@@ -2,7 +2,7 @@ import type { GameState, GameSettings } from '../types';
 import type { ClientEditCommand } from './clientEditProtocol';
 import { equipItem, unequipItem, recalculateAllWeights } from './inventoryManager';
 import { recalculateDerivedStats } from './gameContext';
-import { canonical, idOccurrences } from './clientInventoryStack';
+import { validateSerializableCharacter, idOccurrences } from './clientInventoryStack';
 
 const SLOTS = new Set(['Underwear_Top', 'Head', 'Accessory1', 'Underwear_Bottom', 'Neck', 'Accessory4', 'Back', 'Chest', 'Sigil', 'Wrists', 'Waist', 'Hands', 'MainHand', 'Legs', 'OffHand', 'Finger1', 'Feet', 'Finger2', 'Accessory2', 'Accessory3']);
 type Result = { status: 'applied'; state: GameState } | { status: 'rejected'; state: GameState; reason: string };
@@ -25,7 +25,7 @@ export function applyAuthoritativeEquipment(state: GameState, request: Extract<C
         if (inventory.some(item => !item || !Number.isSafeInteger(item.count) || item.count <= 0 ||
             typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight < 0 || !Number.isFinite(item.weight * item.count) || item.isContainer || item.contentsPath) ||
             !Number.isFinite(inventory.reduce((sum, item) => sum + item.weight * item.count, 0))) return reject('inventory');
-        for (const entry of inventory) canonical(entry);
+        validateSerializableCharacter(player);
         const itemIds = inventory.map(item => item?.existedId);
         if (itemIds.some(id => !id) || new Set(itemIds).size !== itemIds.length) return reject('identity');
         const matches = inventory.filter(item => item.existedId === request.command.itemId);

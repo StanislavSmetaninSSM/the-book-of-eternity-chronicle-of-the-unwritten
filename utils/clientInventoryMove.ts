@@ -1,7 +1,7 @@
 import type { GameSettings, GameState } from '../types';
 import { recalculateAllWeights } from './inventoryManager';
 import { recalculateDerivedStats } from './gameContext';
-import { idOccurrences } from './clientInventoryStack';
+import { validateSerializableCharacter, idOccurrences } from './clientInventoryStack';
 
 type Move = { playerId: string; itemId: string; destinationId: string | null };
 type Result = { status: 'applied'; state: GameState } | { status: 'rejected'; state: GameState; reason: string };
@@ -24,6 +24,7 @@ export function applyAuthoritativeMove(state: GameState, request: Move, settings
             typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight < 0 ||
             typeof item.volume !== 'number' || !Number.isFinite(item.volume) || item.volume < 0 ||
             !Number.isFinite(item.weight * item.count) || !Number.isFinite(item.volume * item.count))) return reject('inventory');
+        validateSerializableCharacter(player);
         const allIds = inventory.map(item => item.existedId);
         if (Object.values(player.equippedItems).some(id => id !== null && (typeof id !== 'string' || !allIds.includes(id)))) return reject('slots');
         if (new Set(allIds).size !== allIds.length || idOccurrences(state, request.itemId) !== 1 ||

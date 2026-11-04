@@ -1,7 +1,7 @@
 import type { GameSettings, GameState, Item } from '../types';
 import { recalculateAllWeights } from './inventoryManager';
 import { recalculateDerivedStats } from './gameContext';
-import { canonical, idOccurrences } from './clientInventoryStack';
+import { validateSerializableCharacter, idOccurrences } from './clientInventoryStack';
 
 type Request = { type: 'stash_drop'; playerId: string; itemId: string; commandId: string } |
     { type: 'stash_take'; playerId: string; itemId: string; commandId: string; quantity: number };
@@ -27,14 +27,15 @@ export function applyAuthoritativeStash(state: GameState, request: Request, sett
             !Number.isFinite(item.weight) || item.weight < 0 || !Number.isFinite(item.weight * item.count) || item.isContainer || item.contentsPath)) return reject('inventory');
         // Derived-stat helpers serialize the character; never silently strip
         // non-JSON item metadata during the cross-entity transfer.
-        for (const entry of inventory) canonical(entry);
+        validateSerializableCharacter(player);
         const inventoryIds = inventory.map(item => item.existedId);
         if (new Set(inventoryIds).size !== inventoryIds.length || Object.values(player.equippedItems).some(id => id !== null && (typeof id !== 'string' || !inventoryIds.includes(id)))) return reject('identity');
         const source = request.type === 'stash_drop' ? inventory : stash;
         const matches = source.filter(item => item?.existedId === request.itemId);
         if (matches.length !== 1 || idOccurrences(state, request.itemId) !== 1) return reject('identity');
         const item = matches[0];
-        canonical(item);
+        // Also validate an item entering from the shared stash.
+        validateSerializableCharacter({ item });
         if (item.isContainer || item.isSentient || item.contentsPath || item.initialId !== undefined ||
             !Number.isSafeInteger(item.count) || item.count <= 0 || !Number.isFinite(item.weight) || item.weight < 0 ||
             !Number.isFinite(item.weight * item.count) || Object.values(player.equippedItems).includes(item.existedId)) return reject('item');

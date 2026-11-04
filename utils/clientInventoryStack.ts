@@ -48,6 +48,7 @@ export function applyAuthoritativeSplit(state: GameState, request: Split, settin
         // legacy container paths; do not guess their contents or reduction.
         if (inventory.some(item => item.isContainer || item.contentsPath || !Number.isFinite(item.weight * item.count)) ||
             !Number.isFinite(inventory.reduce((sum, item) => sum + item.weight * item.count, 0))) return reject('inventory');
+        validateSerializableCharacter(player);
         const itemIds = inventory.map(item => item.existedId);
         if (new Set(itemIds).size !== itemIds.length) return reject('identity');
         const item = inventory.find(entry => entry.existedId === request.itemId);
@@ -89,6 +90,12 @@ export function canonical(value: unknown, ancestors = new Set<object>()): string
     return result;
 }
 
+/** Character recalculation uses JSON serialization. Optional top-level
+ * undefined fields carry no value, but reject lossy data everywhere else. */
+export function validateSerializableCharacter(player: object): void {
+    for (const value of Object.values(player)) if (value !== undefined) canonical(value);
+}
+
 /** Conservative merge: only entirely equal metadata except IDs/counts, and
  * only full resources. Candidate is pure and not connected to the wire yet. */
 export function applyAuthoritativeMerge(state: GameState, request: Merge, settings: GameSettings): Result {
@@ -108,6 +115,7 @@ export function applyAuthoritativeMerge(state: GameState, request: Merge, settin
         if (inventory.some(item => !item || !item.existedId || !Number.isSafeInteger(item.count) || item.count <= 0 ||
             typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight < 0 || item.isContainer || item.contentsPath ||
             !Number.isFinite(item.weight * item.count)) || !Number.isFinite(inventory.reduce((sum, item) => sum + item.weight * item.count, 0))) return reject('inventory');
+        validateSerializableCharacter(player);
         const itemIds = inventory.map(item => item.existedId);
         if (new Set(itemIds).size !== itemIds.length) return reject('identity');
         const source = inventory.find(item => item.existedId === request.sourceId), target = inventory.find(item => item.existedId === request.targetId);
