@@ -141,11 +141,15 @@ export function stageHostFullSync(message: NetworkMessage, identity: { role: Net
 
 
 export const applyPlayerTurnResult = async (message: NetworkMessage, connectionId: string, {
-    gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef
-}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't' | 'hostTurnAuthority' | 'activeTurnRef' | 'gameplayMutationPendingRef'>, acknowledge: (payload: any) => Promise<void>) => {
+    gameStateRef, gameContextRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef
+}: Pick<MultiplayerManagerProps, 'gameStateRef' | 'restoreFromSaveData' | 'broadcastFullSync' | 'setError' | 'setGameHistory' | 't' | 'hostTurnAuthority' | 'activeTurnRef' | 'gameplayMutationPendingRef'> & Partial<Pick<MultiplayerManagerProps, 'gameContextRef'>>, acknowledge: (payload: any) => Promise<void>) => {
     const current = gameStateRef.current;
     const submission = message.payload?.submission;
-    const decision = message.payload?.saveFile && current
+    const incoming = message.payload?.saveFile;
+    const validHostContext = !gameContextRef || !!gameContextRef.current?.gameSettings &&
+        typeof gameContextRef.current.superInstructions === 'string' && !!incoming?.gameContext &&
+        typeof incoming.gameContext === 'object' && !Array.isArray(incoming.gameContext);
+    const decision = incoming && current && validHostContext
         ? hostTurnAuthority.accept(submission, message.senderId, connectionId, current.players[current.activePlayerIndex]?.playerId, activeTurnRef.current !== null || gameplayMutationPendingRef?.current === true)
         : 'invalid';
     const reply = async (status: string) => {
@@ -155,7 +159,13 @@ export const applyPlayerTurnResult = async (message: NetworkMessage, connectionI
     if (decision !== 'accepted') { await reply(decision); return; }
     let restored = false;
     try {
-        const snapshot = restoreFromSaveData(message.payload.saveFile, true);
+        // A turn may change the world, but the player is not allowed to edit
+        // host-owned rules/settings or instructions through the SaveFile.
+        // Clone them because restore performs migrations in place.
+        const safeFile = gameContextRef ? { ...incoming, gameContext: { ...incoming.gameContext,
+            gameSettings: JSON.parse(JSON.stringify(gameContextRef.current.gameSettings)),
+            superInstructions: gameContextRef.current.superInstructions } } : incoming;
+        const snapshot = restoreFromSaveData(safeFile, true);
         restored = true;
         // Acknowledgement is a receipt, not proof that every peer received sync.
         void reply('accepted').catch(() => {});
@@ -352,7 +362,7 @@ export const createMultiplayerManager = (
                                 console.warn('Could not deliver turn acknowledgement:', error));
                             break;
                         }
-                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
+                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, gameContextRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
                     case 'new_player_character_data': {
@@ -657,7 +667,7 @@ export const createMultiplayerManager = (
                                 console.warn('Could not deliver turn acknowledgement:', error));
                             break;
                         }
-                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
+                        void applyPlayerTurnResult(message, conn.peer, { gameStateRef, gameContextRef, restoreFromSaveData, broadcastFullSync, setError, setGameHistory, t, hostTurnAuthority, activeTurnRef, gameplayMutationPendingRef }, payload => sendOnOpenConnection(conn, { type: 'turn_result_ack', payload }));
                         break;
                     }
                     case 'new_player_character_data': {

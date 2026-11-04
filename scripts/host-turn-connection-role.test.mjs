@@ -5,7 +5,7 @@ test('both host entry points reject turn results from spectator or unknown conne
  for(const handler of [handlers[0],handlers[2]]){
   const js=ts.transpileModule(`const onData=${handler.getText(src)};`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
   const conn={peer:'p',open:true,metadata:{role:'spectator'}},connectionsRef={current:new Map([['p',conn]])};let accepted=0,acks=[];
-  const scope={conn,connectionsRef,gameStateRef:{current:{}},restoreFromSaveData:()=>{},broadcastFullSync:()=>{},setError:()=>{},setGameHistory:()=>{},t:k=>k,hostTurnAuthority:{},activeTurnRef:{current:null},gameplayMutationPendingRef:{current:false},applyPlayerTurnResult:()=>{accepted++;return Promise.resolve()},sendOnOpenConnection:(_conn,msg)=>{acks.push(msg);return Promise.resolve()},console:{log:()=>{},warn:()=>{}}};
+  const scope={conn,connectionsRef,gameStateRef:{current:{}},gameContextRef:{current:{}},restoreFromSaveData:()=>{},broadcastFullSync:()=>{},setError:()=>{},setGameHistory:()=>{},t:k=>k,hostTurnAuthority:{},activeTurnRef:{current:null},gameplayMutationPendingRef:{current:false},applyPlayerTurnResult:()=>{accepted++;return Promise.resolve()},sendOnOpenConnection:(_conn,msg)=>{acks.push(msg);return Promise.resolve()},console:{log:()=>{},warn:()=>{}}};
   const send=()=>vm.runInNewContext(`${js}\nonData(data);`,{...scope,data:{type:'turn_result_from_player',senderId:'p',payload:{submission:{turnId:'turn-123'}}}});
   send();assert.equal(accepted,0);assert.equal(acks.at(-1).payload.status,'unauthorized');assert.equal(acks.at(-1).payload.turnId,'turn-123');
   conn.metadata={};send();assert.equal(accepted,0);assert.equal(acks.at(-1).payload.status,'unauthorized');

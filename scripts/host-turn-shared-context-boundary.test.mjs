@@ -1,0 +1,15 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createServer} from 'vite';
+test('player turn cannot replace host-owned settings or super instructions',async()=>{
+ const v=await createServer({configFile:false,server:{middlewareMode:true},appType:'custom',logLevel:'silent'});try{
+ const {HostTurnAuthority}=await v.ssrLoadModule('/utils/networkTurnProtocol.ts');const {applyPlayerTurnResult}=await v.ssrLoadModule('/hooks/logic/multiplayer.ts');const authority=new HostTurnAuthority(()=>'session');const base=authority.issue();
+ const hostContext={gameSettings:{hardMode:true,gameWorldInformation:{calendar:{name:'host calendar'}}},superInstructions:'host instructions'};
+ const remote={gameContext:{gameSettings:{hardMode:false,gameWorldInformation:{calendar:{name:'forged'}}},superInstructions:'forged',worldState:{currentTimeInMinutes:10}},gameState:{players:[{playerId:'p'}],activePlayerIndex:0}};
+ let restored,ack;const props={gameStateRef:{current:{players:[{playerId:'p'}],activePlayerIndex:0}},gameContextRef:{current:hostContext},hostTurnAuthority:authority,activeTurnRef:{current:null},restoreFromSaveData:file=>(restored=file,file),broadcastFullSync:()=>{},setError:()=>{},setGameHistory:()=>{},t:k=>k};
+ await applyPlayerTurnResult({senderId:'p',payload:{saveFile:remote,submission:{turnId:'00000000-0000-4000-8000-000000000001',base}}},'p',props,async result=>{ack=result.status});assert.equal(ack,'accepted');assert.deepEqual(restored.gameContext.gameSettings,hostContext.gameSettings);assert.equal(restored.gameContext.superInstructions,'host instructions');assert.equal(restored.gameContext.worldState.currentTimeInMinutes,10);assert.notEqual(restored.gameContext.gameSettings,hostContext.gameSettings);assert.equal(remote.gameContext.superInstructions,'forged');
+ }finally{await v.close()}
+});
+test('malformed player turn context is rejected without consuming the grant',async()=>{
+ const v=await createServer({configFile:false,server:{middlewareMode:true},appType:'custom',logLevel:'silent'});try{const {HostTurnAuthority}=await v.ssrLoadModule('/utils/networkTurnProtocol.ts');const {applyPlayerTurnResult}=await v.ssrLoadModule('/hooks/logic/multiplayer.ts');const authority=new HostTurnAuthority(()=>'s');const base=authority.issue();let ack,restored=0;const props={gameStateRef:{current:{players:[{playerId:'p'}],activePlayerIndex:0}},gameContextRef:{current:{gameSettings:{},superInstructions:''}},hostTurnAuthority:authority,activeTurnRef:{current:null},restoreFromSaveData:file=>(restored++,file),broadcastFullSync:()=>{},setError:()=>{},setGameHistory:()=>{},t:k=>k};const make=saveFile=>({senderId:'p',payload:{saveFile,submission:{turnId:'00000000-0000-4000-8000-000000000002',base}}});await applyPlayerTurnResult(make({gameContext:[]}), 'p',props,async result=>{ack=result.status});assert.equal(ack,'invalid');assert.equal(restored,0);await applyPlayerTurnResult(make({gameContext:{},gameState:{}}), 'p',props,async result=>{ack=result.status});assert.equal(ack,'accepted');assert.equal(restored,1)}finally{await v.close()}
+});
