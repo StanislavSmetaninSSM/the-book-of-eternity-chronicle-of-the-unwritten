@@ -147,8 +147,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const clientEditCapabilityRef = useRef<{ sessionId: string; enabled: boolean; stacks: boolean; move: boolean } | null>(null);
     const clientEditTasksRef = useRef<Promise<void>>(Promise.resolve());
     const requestClientSyncRef = useRef<() => void>(() => {});
-    const clientEpochBaselineRef = useRef(new Map<string, number>());
-    const clientEpochSyncRef = useRef<{ host: string; epoch: number; requestId: string } | null>(null);
+    const clientEpochBaselineRef = useRef(new Map<string, string | null>());
+    const clientEpochSyncRef = useRef<{ host: string; epoch: string | null; requestId: string } | null>(null);
     const pendingNetworkTurnRef = useRef<string | null>(null);
     const pendingSyncRequestRef = useRef<string | null>(null);
     const queuedHostSyncRequestsRef = useRef(new Set<string>());
@@ -476,7 +476,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [t]);
     const intentStorageFailureRef = useRef(intentStorageFailure);
     intentStorageFailureRef.current = intentStorageFailure;
-    const requestClientEpochSync = useCallback((host: string, epoch: number) => {
+    const requestClientEpochSync = useCallback((host: string, epoch: string | null) => {
         if (gameStateRef.current?.networkRole !== 'player' || gameStateRef.current.hostPeerId !== host || !hostConnectionRef.current?.open) return;
         requestClientSyncRef.current();
         const requestId = pendingSyncRequestRef.current;
@@ -484,7 +484,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, []);
     const ensureClientEditEpoch = useCallback(async (host: string): Promise<boolean> => {
         const epoch = await getClientEditEpoch(host);
-        if ((clientEpochBaselineRef.current.get(host) ?? 0) === epoch) return true;
+        if ((clientEpochBaselineRef.current.get(host) ?? null) === epoch) return true;
         requestClientEpochSync(host, epoch);
         setError(t('network_sync_not_ready'));
         return false;

@@ -11,11 +11,26 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 function openIntentDb(): Promise<IDBDatabase> {
     if (!dbPromise) {
         dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-            const req = indexedDB.open(DB, 2);
-            req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: 'command.commandId' }); if (!req.result.objectStoreNames.contains(EPOCHS)) req.result.createObjectStore(EPOCHS); };
+            const req = indexedDB.open(DB, 3);
+            let abandoned = false;
+            req.onupgradeneeded = () => {
+                if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: 'command.commandId' });
+                if (!req.result.objectStoreNames.contains(EPOCHS)) req.result.createObjectStore(EPOCHS);
+                else {
+                    // Upgrade the short-lived v2 numeric markers without
+                    // deleting intents or allowing the counter to repeat.
+                    const cursor = req.transaction!.objectStore(EPOCHS).openCursor();
+                    cursor.onsuccess = () => {
+                        const entry = cursor.result;
+                        if (!entry) return;
+                        if (Number.isSafeInteger(entry.value) && entry.value >= 0) entry.update(crypto.randomUUID());
+                        entry.continue();
+                    };
+                }
+            };
             req.onerror = () => reject(req.error || new Error('Cannot open intent storage'));
-            req.onblocked = () => reject(new Error('Intent storage upgrade is blocked by another tab'));
-            req.onsuccess = () => { req.result.onversionchange = () => { req.result.close(); dbPromise = null; }; resolve(req.result); };
+            req.onblocked = () => { abandoned = true; reject(new Error('Intent storage upgrade is blocked by another tab')); };
+            req.onsuccess = () => { if (abandoned) { req.result.close(); return; } req.result.onversionchange = () => { req.result.close(); dbPromise = null; }; resolve(req.result); };
         }).catch(error => { dbPromise = null; throw error; });
     }
     return dbPromise;
@@ -33,22 +48,25 @@ function finished(tx: IDBTransaction): Promise<void> {
 }
 // The epoch and intent mutation share one IndexedDB transaction. A tab that
 // never observed an intent can still detect its creation and later removal.
+const validEpoch = (value: unknown): value is string => typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 function bumpEpoch(tx: IDBTransaction, host: string): void {
     const store = tx.objectStore(EPOCHS), request = store.get(host);
     request.onsuccess = () => {
-        const value = request.result === undefined ? 0 : request.result;
-        if (!Number.isSafeInteger(value) || value < 0 || value >= Number.MAX_SAFE_INTEGER) { tx.abort(); return; }
-        store.put(value + 1, host);
+        if (request.result !== undefined && !validEpoch(request.result)) { tx.abort(); return; }
+        // A fresh random marker avoids ABA if browser storage is cleared and
+        // recreated while another tab still retains an old grant.
+        store.put(crypto.randomUUID(), host);
     };
 }
-export async function getClientEditEpoch(host: string): Promise<number> {
+export async function getClientEditEpoch(host: string): Promise<string | null> {
     if (!validPeer(host)) throw new Error('Invalid host identity');
     const db = await openIntentDb(), tx = db.transaction(EPOCHS, 'readonly'), request = tx.objectStore(EPOCHS).get(host);
     let value: unknown;
-    request.onsuccess = () => { value = request.result === undefined ? 0 : request.result; };
+    request.onsuccess = () => { value = request.result === undefined ? null : request.result; };
     await finished(tx);
-    if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error('Invalid host edit epoch');
-    return value as number;
+    if (value !== null && !validEpoch(value)) throw new Error('Invalid host edit epoch');
+    return value as string | null;
 }
 export class ClientEditIntentAlreadyExists extends Error {
     constructor() { super('An unresolved intent already exists for this host'); this.name = 'ClientEditIntentAlreadyExists'; }
