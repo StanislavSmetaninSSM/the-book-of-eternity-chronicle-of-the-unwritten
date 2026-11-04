@@ -216,3 +216,14 @@ intent не записываются; успешная отправка не о�
 production dispatch: вызов должен обеспечить capability negotiation,
 ограничение времени отправки, обработку status/receipt и React commit на
 клиенте. При ошибке IndexedDB существующее намерение не удаляется вслепую.
+
+#### Изолированная подготовка host-turn
+
+`executeIsolatedHostTurn` запускает существующий action/question manager на
+`structuredClone` снимка хоста и возвращает candidate без записи в живые
+React setters. Успех, ошибка relay и отмена проверены на реальном manager с
+синтетическим relay; исходные state/context/history остаются неизменными.
+Это подготовительный компонент, не подключённый к PeerJS: caller обязан
+проверить actor/base/session до и после async работы, передать отмену,
+проверить исходную базу и провести React commit/receipt. Его нельзя считать
+авторитетным протоколом или использовать для отключения старого пути.
