@@ -1700,14 +1700,18 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const loadCrashRecovery = useCallback(async (): Promise<boolean> => {
         const metadata = getCrashRecoveryMetadata();
-        const currentState = gameStateRef.current;
-
-        if (metadata?.networkRole === 'player' || currentState?.networkRole === 'player') {
+        const initialState = gameStateRef.current;
+        const initialRevision = syncRevisionRef.current;
+        const isClientCheckpoint = (role: string | undefined) => role === 'player' || role === 'spectator';
+        const networkActive = () => !!peerRef.current || !!hostConnectionRef.current ||
+            (!!gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none');
+        const rejectRecovery = () => {
             setError(language === 'ru'
-                ? 'Восстановление локального состояния недоступно для клиента сетевой игры. Переподключитесь или запросите синхронизацию у хоста.'
-                : 'Local crash recovery is unavailable for multiplayer clients. Reconnect or request sync from the host.');
+                ? 'Локальное восстановление недоступно во время сетевой сессии или из снимка клиента/зрителя. Закройте сессию и используйте сохранение хоста либо запросите синхронизацию у хоста.'
+                : 'Local recovery is unavailable during a network session or from a player/spectator checkpoint. Close the session and use the host save, or request sync from the host.');
             return false;
-        }
+        };
+        if (isClientCheckpoint(metadata?.networkRole) || networkActive()) return rejectRecovery();
 
         const attemptedMarker = markCrashRecoveryAttempt();
         if (attemptedMarker) {
@@ -1723,6 +1727,16 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return false;
             }
 
+            // IndexedDB is asynchronous and metadata can be stale or absent.
+            // Recheck both the actual checkpoint and the current session before
+            // a local restore resets network identity or overwrites newer state.
+            if (isClientCheckpoint(data.gameState?.networkRole) || networkActive()) return rejectRecovery();
+            if (gameStateRef.current !== initialState || syncRevisionRef.current !== initialRevision) {
+                setError(language === 'ru'
+                    ? 'Состояние игры изменилось во время чтения восстановления. Повторите запрос, если хотите загрузить сохранение.'
+                    : 'The game state changed while recovery was loading. Retry if you want to load the checkpoint.');
+                return false;
+            }
             restoreFromSaveData(data);
             return true;
         } catch (e: any) {
