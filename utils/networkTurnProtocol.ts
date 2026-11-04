@@ -44,6 +44,14 @@ export class HostTurnAuthority {
             this.revision++; this.issuedRevision = null;
         };
     }
+    /** Session identity is exposed for edit-ledger scoping, not authentication. */
+    getSessionId(): string { return this.sessionId; }
+    /** Reserve a command on exactly the last published base, synchronously. */
+    beginEdit(base: TurnSyncStamp, busy = false): { status: 'pending'; release: () => void } | { status: 'busy' | 'stale' } {
+        if (busy || this.pendingMutations !== 0) return { status: 'busy' };
+        if (!isTurnSyncStamp(base) || base.sessionId !== this.sessionId || base.revision !== this.issuedRevision || this.issuedRevision !== this.revision) return { status: 'stale' };
+        return { status: 'pending', release: this.beginMutation() };
+    }
     /** Force a new grant when a client requests sync, even if state did not change. */
     revoke(): void { this.revision++; this.issuedRevision = null; }
     issue(): TurnSyncStamp | null {
