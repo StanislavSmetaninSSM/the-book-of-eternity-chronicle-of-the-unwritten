@@ -39,7 +39,7 @@ import {
     markCrashRecoveryAttempt,
     saveCrashRecoveryPoint,
     loadInterruptedTurnRecovery,
-    clearInterruptedTurnRecovery,
+    clearInterruptedTurnRecoveryIfUnchanged,
 } from '../utils/fileManager';
 import type { CrashRecoveryMarker, CrashRecoveryMetadata, CrashRecoveryReason, InterruptedTurnRecovery } from '../utils/fileManager';
 import { initializeAndPreviewSound, playNotificationSound } from '../utils/soundManager';
@@ -1539,7 +1539,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const canCommit = () => {
             const role = gameStateRef.current?.networkRole;
             const blocked = !!peerRef.current || !!hostConnectionRef.current || (role && role !== 'none') ||
-                !!activeTurnRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+                !!activeTurnRef.current || isTurnSubmitPendingRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
                 gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
                 gameplayMutationRevisionRef.current !== initialGameplayRevision;
             if (blocked) {
@@ -1670,7 +1670,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const resumeInterruptedTurnSafely = useCallback((recovery: Parameters<typeof allManagers.resumeInterruptedTurn>[0]) => {
         const role = gameStateRef.current?.networkRole;
         if (recovery.baseState.networkRole !== 'none' || peerRef.current || hostConnectionRef.current ||
-            (role && role !== 'none') || activeTurnRef.current || hostRestorePendingRef.current || gameplayMutationPendingRef.current) {
+            (role && role !== 'none') || activeTurnRef.current || isTurnSubmitPendingRef.current || hostRestorePendingRef.current || gameplayMutationPendingRef.current) {
             setError(language === 'ru'
                 ? 'Возобновление прерванного хода доступно только в стабильной локальной игре без активного сетевого соединения.'
                 : 'Interrupted-turn recovery is only available in a stable local game without an active network connection.');
@@ -1685,7 +1685,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const initialGameplayRevision = gameplayMutationRevisionRef.current;
         const blocked = () => !!peerRef.current || !!hostConnectionRef.current ||
             (!!gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none') ||
-            !!activeTurnRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+            !!activeTurnRef.current || isTurnSubmitPendingRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
             gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
             gameplayMutationRevisionRef.current !== initialGameplayRevision;
         const reject = () => {
@@ -1715,10 +1715,40 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [allManagers, interruptedTurnRecovery, language, setError]);
 
     const discardInterruptedGameTurn = useCallback(async () => {
-        await cancelInterruptedArenaGmRequest();
-        await clearInterruptedTurnRecovery();
-        setInterruptedTurnRecovery(null);
-    }, []);
+        const initialState = gameStateRef.current;
+        const syncRevision = syncRevisionRef.current;
+        const gameplayRevision = gameplayMutationRevisionRef.current;
+        const blocked = () => !!peerRef.current || !!hostConnectionRef.current ||
+            (!!gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none') ||
+            !!activeTurnRef.current || isTurnSubmitPendingRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+            gameStateRef.current !== initialState || syncRevisionRef.current !== syncRevision || gameplayMutationRevisionRef.current !== gameplayRevision;
+        const reject = () => setError(language === 'ru'
+            ? 'Отмена сохранённого прерванного хода недоступна во время сетевой сессии или изменения игры. Повторите запрос после завершения текущего действия.'
+            : 'Discarding an interrupted turn is unavailable during a network session or while the game is changing. Try again after the current action.');
+        if (blocked()) { reject(); return; }
+        try {
+            const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
+            if (blocked()) { reject(); return; }
+            if (!recovery) {
+                setError(language === 'ru' ? 'Сохранённый прерванный ход не найден.' : 'No interrupted-turn checkpoint was found.');
+                return;
+            }
+            await cancelInterruptedArenaGmRequest();
+            if (blocked()) { reject(); return; }
+            // Conditional deletion is atomic with its IndexedDB read: a newer
+            // checkpoint cannot be removed even if it appears while awaiting IO.
+            const deleted = await clearInterruptedTurnRecoveryIfUnchanged(recovery);
+            if (!deleted) {
+                setError(language === 'ru'
+                    ? 'Сохранённый ход изменился или был удалён. Проверьте текущее восстановление перед повтором.'
+                    : 'The checkpoint changed or was removed. Review the current recovery before trying again.');
+                return;
+            }
+            setInterruptedTurnRecovery(current => current === recovery ? null : current);
+        } catch (error) {
+            setError(formatError(error));
+        }
+    }, [interruptedTurnRecovery, language, setError]);
 
     const recordCrash = useCallback((source: string, errorToRecord: unknown, componentStack?: string) => {
         const marker = markCrashDetected(source, errorToRecord, componentStack);
@@ -1760,6 +1790,16 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const metadata = getCrashRecoveryMetadata();
         const initialState = gameStateRef.current;
         const initialRevision = syncRevisionRef.current;
+        const initialGameplayRevision = gameplayMutationRevisionRef.current;
+        const recoveryBusy = () => !!activeTurnRef.current || isTurnSubmitPendingRef.current ||
+            !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+            gameplayMutationRevisionRef.current !== initialGameplayRevision;
+        const rejectBusy = () => {
+            setError(language === 'ru'
+                ? 'Восстановление недоступно во время хода или изменения игры. Дождитесь завершения и повторите запрос.'
+                : 'Recovery is unavailable during a turn or game update. Wait for it to finish and try again.');
+            return false;
+        };
         const isClientCheckpoint = (role: string | undefined) => role === 'player' || role === 'spectator';
         const networkActive = () => !!peerRef.current || !!hostConnectionRef.current ||
             (!!gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none');
@@ -1770,6 +1810,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return false;
         };
         if (isClientCheckpoint(metadata?.networkRole) || networkActive()) return rejectRecovery();
+        if (recoveryBusy()) return rejectBusy();
 
         const attemptedMarker = markCrashRecoveryAttempt();
         if (attemptedMarker) {
@@ -1789,6 +1830,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             // Recheck both the actual checkpoint and the current session before
             // a local restore resets network identity or overwrites newer state.
             if (isClientCheckpoint(data.gameState?.networkRole) || networkActive()) return rejectRecovery();
+            if (recoveryBusy()) return rejectBusy();
             if (gameStateRef.current !== initialState || syncRevisionRef.current !== initialRevision) {
                 setError(language === 'ru'
                     ? 'Состояние игры изменилось во время чтения восстановления. Повторите запрос, если хотите загрузить сохранение.'

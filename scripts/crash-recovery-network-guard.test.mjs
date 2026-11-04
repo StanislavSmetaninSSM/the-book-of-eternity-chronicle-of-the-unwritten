@@ -18,7 +18,7 @@ test('crash recovery never replaces an active network session or restores a clie
     let reads = 0, restored = 0, marks = 0, error = null, release;
     const wait = new Promise(resolve => { release = resolve; });
     const stateRef = {current: initial};
-    const scope = {gameStateRef:stateRef, peerRef:{current:peer ? {} : null}, hostConnectionRef:{current:null}, syncRevisionRef:{current:0}, getCrashRecoveryMetadata:()=>metadata, markCrashRecoveryAttempt:()=>{marks++;return null}, setCrashRecoveryMarker:()=>{}, loadCrashRecoveryPoint:()=>{reads++;return wait}, restoreFromSaveData:()=>{restored++}, setError:e=>{error=e}, language:'en', formatError:String};
+    const scope = {gameStateRef:stateRef, peerRef:{current:peer ? {} : null}, hostConnectionRef:{current:null}, syncRevisionRef:{current:0}, gameplayMutationRevisionRef:{current:0}, gameplayMutationPendingRef:{current:false}, isTurnSubmitPendingRef:{current:false}, activeTurnRef:{current:null}, hostRestorePendingRef:{current:null}, getCrashRecoveryMetadata:()=>metadata, markCrashRecoveryAttempt:()=>{marks++;return null}, setCrashRecoveryMarker:()=>{}, loadCrashRecoveryPoint:()=>{reads++;return wait}, restoreFromSaveData:()=>{restored++}, setError:e=>{error=e}, language:'en', formatError:String};
     const pending = vm.runInNewContext(`${js}\nrun()`,scope);
     if (transition !== undefined) stateRef.current = transition;
     if (afterRead) afterRead(scope);
@@ -37,7 +37,7 @@ test('crash recovery never replaces an active network session or restores a clie
     const stale = await execute({metadata:null,data:{gameState:{networkRole:role}}});assert.equal(stale.result,false);assert.equal(stale.restored,0);assert.ok(stale.error);
   }
   const peerActive = await execute({peer:true}); assert.equal(peerActive.reads,0); assert.equal(peerActive.result,false);
-  for (const afterRead of [s => { s.peerRef.current = {}; }, s => { s.hostConnectionRef.current = {}; }, s => { s.syncRevisionRef.current++; }]) {
+  for (const afterRead of [s => { s.peerRef.current = {}; }, s => { s.hostConnectionRef.current = {}; }, s => { s.syncRevisionRef.current++; }, s => { s.gameplayMutationRevisionRef.current++; }, s => { s.gameplayMutationPendingRef.current = true; }, s => { s.isTurnSubmitPendingRef.current = true; }, s => { s.activeTurnRef.current = Symbol('turn'); }, s => { s.hostRestorePendingRef.current = {}; }]) {
     const r = await execute({afterRead}); assert.equal(r.result,false); assert.equal(r.restored,0); assert.ok(r.error);
   }
   const changedLocal = await execute({initial:{networkRole:'none'},transition:{networkRole:'none'}}); assert.equal(changedLocal.result,false); assert.equal(changedLocal.restored,0);

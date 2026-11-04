@@ -185,6 +185,8 @@ export interface CrashRecoveryMetadata {
 export interface InterruptedTurnRecovery {
   id: 'pending-turn';
   createdAt: string;
+  // Absent in checkpoints written by older versions.
+  checkpointId?: string;
   context: GameContext;
   baseState: GameState;
   history: ChatMessage[];
@@ -520,29 +522,47 @@ export async function loadFromDB(): Promise<SaveFile | null> {
   }
 }
 
-export async function saveInterruptedTurnRecovery(recovery: Omit<InterruptedTurnRecovery, 'id' | 'createdAt'>): Promise<void> {
+let checkpointSequence = 0;
+const newCheckpointId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${++checkpointSequence}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+
+export async function saveInterruptedTurnRecovery(recovery: Omit<InterruptedTurnRecovery, 'id' | 'createdAt' | 'checkpointId'>): Promise<InterruptedTurnRecovery> {
   const db = await openDB();
   const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
-  transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).put({
+  const checkpoint: InterruptedTurnRecovery = {
+    ...recovery,
     id: INTERRUPTED_TURN_ID,
     createdAt: new Date().toISOString(),
-    ...recovery,
-  } satisfies InterruptedTurnRecovery);
+    checkpointId: newCheckpointId(),
+  };
+  transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).put(checkpoint);
   await new Promise<void>((resolve, reject) => {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
     transaction.onabort = () => reject(transaction.error || new Error('Interrupted-turn checkpoint write was aborted.'));
   });
+  return checkpoint;
 }
 
 export async function loadInterruptedTurnRecovery(): Promise<InterruptedTurnRecovery | null> {
   try {
     const db = await openDB();
-    const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readonly');
-    const request = transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).get(INTERRUPTED_TURN_ID);
+    // Assign legacy checkpoints an identity in the same transaction as the
+    // read, so even a later write from an older tab cannot pass the CAS.
+    const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME);
+    const request = store.get(INTERRUPTED_TURN_ID);
+    let recovery: InterruptedTurnRecovery | null = null;
+    request.onsuccess = () => {
+      recovery = request.result || null;
+      if (recovery && !recovery.checkpointId) {
+        recovery = { ...recovery, checkpointId: newCheckpointId() };
+        store.put(recovery);
+      }
+    };
     return await new Promise((resolve, reject) => {
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve(recovery);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('Interrupted-turn checkpoint read was aborted.'));
     });
   } catch (error) {
     console.error('Failed to load interrupted-turn checkpoint:', error);
@@ -558,6 +578,28 @@ export async function clearInterruptedTurnRecovery(): Promise<void> {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
     transaction.onabort = () => reject(transaction.error || new Error('Interrupted-turn checkpoint deletion was aborted.'));
+  });
+}
+
+/** Delete only the checkpoint the user actually chose to discard. The read and
+ * delete share an IndexedDB transaction, so a later checkpoint is not erased. */
+export async function clearInterruptedTurnRecoveryIfUnchanged(expected: InterruptedTurnRecovery): Promise<boolean> {
+  const db = await openDB();
+  const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
+  const store = transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME);
+  let deleted = false;
+  const request = store.get(INTERRUPTED_TURN_ID);
+  request.onsuccess = () => {
+    const current = request.result as InterruptedTurnRecovery | undefined;
+    if (!current) return;
+    // Unidentified checkpoints are never guessed to be the selected one.
+    const matches = !!expected.checkpointId && expected.checkpointId === current.checkpointId;
+    if (matches) { store.delete(INTERRUPTED_TURN_ID); deleted = true; }
+  };
+  return await new Promise<boolean>((resolve, reject) => {
+    transaction.oncomplete = () => resolve(deleted);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('Interrupted-turn conditional deletion was aborted.'));
   });
 }
 

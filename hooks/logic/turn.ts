@@ -13,7 +13,7 @@ import { deepMergeResponses, processAndApplyResponse } from '../../utils/respons
 import { deepStripModerationSymbols } from '../../utils/textUtils';
 import { acquireArenaGmTurnLease } from '../../utils/arenaGmRelay';
 import { shouldRunWorldProgression } from '../../utils/worldProgression.js';
-import { clearInterruptedTurnRecovery, saveInterruptedTurnRecovery } from '../../utils/fileManager';
+import { clearInterruptedTurnRecoveryIfUnchanged, saveInterruptedTurnRecovery, type InterruptedTurnRecovery } from '../../utils/fileManager';
 
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => {
@@ -22,6 +22,10 @@ const asArray = <T>(value: T | T[] | null | undefined): T[] => {
     return [value];
 };
 const isObject = (item: any): item is object => (item && typeof item === 'object' && !Array.isArray(item));
+
+// Distinguish explicit cancellation from sync/role aborts. Only the former
+// discards this turn's own recovery record.
+const USER_CANCELLED_TURN = Symbol('user-cancelled-turn');
 
 // Stopping the wait does not cancel a network send or prove non-delivery.
 const waitForSendOrAbort = (send: Promise<void>, signal: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
@@ -145,6 +149,10 @@ export const createTurnManager = (
         // roll back its logs or suggest that the user repeat the action.
         let stateCommitted = false;
         let playerSendAttempted = false;
+        let checkpoint: InterruptedTurnRecovery | null = null;
+        const clearOwnCheckpoint = async () => {
+            if (checkpoint) await clearInterruptedTurnRecoveryIfUnchanged(checkpoint);
+        };
         const reportSuperseded = () => {
             const warning = t(syncRevisionRef.current !== startingRevision ? (playerSendAttempted ? 'turn_sync_during_send' : 'turn_sync_before_send') : 'turn_game_state_changed');
             setError(warning);
@@ -184,13 +192,14 @@ export const createTurnManager = (
             // If the browser reloads, the start screen can replay this exact action from the saved baseline.
             if (baseState.networkRole === 'none') {
                 try {
-                    await saveInterruptedTurnRecovery({ context, baseState, history: fullHistoryForTurn });
+                    checkpoint = await saveInterruptedTurnRecovery({ context, baseState, history: fullHistoryForTurn });
                 } catch (recoveryError) {
                     console.error('Could not persist interrupted-turn recovery checkpoint:', recoveryError);
                     setError(t('Could not save the interrupted turn checkpoint. The game will continue, but a browser reload may lose this action.'));
                 }
             }
 
+            if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
             // Keep automatic/optional image jobs out of the mailbox for the entire staged turn.
             releaseArenaGmTurn = await acquireArenaGmTurnLease(turnController.signal);
             const finalResponseRaw = await executeTurn(
@@ -209,7 +218,7 @@ export const createTurnManager = (
                 setError(t("history_manipulation_rejection"));
                 setGameHistory(prev => prev.slice(0, -1)); // Remove the offending player message
                 setIsLoading(false);
-                await clearInterruptedTurnRecovery().catch(error => console.error('Could not clear rejected turn checkpoint:', error));
+                await clearOwnCheckpoint().catch(error => console.error('Could not clear rejected turn checkpoint:', error));
                 return;
             }
           
@@ -326,10 +335,13 @@ export const createTurnManager = (
                 }
             }
             if (baseState.networkRole === 'none') {
-                await clearInterruptedTurnRecovery().catch(error => console.error('Could not clear completed-turn checkpoint:', error));
+                await clearOwnCheckpoint().catch(error => console.error('Could not clear completed-turn checkpoint:', error));
             }
           
         } catch (err: any) {
+          if (turnController.signal.reason === USER_CANCELLED_TURN) {
+            await clearOwnCheckpoint().catch(error => console.error('Could not clear cancelled-turn checkpoint:', error));
+          }
           if (wasSuperseded()) { reportSuperseded(); return; }
           // Roll back streamed calculations only if the state was not applied.
           // A post-commit sync error must retain the committed logs and story.
@@ -701,8 +713,7 @@ export const createTurnManager = (
         }
         if (abortControllerRef.current && activeTurnRef.current) {
             const sending = turnPhaseRef.current === 'sending';
-            abortControllerRef.current.abort();
-            void clearInterruptedTurnRecovery().catch(error => console.error('Could not clear cancelled-turn checkpoint:', error));
+            abortControllerRef.current.abort(USER_CANCELLED_TURN);
             // Keep the submission lock until the task's catch/finally has run.
             setIsLoading(true);
             setError(t(sending ? 'error_turn_delivery_unknown' : 'requestCancelledByUser'));
