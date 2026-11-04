@@ -236,3 +236,19 @@ React setters. Успех, ошибка relay и отмена проверены
 который новый snapshot мог бы стереть. Full hook test проверяет restore
 изолированного результата и отказ stale base после host edit. Проверки пока
 не связаны с сетевым исполнением и не заменяют блокировку queued React writes.
+
+`HostTurnExecutionCoordinator.startIsolated` дополнительно проводит обе
+проверки базы/соединения вокруг изолированной генерации. Ошибка или устаревшая
+база **до** live apply завершаются `rejected` и освобождают reservation; после
+начала apply ошибка остаётся `unknown` с удержанием authority. API ещё не
+подключён к сети и требует синхронного, rebase-safe применения из hook.
+
+При проверке этого пути воспроизведён отдельный дефект текущего host restore:
+low-priority snapshot после срочного disconnect мог примениться при React
+rebase. Теперь перед host restore сохраняется baseline без GC; при reset
+откатываются только совпадающие staged gameplay/context/history/log поля,
+а независимые system suffix, presentation log и image cache сохраняются.
+При отсутствии baseline restore отказывается до staging. Full hook
+StrictMode тест проверяет этот конкретный порядок и успешный restore; другие
+порядки reset/reconnect и частичное исключение внутри restore ещё требуют
+отдельной проверки.

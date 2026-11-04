@@ -1,4 +1,5 @@
-import type { SaveFile } from '../types';
+import type { Language, SaveFile } from '../types';
+import { executeIsolatedHostTurn } from './isolatedHostTurnExecution';
 import { captureHostTurnResult, hostTurnResultCommitted, hostTurnBaseUnchanged } from './hostTurnResultBarrier';
 import { HostTurnCommandLedger, type HostTurnCommand } from './hostTurnCommand';
 
@@ -43,6 +44,45 @@ export class HostTurnExecutionCoordinator {
             () => { pending.finished = true; this.finishUnknown(pending); }
         );
         return decision;
+    }
+
+    /** Isolated preparation has no live game writes. A failure before apply
+     * can therefore be rejected and released; a thrown/partial apply remains
+     * unknown and retains the hold. read() must return one committed render;
+     * apply() must synchronously enqueue a rebase-safe host restore. */
+    startIsolated(raw: unknown, context: Context, options: {
+        read: () => { snapshot: SaveFile; rendered: Rendered };
+        apply: (candidate: SaveFile) => SaveFile;
+        language: Language;
+        t: (key: string, replacements?: any) => string;
+        signal?: AbortSignal;
+    }): Promise<Awaited<ReturnType<HostTurnCommandLedger['begin']>>> {
+        return this.start(raw, context, async (command, stage) => {
+            const pending = this.pending;
+            if (!pending || pending.command !== command) throw new Error('Missing host turn reservation');
+            const rejectBeforeApply = () => {
+                if (this.pending !== pending || pending.staged) return;
+                this.ledger.settle(command.sessionId, command.commandId, 'rejected');
+                this.pending = null;
+            };
+            let base: Candidate | null;
+            let initial: ReturnType<typeof options.read>;
+            try {
+                initial = options.read();
+                base = captureHostTurnResult(initial.snapshot);
+                if (!this.canApply(context(), base, initial.rendered)) { rejectBeforeApply(); return; }
+            } catch { rejectBeforeApply(); return; }
+            const generated = await executeIsolatedHostTurn({ snapshot: initial.snapshot, kind: command.kind,
+                text: command.text, image: command.image, language: options.language, t: options.t, signal: options.signal });
+            if (generated.status !== 'candidate' || !captureHostTurnResult(generated.saveFile)) { rejectBeforeApply(); return; }
+            try {
+                if (!this.canApply(context(), base, options.read().rendered)) { rejectBeforeApply(); return; }
+            } catch { rejectBeforeApply(); return; }
+            // From here on, apply may already have enqueued partial live React
+            // writes if it throws. start() must conservatively mark unknown.
+            const restored = options.apply(generated.saveFile);
+            if (!stage(restored)) throw new Error('Cannot stage host turn result');
+        });
     }
 
     private finishUnknown(pending: Pending): void {

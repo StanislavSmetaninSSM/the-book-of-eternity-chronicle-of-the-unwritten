@@ -158,7 +158,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const pendingHostSyncNoticesRef = useRef<ChatMessage[]>([]);
     const [hostSyncNoticeEpoch, setHostSyncNoticeEpoch] = useState(0);
     const presentationJournalRef = useRef(new PresentationJournal());
-    const hostRestorePendingRef = useRef<(PendingPresentationLog & { release: () => void }) | null>(null);
+    const hostRestorePendingRef = useRef<(PendingPresentationLog & { release: () => void; baseline?: SaveFile | null; rollbackSettings?: GameSettings; rollbackContext?: GameContext }) | null>(null);
     const pendingNewPeersRef = useRef(new Map<string, DataConnection>());
     const pendingRemovedPeersRef = useRef(new Set<string>());
     const pendingPeerCharactersRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
@@ -184,6 +184,43 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const players = state.players.slice(); players[index] = original;
             return { ...previous, gameState: { ...state, players, ...(result.checksStash ? { temporaryStash: cancelled.baseline.temporaryStash } : {}) } };
         });
+        // A host restore can be eagerly computed in a low-priority render
+        // before reset. Roll back its exact staged values in the ordered
+        // queues; never overwrite later, independent changes.
+        const restore = hostRestorePendingRef.current;
+        if (restore?.baseline && restore.snapshot) {
+            const before = restore.baseline, staged = restore.snapshot;
+            setCore(previous => {
+                const current = previous.gameState, expected = staged.gameState;
+                const sameGameplay = !!current && !!expected && Object.keys(current).length === Object.keys(expected).length &&
+                    Object.keys(expected).every(key => key === 'imageCache' || key === 'cinematics' ||
+                        (current as any)[key] === (expected as any)[key]);
+                const state = sameGameplay ? { ...before.gameState, imageCache: current!.imageCache, cinematics: current!.cinematics } : current;
+                const stagedHistory = staged.gameHistory;
+                const hasStagedPrefix = previous.gameHistory.length >= stagedHistory.length &&
+                    stagedHistory.every((entry, index) => previous.gameHistory[index] === entry);
+                const history = hasStagedPrefix ? [...before.gameHistory, ...previous.gameHistory.slice(stagedHistory.length)] : previous.gameHistory;
+                const turn = previous.turnNumber === staged.gameContext.currentTurnNumber ? before.gameContext.currentTurnNumber : previous.turnNumber;
+                gameStateRef.current = state;
+                gameHistoryRef.current = history;
+                return { ...previous, gameState: state, gameHistory: history, turnNumber: turn };
+            });
+            setWorldState(previous => previous === staged.gameContext.worldState ? before.gameContext.worldState : previous);
+            setWorldMap(previous => previous === staged.gameContext.worldMap ? before.gameContext.worldMap : previous);
+            setVisitedLocations(previous => previous === staged.gameContext.visitedLocations ? before.gameContext.visitedLocations : previous);
+            setGameSettings(previous => previous === restore.rollbackSettings ? before.gameContext.gameSettings : previous);
+            setSuperInstructions(previous => previous === staged.gameContext.superInstructions ? before.gameContext.superInstructions : previous);
+            setGameLog(previous => {
+                if (previous === staged.gameLog) return before.gameLog;
+                if (!restore.allowedGameLogs?.has(previous) || previous.length < staged.gameLog.length ||
+                    !staged.gameLog.every((entry, index) => previous[previous.length - staged.gameLog.length + index] === entry)) return previous;
+                return [...previous.slice(0, previous.length - staged.gameLog.length), ...before.gameLog];
+            });
+            setCombatLog(previous => previous === staged.combatLog ? before.combatLog : previous);
+            setLastJsonResponse(previous => previous === staged.lastJsonResponse ? before.lastJsonResponse : previous);
+            if (gameContextRef.current === restore.snapshot.gameContext || gameContextRef.current === restore.rollbackContext)
+                gameContextRef.current = before.gameContext;
+        }
         hostRestorePendingRef.current = null;
         pendingNewPeersRef.current.clear();
         pendingRemovedPeersRef.current.clear();
@@ -812,8 +849,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
         // Keep the authority and local submission locked until the host has
         // actually committed the player snapshot, not merely queued it.
-        const hostRestore = isNetworkSync && gameStateRef.current?.networkRole === 'host'
-            ? { snapshot: null as SaveFile | null, release: hostTurnAuthorityRef.current!.beginMutation() }
+        const hostRestoreNeeded = isNetworkSync && gameStateRef.current?.networkRole === 'host';
+        const hostBaseline = hostRestoreNeeded ? packageRestoreBaselineRef.current?.(gameStateRef.current) ?? null : null;
+        // Without the committed baseline a reset could not safely cancel an
+        // eagerly evaluated low-priority restore.
+        if (hostRestoreNeeded && !hostBaseline) throw new Error('Host restore baseline unavailable');
+        const hostRestore = hostRestoreNeeded
+            ? { snapshot: null as SaveFile | null, baseline: hostBaseline,
+                rollbackSettings: undefined as GameSettings | undefined, rollbackContext: data.gameContext,
+                release: hostTurnAuthorityRef.current!.beginMutation() }
             : null;
         if (hostRestore) hostRestorePendingRef.current = hostRestore;
         // Restoration supersedes pending host, player, and local GM tasks.
@@ -1324,6 +1368,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 superInstructions: data.gameContext.superInstructions || '', worldMap: restoredWorldMap,
                 visitedLocations: restoredVisitedLocations } };
         if (hostRestore) {
+            hostRestore.rollbackSettings = loadedSettings;
             hostRestore.snapshot = restored;
             setHostRestoreEpoch(epoch => epoch + 1);
         }
@@ -1878,6 +1923,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     // Peer event handlers outlive the render in which they were registered.
     const packageSaveDataRef = useRef<((state: GameState | null) => SaveFile | null) | null>(null);
+    const packageRestoreBaselineRef = useRef<((state: GameState | null) => SaveFile | null) | null>(null);
     const allManagers = useMemo(() => {
         const saveLoadManager = createSaveLoadManager({
             gameContextRef, gameStateRef, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt,
@@ -1886,6 +1932,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         const { packageSaveData } = saveLoadManager;
         packageSaveDataRef.current = state => state ? packageSaveData(state) : null;
+        packageRestoreBaselineRef.current = state => state ? packageSaveData(state, false) : null;
 
         const turnManager = createTurnManager({
             gameState, setGameState: setGameStateInternal, gameHistory, setGameHistory,
