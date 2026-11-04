@@ -129,7 +129,7 @@ test('turn manager preserves NPC location and applies item journal commands once
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Wait', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     context.currentTurnNumber = 2;
     const location = { ...context.currentLocation, locationId: 'camp', initialId: 'temp-loc-camp' };
-    const player = { ...context.playerCharacter, inventory: [{ existedId: 'relic', name: 'Relic', count: 1, weight: 1, contentsPath: null, journalEntries: ['Old entry'] }] };
+    const player = { ...context.playerCharacter, playerId: 'host', inventory: [{ existedId: 'relic', name: 'Relic', count: 1, weight: 1, contentsPath: null, journalEntries: ['Old entry'] }] };
     context.playerCharacter = player;
     context.players = [player];
     const npc = { ...player, NPCId: 'visitor', name: 'Visitor', initialLocationId: 'temp-loc-camp', currentLocationId: 'other-place', inventory: [{ existedId: 'npc-relic', name: 'Relic', count: 1, weight: 1, contentsPath: null, journalEntries: ['NPC old'] }] };
@@ -320,7 +320,7 @@ test('turn warnings enter visible history and host save together with unchanged 
     const { createTurnManager } = await server.ssrLoadModule('/hooks/logic/turn.ts');
     const { translate } = await server.ssrLoadModule('/utils/localization.ts');
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
-    context.currentTurnNumber = 2; const p = context.playerCharacter;
+    context.currentTurnNumber = 2; const p = { ...context.playerCharacter, playerId: 'host' }; context.playerCharacter = p; context.players = [p];
     const home = { ...context.currentLocation, locationId: 'home', coordinates: { x: 1, y: 0 }, adjacencyMap: [{ name: 'Stairs', targetCoordinates: { x: 0, y: 0 } }], activeThreats: [{ threatId: 'wolves', currentActivity: { activityId: 'hunt', activityName: 'Hunt' } }] };
     context.currentLocation = home; context.worldMap = { home, upper: { ...home, locationId: 'upper', coordinates: { x: 0, y: 0 }, activeThreats: [] }, lower: { ...home, locationId: 'lower', coordinates: { x: 0, y: 0 }, activeThreats: [] } };
     const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'host', myPeerId: 'host', peers: [], isConnectedToHost: true };

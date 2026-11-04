@@ -117,6 +117,29 @@ export const createTurnManager = (
         ...(latest?.cinematics !== undefined ? { cinematics: latest.cinematics } : {})
     });
 
+    // The host displays its own character even while another player owns the
+    // turn. GM processing, however, applies primary changes to the active
+    // player. Never feed the displayed host into the active guest slot.
+    const prepareHostTurn = (state: GameState, context: GameContext) => {
+        if (state.networkRole !== 'host') return { state, context };
+        const ids = state.players.map(p => p?.playerId);
+        const displayedId = state.playerCharacter?.playerId;
+        if (!state.myPeerId || ids.some(id => !id) || new Set(ids).size !== ids.length ||
+            !ids.includes(state.myPeerId) || !displayedId || !ids.includes(displayedId) ||
+            !Number.isSafeInteger(state.activePlayerIndex) || !state.players[state.activePlayerIndex]) {
+            throw new Error(t('host_turn_identity_conflict'));
+        }
+        const players = state.players.map(p => p.playerId === displayedId ? state.playerCharacter : p);
+        const active = players[state.activePlayerIndex];
+        return { state: { ...state, players, playerCharacter: active }, context: { ...context, players, playerCharacter: active } };
+    };
+    const restoreHostView = (state: GameState, context: GameContext, hostId: string | null | undefined) => {
+        const hosts = state.players.filter(p => p.playerId === hostId);
+        if (!hostId || hosts.length !== 1) throw new Error(t('host_turn_identity_conflict'));
+        state.playerCharacter = hosts[0];
+        context.playerCharacter = hosts[0];
+    };
+
     const handleTurn = async (context: GameContext, fullHistoryForTurn: ChatMessage[], baseStateOverride?: GameState) => {
         if (activeTurnRef.current) return;
         if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
@@ -178,7 +201,7 @@ export const createTurnManager = (
                 setLastJsonResponse(text);
             };
 
-            const baseState: GameState | null = baseStateOverride || gameStateRef.current;
+            let baseState: GameState | null = baseStateOverride || gameStateRef.current;
 
             if (!baseState) {
                 const errorMsg = "Critical error: Game state is missing when trying to process a turn. This might be due to a stale state closure. Aborting turn.";
@@ -188,6 +211,9 @@ export const createTurnManager = (
                 return;
             }
             
+            ({ state: baseState, context } = prepareHostTurn(baseState, context));
+            setLastRequestJson(JSON.stringify(context, null, 2));
+
             // Save the submitted action and its pre-turn state before the first relay request.
             // If the browser reloads, the start screen can replay this exact action from the saved baseline.
             if (baseState.networkRole === 'none') {
@@ -298,6 +324,7 @@ export const createTurnManager = (
                 }
             } else { // Host or local
                 const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, true, onWorldMapWarning);
+                if (currentRole === 'host') restoreHostView(newState, nextContext, baseState.myPeerId);
                 applyResponsePresentation();
 
                 setGameLog([...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd]);
@@ -473,7 +500,7 @@ export const createTurnManager = (
     };
 
     const askQuestion = async (question: string, image?: { data: string; mimeType: string; } | null) => {
-        const baseState: GameState | null = gameStateRef.current;
+        let baseState: GameState | null = gameStateRef.current;
         if (!gameContextRef.current || isLoading || !baseState || activeTurnRef.current) return;
         if (baseState.networkRole === 'spectator') { setError(t('spectator_cannot_submit_turn')); return; }
         if (hostRestorePendingRef?.current) { setError(t('host_sync_not_ready')); return; }
@@ -508,7 +535,7 @@ export const createTurnManager = (
         const historyWithQuestion = [...gameHistory, questionMessage];
         setGameHistory(historyWithQuestion);
     
-        const context = { 
+        let context: GameContext = {
             ...gameContextRef.current, 
             message: question,
             image: image || null,
@@ -536,6 +563,8 @@ export const createTurnManager = (
         };
 
         try {
+            ({ state: baseState, context } = prepareHostTurn(baseState, context));
+            setLastRequestJson(JSON.stringify(context, null, 2));
             const onStepStart = (stepName: string, modelName: string) => {
               if (wasSuperseded()) return;
               setCurrentStep(stepName);
@@ -644,6 +673,7 @@ export const createTurnManager = (
                 }
                 
                 const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning);
+                if (currentRole === 'host') restoreHostView(newState, nextContext, baseState.myPeerId);
                 gameContextRef.current = nextContext;
     
                 setGameHistory(newHistoryWithAnswer);
