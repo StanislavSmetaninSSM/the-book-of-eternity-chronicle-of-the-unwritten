@@ -1,3 +1,5 @@
+> **Historical / superseded:** Multiplayer was removed in favor of single-player gameplay. This document records the former implementation and is not a current design or implementation plan.
+
 # Спецификация: подтверждаемые изменения клиента в многопользовательской игре
 
 **Статус:** рабочая спецификация и план; протокол команд ещё не реализован. Начат только защитный этап 0. Документ не означает, что все перечисленные задачи выполнены или проверены.

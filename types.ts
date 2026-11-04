@@ -1160,20 +1160,6 @@ export interface GameResponse {
     NPCRelationshipLockUpdates?: NPCRelationshipLockUpdate[];
 }
 
-export interface CollectiveActionState {
-    isActive: boolean;
-    initiatorId: string;
-    initiatorName: string;
-    prompt: string;
-    participantIds: string[];
-    actions: Record<string, string>;
-}
-
-export interface SimultaneousActionState {
-    isActive: boolean;
-    actions: Record<string, string>; // playerId -> action
-}
-
 export interface CinemaFrame {
     imagePrompt: string;
     imageUrl?: string;
@@ -1215,16 +1201,7 @@ export interface GameState {
     NPCsInScene?: boolean;
     cinematics?: Cinematic[];
     thoughtSignature?: string; // Preserved reasoning context from the last turn
-    // Network state
-    networkRole: NetworkRole;
-    myPeerId: string | null;
-    hostPeerId?: string | null;
-// FIX: Changed Peer[] to PeerInfo[] to resolve name collision with peerjs library.
-    peers: PeerInfo[];
-    isConnectedToHost: boolean;
-    playerNeedsToCreateCharacter?: boolean;
-    collectiveActionState?: CollectiveActionState | null;
-    simultaneousActionState?: SimultaneousActionState | null;
+
 }
 
 export interface CombatActionEffect {
@@ -1298,11 +1275,7 @@ export interface GameContext {
     alliesDataForCurrentTurn: AllyCombatObject[];
     playerCustomStates: CustomState[];
     worldEventsLog: WorldEvent[];
-    networkRole: NetworkRole;
     previousThoughtSignature?: string; // Passed back to the model to maintain reasoning context
-// FIX: Changed Peer[] to PeerInfo[] to resolve name collision with peerjs library.
-    peers: PeerInfo[];
-    isConnectedToHost: boolean;
 }
 
 export interface DBSaveSlotInfo {
@@ -1325,50 +1298,7 @@ export interface AdjacencyMapEntry {
     estimatedExternalDifficultyProfile?: DifficultyProfile;
 }
 
-export interface NetworkChatMessage {
-  senderId: string;
-  senderName: string;
-  content: string;
-  timestamp: number;
-}
-
-export interface NetworkMessage {
-    type: NetworkMessageType;
-    payload: any;
-    senderId?: string;
-}
-
 export type Language = 'en' | 'ru';
-
-export type NetworkRole = 'host' | 'player' | 'spectator' | 'none';
-
-// FIX: Renamed interface from Peer to PeerInfo to avoid name collision with the 'peerjs' library.
-export interface PeerInfo {
-    id: string; // Will be a peer connection ID
-    name: string; // The player's character name
-}
-
-// --- NEW Network Message Protocol ---
-export type NetworkMessageType = 
-  'full_sync' | 
-  'game_state_update' | 
-  'new_player_character_data' |
-  'player_joined_notification' |
-  'player_left_notification' |
-  'chat_message' |
-  'turn_passed' |
-  'player_action' |
-  'request_full_sync' |
-  'request_collective_action' |
-  'submit_collective_action' |
-  'request_simultaneous_action' |
-  'simultaneous_action_submit' |
-  'coop_action_rejected' |
-  'turn_result_from_player' |
-  'turn_result_ack' |
-  'client_edit_command' |
-  'client_edit_status' |
-  'client_edit_result';
 
 export interface SaveFile {
   gameContext: GameContext;

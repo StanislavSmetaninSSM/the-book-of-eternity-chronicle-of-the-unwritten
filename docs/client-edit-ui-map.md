@@ -1,3 +1,5 @@
+> **Historical / superseded:** Multiplayer was removed in favor of single-player gameplay. This document records the former implementation and is not a current design or implementation plan.
+
 # Статическая карта UI-маршрутов пользовательских действий
 
 Генерация: `node scripts/client-edit-ui-map.mjs`. Поиск только явных JSX `prop={action}` в `App.tsx`; упоминания prop в компонентах — кандидаты, не доказанная цепочка вызовов. Алиасы, spread props, динамические вызовы и одинаковые названия props могут давать пропуски/ложные совпадения. Матрицы инвентаря, мира и прямых callbacks содержат семантический аудит; неизвестные маршруты остаются заблокированными, а не получают права по этому списку.

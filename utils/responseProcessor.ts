@@ -2361,11 +2361,5 @@ export const processAndApplyResponse = (
     newState.encounteredNPCs = newState.encounteredNPCs.map(n => n ? recalculateDerivedStats(recalculateAllWeights(n)) : null).filter((n): n is NPC => !!n);
     newState.encounteredNPCs.forEach(npc => { if (npc?.inventory) npc.inventory = npc.inventory.filter((item: Item) => item.count > 0); });
 
-    newState.networkRole = baseState.networkRole;
-    newState.myPeerId = baseState.myPeerId;
-    newState.hostPeerId = baseState.hostPeerId;
-    newState.peers = baseState.peers;
-    newState.isConnectedToHost = baseState.isConnectedToHost;
-
     return { newState, logsToAdd, combatLogsToAdd, processedResponse };
 };

@@ -12,7 +12,7 @@ test('production turn cancellation only removes its own committed checkpoint',as
  const oldWindow=globalThis.window;const storage=new Map();globalThis.window={setTimeout,clearTimeout,sessionStorage:{setItem:(k,v)=>storage.set(k,v),getItem:k=>storage.get(k),removeItem:k=>storage.delete(k)}};
  try{
   const {createInitialContext}=await server.ssrLoadModule('/utils/gameContext.ts');const {createTurnManager}=await server.ssrLoadModule('/hooks/logic/turn.ts');const {acquireArenaGmTurnLease}=await server.ssrLoadModule('/utils/arenaGmRelay.ts');const {saveInterruptedTurnRecovery,loadInterruptedTurnRecovery,clearInterruptedTurnRecovery}=await server.ssrLoadModule('/utils/fileManager.ts');
-  for(const scenario of ['own','replaced','network']){
+  for(const scenario of ['own','replaced']){
    await clearInterruptedTurnRecovery();const context=createInitialContext({universe:'fantasy',playerName:'Test',race:'Human',charClass:'Warrior',initialPrompt:'Start',startingYear:1000,startingMonth:'January',startingDay:1,startTime:'08:00',weather:'Clear'},'en');context.message='test-action';const pc=context.playerCharacter;
    const base={playerCharacter:pc,players:[pc],activePlayerIndex:0,currentLocationData:context.currentLocation,activeQuests:[],completedQuests:[],encounteredNPCs:[],encounteredFactions:[],enemiesData:[],alliesData:[],playerCustomStates:[],plotOutline:null,worldStateFlags:[],worldEventsLog:[],imageCache:{},networkRole:scenario==='network'?'player':'none',myPeerId:'p',peers:[],isConnectedToHost:true};
    let previous=null;if(scenario==='network')previous=await saveInterruptedTurnRecovery({context:{message:'unrelated'},baseState:base,history:[]});

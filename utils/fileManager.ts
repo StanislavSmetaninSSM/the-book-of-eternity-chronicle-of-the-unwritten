@@ -250,7 +250,7 @@ function buildCrashRecoveryMetadata(saveData: SaveFile, reason: CrashRecoveryRea
     playerName: saveData.gameState?.playerCharacter?.name || 'Unknown',
     locationName: saveData.gameState?.currentLocationData?.name || 'Unknown',
     turnNumber: typeof saveData.gameContext?.currentTurnNumber === 'number' ? saveData.gameContext.currentTurnNumber : null,
-    networkRole: saveData.gameState?.networkRole || 'none',
+    networkRole: 'none',
   };
 }
 

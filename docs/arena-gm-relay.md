@@ -101,41 +101,6 @@ When an enabled faction-progression stage creates or changes a world event and e
 
 If combat ends with both combatant arrays explicitly empty and named NPCs are known, the turn also runs the NPC stage. The combat log must provide evidence for final named-NPC health and effects; the combat stage reports wounds and effects using its allowed atomic keys, and the NPC stage can report supported final health in `NPCsData`. This handoff does not compute or invent missing values and is not proof that the GM calculated them correctly. The combat-log stage continues to receive the full guide.
 
-### Multiplayer turn synchronization
+### Local turn concurrency
 
-Hosts and players must run the updated protocol together; older peers without
-protocol version 1 cannot submit turns or restore a full sync. Reconnect after
-switching hosts or restarting the host session. Each host session issues a
-revision with its authoritative snapshot. Player turns and questions include
-that revision and a unique turn ID. A host consumes the grant once and rejects
-late, duplicate, unauthorized, or incompatible results. A sync request revokes
-the old grant before the replacement snapshot is sent; a pending host state
-update delays publication until a current snapshot is available.
-
-An ACK is best-effort, not a reliable delivery guarantee. If sending was
-cancelled or an ACK/sync is lost, delivery can be unknown: request a host sync
-and inspect the authoritative result before retrying. Do not repeat an action
-just because an ACK was not received. Protocol IDs and PeerJS connection IDs
-are concurrency checks, not authentication or protection against a malicious
-host/player. The accepted-ID registry is in memory for the hosting session.
-
-On the player, a received grant stays unusable until the corresponding state,
-context and history/log snapshot has been restored and rendered. If restoring
-fails, the grant remains blocked and the same revision can be retried; request
-another synchronization or reconnect. This avoids using a fresh revision with
-a previous client state while React updates are still pending.
-
-A host also rejects new player results while its own turn or question is
-active; a superseding restore invalidates host generation as well as player
-generation. After accepting a player result, host submissions and new grants
-remain blocked until its restored snapshot has committed. Independent cinema
-and image-cache updates can complete during snapshot commit; other gameplay
-changes keep the grant blocked. If a client snapshot cannot commit, a warning
-instructs the player to request another sync or reconnect.
-
-Gameplay edits made while a turn or question is being generated invalidate and
-cancel that generation before its result can be applied. New submissions wait
-until queued gameplay updates have committed. On a player, gameplay edits are
-blocked while a result is being sent or while waiting for authoritative sync:
-a send already in flight cannot be revoked safely. Cinema and image-cache
-updates use separate presentation paths and do not cancel the turn.
+Gameplay edits during generation invalidate the pending response. New submissions wait until queued gameplay updates commit; image-cache and cinema updates remain independent. The Arena GM relay is a model-request channel, not multiplayer networking, and remains supported.

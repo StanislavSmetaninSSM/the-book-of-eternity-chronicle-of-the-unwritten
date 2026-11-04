@@ -1,3 +1,5 @@
+> **Historical / superseded:** Multiplayer was removed in favor of single-player gameplay. This document records the former implementation and is not a current design or implementation plan.
+
 # Client gameplay edits: safety phase and follow-up
 
 The detailed phased specification, numbered tasks and acceptance criteria are in

@@ -29,17 +29,12 @@ test('equipment edits invalidate both turn paths while presentation updates surv
     const { createInventoryActions } = await server.ssrLoadModule('/hooks/logic/inventoryActions.ts');
     const { createPlayerActionsManager } = await server.ssrLoadModule('/hooks/logic/playerActions.ts');
     const { beginGameplayMutation, gameplayMutationCommitted } = await server.ssrLoadModule('/utils/gameplayMutationGate.ts');
-    const { applyPlayerTurnResult } = await server.ssrLoadModule('/hooks/logic/multiplayer.ts');
-    const { HostTurnAuthority } = await server.ssrLoadModule('/utils/networkTurnProtocol.ts');
     const { translate } = await server.ssrLoadModule('/utils/localization.ts');
     // Verify the production wiring in addition to the controlled race below.
     const hook = await readFile(new URL('../hooks/useGameLogic.ts', import.meta.url), 'utf8');
-    const network = await readFile(new URL('../hooks/logic/multiplayer.ts', import.meta.url), 'utf8');
     assert.match(hook, /restoreFromSaveData = useCallback\([^]*?syncRevisionRef\.current \+= 1/);
     assert.match(hook, /gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef/);
-    assert.match(hook, /setIsLoading\(activeTurnRef\.current !== null\)/);
-    assert.match(network, /if \(props\.activeTurnRef\.current\) props\.abortControllerRef\.current\?\.abort\(\)/);
-    for (const mode of ['host-edit', 'player-edit', 'history', 'presentation']) for (const question of [false, true]) {
+    for (const mode of ['local-edit', 'history', 'presentation']) for (const question of [false, true]) {
       const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
       context.currentTurnNumber = 2;
       const p = { ...context.playerCharacter, playerId: 'p', currentHealth: 40 }; const item={existedId:'sword-1',name:'Sword',durability:'100%',equipmentSlot:'MainHand',weight:0,volume:0,count:1,requiresTwoHands:false}; p.inventory=[item]; p.equippedItems={...p.equippedItems,MainHand:null}; context.playerCharacter = p; context.players = [p];
@@ -89,19 +84,6 @@ test('equipment edits invalidate both turn paths while presentation updates surv
         else assert.equal(state.playerCharacter.equippedItems.MainHand,'sword-1'); assert.equal(state.playerCharacter.currentHealth,40);
         assert.ok(!history.some(m=>m.content==='Stale GM response')); assert.match(error,/game state changed/i); assert.equal(sendCount,0);
       }
-      const before=mutationRevision.current;
-      let blockedEdit = false;
-      const currentBeforeBlocked = state;
-      const lockedInventory = createInventoryActions({gameState:state,gameContextRef:contextRef,t:k=>k,setGameState:update=>{
-        const rev=beginGameplayMutation(mutationRevision,mutationPending,'player','sending');
-        if (rev===null) { blockedEdit=true; return; }
-        state=typeof update==='function'?update(state):update;
-      }});
-      lockedInventory.equipItem(item,'MainHand');
-      assert.equal(blockedEdit,true); assert.equal(state,currentBeforeBlocked);
-      assert.equal(beginGameplayMutation(mutationRevision,mutationPending,'player','sending'),null);
-      assert.equal(beginGameplayMutation(mutationRevision,mutationPending,'player','awaiting-sync'),null);
-      assert.equal(mutationRevision.current,before);
 
     }
   } finally { globalThis.fetch = oldFetch; if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; await server.close(); }

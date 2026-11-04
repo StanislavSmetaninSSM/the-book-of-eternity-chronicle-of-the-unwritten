@@ -962,9 +962,6 @@ export function buildNextContext(
         alliesDataForCurrentTurn: newState.alliesData,
         playerCustomStates: newState.playerCustomStates,
         worldEventsLog: newState.worldEventsLog,
-        networkRole: newState.networkRole,
-        peers: newState.peers,
-        isConnectedToHost: newState.isConnectedToHost,
         // Pass the new thought signature to the next context to maintain reasoning continuity
         previousThoughtSignature: response.thoughtSignature
     };
@@ -1110,9 +1107,6 @@ export const createInitialContext = (creationData: any, language: Language): Gam
         alliesDataForCurrentTurn: [],
         playerCustomStates: [],
         worldEventsLog: [],
-        networkRole: 'none',
-        peers: [],
-        isConnectedToHost: true
     };
     return context;
 }

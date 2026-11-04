@@ -1,3 +1,5 @@
+> **Historical / superseded:** Multiplayer was removed in favor of single-player gameplay. This document records the former implementation and is not a current design or implementation plan.
+
 # Проект контракта клиентских игровых команд (этап 2)
 
 Контракт v1 и экспериментальная интеграция экипировки: остальные клиентские игровые правки остаются под guard. Этапы 3–4 ещё не полностью приняты. Протокол применим только обновлёнными сторонами; старые peers не получают запасного пути с локальной правкой или произвольным `SaveFile`.

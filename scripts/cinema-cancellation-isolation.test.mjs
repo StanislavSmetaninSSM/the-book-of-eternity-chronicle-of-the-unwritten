@@ -22,7 +22,4 @@ test('cinema generation and game turns use separate cancellation scopes', async 
   const turn = new AbortController(), cinema = new AbortController();
   cinema.abort(); assert.equal(turn.signal.aborted, false); assert.equal(cinema.signal.aborted, true);
   const otherCinema = new AbortController(); turn.abort(); assert.equal(otherCinema.signal.aborted, false);
-  const multiplayer = await readFile(new URL('../hooks/logic/multiplayer.ts', import.meta.url), 'utf8');
-  assert.match(multiplayer, /if \(props\.activeTurnRef\.current\) props\.abortControllerRef\.current\?\.abort\(\)/);
-  assert.doesNotMatch(multiplayer, /cinemaAbortControllerRef/);
 });

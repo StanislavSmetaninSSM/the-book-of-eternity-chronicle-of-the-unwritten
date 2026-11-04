@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
@@ -28,8 +29,8 @@ test('new off-screen location and NPC share one resolved ID through the next con
 test('normal turns and GM questions build context from the resolved response', async () => {
   const { readFile } = await import('node:fs/promises');
   const source = await readFile(new URL('../hooks/logic/turn.ts', import.meta.url), 'utf8');
-  assert.equal((source.match(/buildNextContext\(context, processedResponse, newState, newHistoryWithAnswer, true, onWorldMapWarning\)/g) || []).length, 2);
-  assert.equal((source.match(/buildNextContext\(\{ \.\.\.context, superInstructions: retainedSuperInstructions \}, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning\)/g) || []).length, 2);
+  assert.equal((source.match(/buildNextContext\(context, processedResponse, newState, newHistoryWithAnswer, true, onWorldMapWarning\)/g) || []).length, 1);
+  assert.equal((source.match(/buildNextContext\(\{ \.\.\.context, superInstructions: retainedSuperInstructions \}, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning\)/g) || []).length, 1);
 });
 
 test('implicit scene presence reflects NPC changes from the same turn', async () => {
@@ -144,16 +145,12 @@ test('turn manager preserves NPC location and applies item journal commands once
     const manager = createTurnManager({ gameState: base, setGameState, gameHistory: [], setGameHistory: noop, isLoading: false, setIsLoading: noop, setError: value => { error = value; }, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: noop, setCombatLog: noop, setSceneImagePrompt: noop, setSuggestedActions: noop, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef, abortControllerRef: { current: null }, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: key => key, turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: null }, gameStateRef: { current: base }, broadcastFullSync: value => { sync = value; }, combatLog: [], gameLog: [] });
     await manager.resumeInterruptedTurn({ context, baseState: base, history: [] });
     assert.equal(error, null);
-    assert.ok(sync, 'host receives the full turn result');
     assert.equal(storedState.encounteredNPCs[0].currentLocationId, 'other-place');
     assert.equal(storedState.NPCsInScene, false);
     assert.equal(gameContextRef.current.encounteredNPCs[0].currentLocationId, 'other-place');
-    assert.equal(sync.gameState.encounteredNPCs[0].currentLocationId, 'other-place');
     assert.deepEqual(storedState.playerCharacter.inventory[0].journalEntries, ['New entry', 'Old entry']);
     assert.deepEqual(storedState.players[0].inventory[0].journalEntries, ['New entry', 'Old entry']);
-    assert.deepEqual(sync.gameState.players[0].inventory[0].journalEntries, ['New entry', 'Old entry']);
     assert.deepEqual(storedState.encounteredNPCs[0].inventory[0].journalEntries, ['NPC entry', 'NPC old']);
-    assert.deepEqual(sync.gameState.encounteredNPCs[0].inventory[0].journalEntries, ['NPC entry', 'NPC old']);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow;
@@ -301,7 +298,7 @@ test('skipped unsafe commands are reported without changing target state', async
   } finally { await server.close(); }
 });
 
-test('turn warnings enter visible history and host save together with unchanged world state', async () => {
+test('turn warnings enter visible history and context together with unchanged world state', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   const packets = [], storage = new Map();
@@ -329,17 +326,16 @@ test('turn warnings enter visible history and host save together with unchanged 
     await manager.resumeInterruptedTurn({ context, baseState: base, history: [] });
     const system = history.filter(item => item.sender === 'system');
     assert.equal(system.length, 2); assert.match(system[0].content, /not removed/); assert.match(system[1].content, /not completed/);
-    assert.deepEqual(sync.gameHistory, history); assert.deepEqual(contextRef.current.responseHistory, history);
-    assert.equal(sync.gameContext.worldMap.home.adjacencyMap.length, 1);
-    assert.equal(sync.gameContext.worldMap.home.activeThreats[0].currentActivity.activityId, 'hunt');
+    assert.deepEqual(contextRef.current.responseHistory, history);
+    assert.equal(contextRef.current.worldMap.home.adjacencyMap.length, 1);
+    assert.equal(contextRef.current.worldMap.home.activeThreats[0].currentActivity.activityId, 'hunt');
     await manager.askQuestion('Check the world');
     const questionWarnings = history.filter(item => item.sender === 'system');
     assert.equal(questionWarnings.length, 2);
     assert.match(questionWarnings[0].content, /not removed/);
     assert.match(questionWarnings[1].content, /not completed/);
-    assert.deepEqual(sync.gameHistory, history);
     assert.deepEqual(contextRef.current.responseHistory, history);
-    assert.equal(sync.gameContext.worldMap.home.activeThreats[0].currentActivity.activityId, 'hunt');
+    assert.equal(contextRef.current.worldMap.home.activeThreats[0].currentActivity.activityId, 'hunt');
   } finally { globalThis.fetch = oldFetch; if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; await server.close(); }
 });
 
@@ -829,81 +825,5 @@ test('mixed, invalid and repeated transfers reject the whole turn, preserve hist
         assert.deepEqual(displayedGameLog, savedGameLog); assert.deepEqual(displayedCombatLog, savedCombatLog);
       }
     }
-  } finally { globalThis.fetch = oldFetch; if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; await server.close(); }
-});
-
-test('failed host sync preserves committed turn and question; failed player send rolls back logs', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
-  const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
-  const packets = [], storage = new Map();
-  globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k,v) => storage.set(k,v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
-  globalThis.fetch = async (url, init) => {
-    if (url === '/__arena_gm/turn') { packets.push(JSON.parse(init.body)); return new Response('{}'); }
-    if (String(url).startsWith('/__arena_gm/response')) {
-      const packet = packets.at(-1);
-      const output = packet.stepName === 'Step0_AnalysisAndPlanning_TaskGuide'
-        ? { _internal_flags_: { isSimpleTurn: true }, items_and_stat_calculations: ['Health calculation'] }
-        : { response: 'The wound closes.', currentHealthChange: 10, items_and_stat_calculations: ['Health calculation'], combatLogEntries: ['Healing recorded'], image_prompt: 'Uncommitted scene', dialogueOptions: ['Uncommitted action'] };
-      return Response.json({ kind: 'arena-gm-step-response', protocolVersion: 1, correlationId: packet.correlationId, output });
-    }
-    throw new Error(`Unexpected fetch ${url}`);
-  };
-  try {
-    const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
-    const { createTurnManager } = await server.ssrLoadModule('/hooks/logic/turn.ts');
-    const { translate } = await server.ssrLoadModule('/utils/localization.ts');
-    for (const [role, mode] of [['host', 'throw'], ['host', 'success'], ['player', 'throw'], ['player', 'missing'], ['player', 'closed'], ['player', 'event'], ['player', 'reject'], ['player', 'success']]) for (const question of [false, true]) for (const activeCombat of [false, true]) {
-      const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
-      context.currentTurnNumber = 2;
-      if (activeCombat) context.enemiesDataForCurrentTurn = [{ name: 'Enemy', currentHealth: 10, maxHealth: 10 }];
-      const p = { ...context.playerCharacter, playerId: 'p', currentHealth: 40 };
-      context.playerCharacter = p; context.players = [p];
-      const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: role, myPeerId: 'p', peers: [], isConnectedToHost: true };
-      const savedGameLog = ['Previous calculation'], savedCombatLog = ['Previous combat'];
-      let state = base, history = [], gameLog = savedGameLog, combatLog = savedCombatLog, error = null, loading = null, sentSync = null, sentPlayer = null, image = 'Previous image', actions = [];
-      const contextRef = { current: context }, noop = () => {};
-      const listeners = new Set();
-      const connection = { open: mode !== 'closed', on: (event, fn) => { if (event === 'error') listeners.add(fn); }, off: (event, fn) => { if (event === 'error') listeners.delete(fn); }, send: v => {
-        if (mode === 'throw') throw new Error('player send failed');
-        if (mode === 'event') { for (const listener of listeners) listener(new Error('peer emitted failure')); return; }
-        if (mode === 'reject') return Promise.reject(new Error('async send failed'));
-        sentPlayer = v.payload.saveFile;
-      } };
-      const manager = createTurnManager({ gameState: base, setGameState: v => { state = typeof v === 'function' ? v(state) : v; }, gameHistory: [], setGameHistory: v => { history = typeof v === 'function' ? v(history) : v; }, isLoading: false, setIsLoading: v => { loading = v; }, setError: v => { error = v; }, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: v => { gameLog = typeof v === 'function' ? v(gameLog) : v; }, setCombatLog: v => { combatLog = typeof v === 'function' ? v(combatLog) : v; }, setSceneImagePrompt: v => { image = v; }, setSuggestedActions: v => { actions = v; }, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef: contextRef, abortControllerRef: { current: null }, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: (k, r) => translate('en', k, r), turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: mode === 'missing' ? null : connection }, gameStateRef: { current: base }, broadcastFullSync: v => { sentSync = v; if (mode === 'throw') throw new Error('peer send failed'); }, combatLog: savedCombatLog, gameLog: savedGameLog });
-      if (question) await manager.askQuestion('Heal?');
-      else await manager.resumeInterruptedTurn({ context, baseState: base, history: [] });
-      assert.equal(loading, role === 'player' && mode === 'success');
-      if (role === 'host' || mode === 'success') {
-        assert.equal(state.playerCharacter.currentHealth, 50);
-        assert.ok(gameLog.includes('Health calculation'));
-        assert.ok(combatLog.includes('Healing recorded'));
-        assert.ok(history.some(m => m.sender === 'gm' && m.content === 'The wound closes.'));
-        if (role === 'host' && mode === 'throw') {
-          assert.ok(history.some(m => m.sender === 'system' && m.content.includes('already applied')));
-          assert.match(error, /already applied/); assert.match(error, /Do not repeat/);
-        } else { assert.equal(error, null); }
-        const outgoing = role === 'host' ? sentSync : sentPlayer;
-        assert.equal(outgoing.gameState.playerCharacter.currentHealth, 50);
-        assert.deepEqual(outgoing.combatLog, combatLog);
-        assert.equal(combatLog.includes('Previous combat'), activeCombat);
-        assert.equal(contextRef.current.playerCharacter.currentHealth, 50);
-        if (question) assert.equal(history[0].sender, 'player');
-      } else {
-        assert.equal(state.playerCharacter.currentHealth, 40);
-        assert.deepEqual(gameLog, savedGameLog); assert.deepEqual(combatLog, savedCombatLog);
-        assert.ok(!history.some(m => m.sender === 'gm'));
-        assert.doesNotMatch(error, /already applied/);
-        if (mode === 'missing') assert.match(error, /Connection to host lost/);
-        else {
-          assert.match(error, /Do not repeat/);
-          assert.match(error, mode === 'throw' ? /player send failed/ : mode === 'closed' ? /Connection is not open/ : mode === 'event' ? /peer emitted failure/ : /async send failed/);
-        }
-        assert.equal(listeners.size, 0);
-        assert.equal(image, 'Previous image'); assert.deepEqual(actions, []);
-        assert.equal(sentSync, null);
-      }
-    }
-    assert.match(translate('ru', 'error_turn_applied_followup'), /Ход уже применён/);
-    assert.match(translate('ru', 'error_turn_applied_followup'), /Не повторяйте ход/);
   } finally { globalThis.fetch = oldFetch; if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; await server.close(); }
 });

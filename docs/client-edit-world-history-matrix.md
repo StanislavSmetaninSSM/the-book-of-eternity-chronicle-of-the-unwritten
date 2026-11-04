@@ -1,3 +1,5 @@
+> **Historical / superseded:** Multiplayer was removed in favor of single-player gameplay. This document records the former implementation and is not a current design or implementation plan.
+
 # Матрица player actions: мир, история и хранилища
 
 Аудит этапа 1, **не список разрешённых клиентских команд**. `useGameLogic` передаёт весь `createPlayerActionsManager` через `guardGameplayActions`; сейчас host/none допускаются, player/spectator блокируются, включая сортировку, несмотря на её презентационное назначение. Будущие права не установлены: «свой» означает проверенную хостом связь соединения и единственного playerId, а не доверие полям клиента. Переходы ролей, restore и turn требуют проверки непосредственно перед применением. Для любой сетевой команды нужны session/base revision, operation ID, atomic commit, dedupe, ACK/unknown и разрешение конфликта; таблица не доказывает их наличие.

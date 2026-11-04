@@ -1,0 +1,31 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from 'vite';
+
+test('legacy host, player and spectator saves become local without losing party, history, or pending actions', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  try {
+    const { localizeLegacySave } = await server.ssrLoadModule('/utils/localizeLegacySave.ts');
+    for (const role of ['host', 'player', 'spectator', 'none', undefined]) {
+      const characters = [{ playerId: 'peer-1', name: 'A' }, { playerId: 'peer-2', name: 'B' }];
+      const pending = { isActive: true, prompt: 'Hold the bridge', actions: { 'peer-2': 'Guard' } };
+      const original = { gameState: { networkRole: role, myPeerId: 'peer-1', hostPeerId: 'peer-1', peers: [{ id: 'peer-2' }], isConnectedToHost: false, players: characters, playerCharacter: characters[0], activePlayerIndex: 1, playerNeedsToCreateCharacter: true, collectiveActionState: pending }, gameContext: { networkRole: role, peers: [{ id: 'peer-2' }], isConnectedToHost: false }, gameHistory: [{ sender: 'player', content: 'remember this' }] };
+      const migrated = localizeLegacySave(original);
+      assert.equal(migrated.gameState.networkRole, undefined);
+      assert.equal(migrated.gameState.myPeerId, undefined);
+      assert.equal(migrated.gameState.hostPeerId, undefined);
+      assert.equal(migrated.gameState.peers, undefined);
+      assert.equal(migrated.gameState.playerNeedsToCreateCharacter, undefined);
+      assert.equal(migrated.gameState.collectiveActionState, undefined);
+      assert.deepEqual(migrated.gameState.legacyNetworkActions, [pending]);
+      assert.deepEqual(migrated.gameState.players, characters);
+      assert.equal(migrated.gameState.activePlayerIndex, 1);
+      assert.equal(migrated.gameState.playerCharacter.playerId, role && role !== 'none' ? 'peer-2' : 'peer-1');
+      assert.equal(migrated.gameContext.playerCharacter, migrated.gameState.playerCharacter);
+      assert.deepEqual(migrated.gameHistory, original.gameHistory);
+      assert.equal(migrated.gameContext.networkRole, undefined);
+      assert.equal(original.gameState.networkRole, role);
+      assert.deepEqual(localizeLegacySave(migrated).gameState.legacyNetworkActions, [pending]);
+    }
+  } finally { await server.close(); }
+});

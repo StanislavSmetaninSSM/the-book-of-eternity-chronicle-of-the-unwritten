@@ -1,24 +1,10 @@
-import { ClientCoordinationBusy, ClientCoordinationUnavailable, withClientHostLock } from '../utils/clientEditCoordination';
-import { ClientEditIntentAlreadyExists, createClientEditIntent, listClientEditIntents, getClientEditEpoch, transitionClientEditIntent, deleteClientEditIntent, listClientTurnIntents, transitionClientTurnIntent, deleteClientTurnIntent, type ClientTurnIntent, type ClientEditIntent, type ClientEditIntentStatus } from '../utils/clientEditIntentStore';
-import { HostEditLedger, CLIENT_EDIT_CAPABILITY, STACK_EDIT_CAPABILITY, MOVE_EDIT_CAPABILITY, STASH_EDIT_CAPABILITY, STASH_DESTROY_CAPABILITY, canConfirmEdit, type ClientEditCommand, type EquipmentEditOperation, type StackEditOperation, type MoveEditOperation, type StashEditOperation, type StashDestroyOperation } from '../utils/clientEditProtocol';
-import { applyAuthoritativeEquipment } from '../utils/clientEquipment';
-import { applyAuthoritativeSplit, applyAuthoritativeMerge } from '../utils/clientInventoryStack';
-import { applyAuthoritativeMove } from '../utils/clientInventoryMove';
-import { applyAuthoritativeStash, applyAuthoritativeStashDestroy } from '../utils/clientInventoryStash';
-import { captureTurnSubmissionIdentity, sameTurnSubmissionIdentity } from '../utils/turnSubmissionIdentity';
-import { reconcileHostEditedCharacter } from '../utils/hostEditedCharacter';
-import { recordPresentationLog, type PendingPresentationLog } from '../utils/presentationLogSync';
+import { localizeLegacySave, localizeLegacyState } from '../utils/localizeLegacySave';
 import { sanitizeGameState } from '../utils/sanitizeGameState';
-import { networkSafeSaveFile } from '../utils/networkSavePrivacy';
-import { isLocalPreferenceKey, mergeNetworkLocalPreferences, updateLocalPreferences, sharedSettingsEqual } from '../utils/localGamePreferences';
-import { PresentationJournal } from '../utils/presentationJournal';
-import { beginGameplayMutation, gameplayMutationCommitted, clientLocalEditBlocked, guardGameplayActions } from '../utils/gameplayMutationGate';
-import { HostTurnAuthority, type TurnSyncStamp } from '../utils/networkTurnProtocol';
-import { broadcastToConnections, sendOnOpenConnection } from '../utils/peerSend';
+import { isLocalPreferenceKey, sharedSettingsEqual } from '../utils/localGamePreferences';
+import { beginGameplayMutation, gameplayMutationCommitted, guardGameplayActions } from '../utils/gameplayMutationGate';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // FIX: Imported missing types to resolve multiple "Cannot find name" errors.
-import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Quest, Wound, CustomState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item, CompletedActivity, AdjacencyMapEntry, Project, CompletedProject, StructuredBonus, ActiveThreat, Cinematic, FactionRank, NetworkChatMessage, CinemaFrame, SkillMastery, ImageCacheEntry, DayInfo, Month, NetworkRole, NetworkMessage, PeerInfo, CollectiveActionState, SimultaneousActionState } from '../types';
-import Peer, { DataConnection } from 'peerjs';
+import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Quest, Wound, CustomState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item, CompletedActivity, AdjacencyMapEntry, Project, CompletedProject, StructuredBonus, ActiveThreat, Cinematic, FactionRank, CinemaFrame, SkillMastery, ImageCacheEntry, DayInfo, Month } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { getCinemaPrompt, getContinueCinemaPrompt } from '../prompts/cinemaPrompt';
@@ -31,7 +17,6 @@ import { createSaveLoadManager } from './logic/saveLoad';
 import { createInventoryActions } from './logic/inventoryActions';
 import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
-import { createMultiplayerManager, commitClientSnapshot, snapshotMatchesRendered, type PendingClientSync } from './logic/multiplayer';
 import { processAndApplyResponse } from '../utils/responseProcessor';
 import { restorePlayerStats } from '../utils/restorePlayer';
 import { recalculateAllWeights } from '../utils/inventoryManager';
@@ -59,7 +44,6 @@ import { translate } from '../utils/localization';
 import { cancelInterruptedArenaGmRequest, requestArenaGmImage } from '../utils/arenaGmRelay';
 
 
-type HostEditCommit = { sessionId: string; commandId: string; playerId: string; outcome: 'applied' | 'rejected'; expectedPlayer?: PlayerCharacter; expectedStash?: Item[]; checksStash?: boolean; reason?: string };
 
 interface UseGameLogicProps {
     language: Language;
@@ -93,7 +77,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // Party transitions must change the active player, turn number and history
     // in one React update. Independent setters are still exposed to the rest of
     // the lifecycle, but share one ordered state queue.
-    const [core, setCore] = useState<{ gameState: GameState | null; gameHistory: ChatMessage[]; turnNumber: number | null; partyRevision: number; hostEdit?: HostEditCommit }>({ gameState: null, gameHistory: [], turnNumber: null, partyRevision: 0 });
+    const [core, setCore] = useState<{ gameState: GameState | null; gameHistory: ChatMessage[]; turnNumber: number | null; partyRevision: number }>({ gameState: null, gameHistory: [], turnNumber: null, partyRevision: 0 });
     const { gameState, gameHistory, turnNumber } = core;
     const _setGameState = useCallback((action: React.SetStateAction<GameState | null>) => setCore(previous => {
         const next = typeof action === 'function' ? action(previous.gameState) : action;
@@ -108,17 +92,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         return next === previous.turnNumber ? previous : { ...previous, turnNumber: next };
     }), []);
     const gameStateRef = useRef(gameState);
-    const [snapshotEpoch, setSnapshotEpoch] = useState(0);
     const gameplayMutationRevisionRef = useRef(0);
     const gameplayMutationAppliedRef = useRef(0);
     const stateMutationRevisionRef = useRef(0), stateMutationAppliedRef = useRef(0);
     const historyMutationRevisionRef = useRef(0), historyMutationAppliedRef = useRef(0);
     const gameplayMutationPendingRef = useRef(false);
     const [gameplayMutationEpoch, setGameplayMutationEpoch] = useState(0);
-    const mutationMessageRef = useRef({ delivery: '', host: '', client: '' });
-    const pendingPartyTransitionRef = useRef<{ revision: number; release: () => void } | null>(null);
-    const hostHistoryHoldRef = useRef<(() => void) | null>(null);
-    const hostContextHoldRef = useRef<(() => void) | null>(null);
+    const mutationMessageRef = useRef({ delivery: '' });
+    const pendingPartyTransitionRef = useRef<{ revision: number } | null>(null);
     const contextEditRef = useRef({
         settings: { revision: 0, applied: 0, expected: null as GameSettings | null },
         instructions: { revision: 0, applied: 0, expected: '' },
@@ -130,160 +111,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     });
     const [contextEditEpoch, setContextEditEpoch] = useState(0);
     const contextEditGenerationRef = useRef(0);
-    const hostTurnAuthorityRef = useRef<HostTurnAuthority | null>(null);
-    if (!hostTurnAuthorityRef.current) hostTurnAuthorityRef.current = new HostTurnAuthority();
-    const hostEditLedgerRef = useRef<HostEditLedger | null>(null);
-    if (!hostEditLedgerRef.current) hostEditLedgerRef.current = new HostEditLedger(hostTurnAuthorityRef.current);
-    const pendingHostEditRef = useRef<{ command: ClientEditCommand; revision: number; baseline: GameState; connection: DataConnection; marker: PendingPresentationLog & { release: () => void } } | null>(null);
-    const clientTurnStampRef = useRef<TurnSyncStamp | null>(null);
-    const observedHostStampRef = useRef<TurnSyncStamp | null>(null);
-    const pendingClientSyncRef = useRef<PendingClientSync | null>(null);
-    const [clientSyncEpoch, setClientSyncEpoch] = useState(0);
-    const scheduleClientSyncCommit = useCallback(() => setClientSyncEpoch(epoch => epoch + 1), []);
-    const [clientEditIntents, setClientEditIntents] = useState<ClientEditIntent[]>([]);
-    const clientEditIntentsRef = useRef<ClientEditIntent[]>([]);
-    const [clientTurnIntents, setClientTurnIntents] = useState<ClientTurnIntent[]>([]);
-    const clientTurnIntentsRef = useRef<ClientTurnIntent[]>([]);
-    const clientEditStorageReadyRef = useRef(false);
-    const clientEditBusyRef = useRef(false);
-    const [clientEditStorageError, setClientEditStorageError] = useState<string | null>(null);
-    const clientEditCapabilityRef = useRef<{ sessionId: string; enabled: boolean; stacks: boolean; move: boolean; stash: boolean; stashDestroy: boolean } | null>(null);
-    const clientEditTasksRef = useRef<Promise<void>>(Promise.resolve());
-    const requestClientSyncRef = useRef<() => void>(() => {});
-    const clientEpochBaselineRef = useRef(new Map<string, string | null>());
-    const clientEpochSyncRef = useRef<{ host: string; epoch: string | null; requestId: string } | null>(null);
-    const pendingNetworkTurnRef = useRef<string | null>(null);
-    const pendingSyncRequestRef = useRef<string | null>(null);
-    const queuedHostSyncRequestsRef = useRef(new Set<string>());
-    const pendingHostSyncNoticesRef = useRef<ChatMessage[]>([]);
-    const [hostSyncNoticeEpoch, setHostSyncNoticeEpoch] = useState(0);
-    const presentationJournalRef = useRef(new PresentationJournal());
-    const hostRestorePendingRef = useRef<(PendingPresentationLog & { release: () => void; baseline?: SaveFile | null; rollbackSettings?: GameSettings; rollbackContext?: GameContext; historyScheduled?: boolean; allowedHistories?: WeakSet<ChatMessage[]> }) | null>(null);
-    const pendingNewPeersRef = useRef(new Map<string, DataConnection>());
-    const pendingRemovedPeersRef = useRef(new Set<string>());
-    const pendingPeerCharactersRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
-    const pendingPeerCharacterIdsRef = useRef(new Set<string>());
-    const pendingPeerCharacterCommitsRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
-    const pendingPeerJoinCommitsRef = useRef(new Map<string, { peer: PeerInfo; connection: DataConnection }>());
-    const pendingPeerDisconnectCommitsRef = useRef(new Map<string, PeerInfo>());
-    const [hostRestoreEpoch, setHostRestoreEpoch] = useState(0);
-    const clearHostRestorePending = useCallback(() => {
-        // A low-priority edit may already have an eagerly computed candidate
-        // when the session is reset. Undo only that exact, still-uncommitted
-        // player object in the same ordered queue before the reset proceeds.
-        const cancelled = pendingHostEditRef.current;
-        if (cancelled) setCore(previous => {
-            const result = previous.hostEdit;
-            const state = previous.gameState;
-            if (!result || result.sessionId !== cancelled.command.sessionId || result.commandId !== cancelled.command.commandId ||
-                result.outcome !== 'applied' || !state || !result.expectedPlayer) return previous;
-            const index = state.players.findIndex(p => p.playerId === result.playerId);
-            const original = cancelled.baseline.players.find(p => p.playerId === result.playerId);
-            if (index < 0 || state.players[index] !== result.expectedPlayer || !original ||
-                (result.checksStash && state.temporaryStash !== result.expectedStash)) return previous;
-            const players = state.players.slice(); players[index] = original;
-            return { ...previous, gameState: { ...state, players, ...(result.checksStash ? { temporaryStash: cancelled.baseline.temporaryStash } : {}) } };
-        });
-        // A host restore can be eagerly computed in a low-priority render
-        // before reset. Roll back its exact staged values in the ordered
-        // queues; never overwrite later, independent changes.
-        const restore = hostRestorePendingRef.current;
-        // Context is assigned before the later migration/React setters. An
-        // exception there may leave no staged snapshot, but the old context
-        // still has to be restored on session reset.
-        if (restore?.baseline && gameContextRef.current === restore.rollbackContext)
-            gameContextRef.current = restore.baseline.gameContext;
-        if (restore?.baseline && restore.snapshot) {
-            const before = restore.baseline, staged = restore.snapshot;
-            setCore(previous => {
-                const current = previous.gameState, expected = staged.gameState;
-                const sameGameplay = !!current && !!expected && Object.keys(current).length === Object.keys(expected).length &&
-                    Object.keys(expected).every(key => key === 'imageCache' || key === 'cinematics' ||
-                        (current as any)[key] === (expected as any)[key]);
-                const state = sameGameplay ? { ...before.gameState, imageCache: current!.imageCache, cinematics: current!.cinematics } : current;
-                const stagedHistory = staged.gameHistory;
-                const hasStagedPrefix = restore.historyScheduled === true && before.gameHistory !== stagedHistory &&
-                    (previous.gameHistory === stagedHistory || restore.allowedHistories?.has(previous.gameHistory) === true) &&
-                    previous.gameHistory.length >= stagedHistory.length &&
-                    stagedHistory.every((entry, index) => previous.gameHistory[index] === entry);
-                const history = hasStagedPrefix ? [...before.gameHistory, ...previous.gameHistory.slice(stagedHistory.length)] : previous.gameHistory;
-                const turn = previous.turnNumber === staged.gameContext.currentTurnNumber ? before.gameContext.currentTurnNumber : previous.turnNumber;
-                gameStateRef.current = state;
-                gameHistoryRef.current = history;
-                return { ...previous, gameState: state, gameHistory: history, turnNumber: turn };
-            });
-            setWorldState(previous => previous === staged.gameContext.worldState ? before.gameContext.worldState : previous);
-            setWorldMap(previous => previous === staged.gameContext.worldMap ? before.gameContext.worldMap : previous);
-            setVisitedLocations(previous => previous === staged.gameContext.visitedLocations ? before.gameContext.visitedLocations : previous);
-            setGameSettings(previous => previous === restore.rollbackSettings ? before.gameContext.gameSettings : previous);
-            setSuperInstructions(previous => previous === staged.gameContext.superInstructions ? before.gameContext.superInstructions : previous);
-            setGameLog(previous => {
-                if (previous === staged.gameLog) return before.gameLog;
-                if (!restore.allowedGameLogs?.has(previous) || previous.length < staged.gameLog.length ||
-                    !staged.gameLog.every((entry, index) => previous[previous.length - staged.gameLog.length + index] === entry)) return previous;
-                return [...previous.slice(0, previous.length - staged.gameLog.length), ...before.gameLog];
-            });
-            setCombatLog(previous => previous === staged.combatLog ? before.combatLog : previous);
-            setLastJsonResponse(previous => previous === staged.lastJsonResponse ? before.lastJsonResponse : previous);
-            setSceneImagePrompt(previous => previous === staged.sceneImagePrompt ? before.sceneImagePrompt : previous);
-            if (gameContextRef.current === restore.snapshot.gameContext || gameContextRef.current === restore.rollbackContext)
-                gameContextRef.current = before.gameContext;
-        }
-        hostRestorePendingRef.current = null;
-        pendingNewPeersRef.current.clear();
-        pendingRemovedPeersRef.current.clear();
-        pendingPeerCharactersRef.current.clear();
-        pendingPeerCharacterIdsRef.current.clear();
-        pendingPeerCharacterCommitsRef.current.clear();
-        pendingPeerJoinCommitsRef.current.clear();
-        pendingPeerDisconnectCommitsRef.current.clear();
-        hostHistoryHoldRef.current?.();
-        hostHistoryHoldRef.current = null;
-        hostContextHoldRef.current?.();
-        hostContextHoldRef.current = null;
-        pendingSyncRequestRef.current = null;
-        queuedHostSyncRequestsRef.current.clear();
-        pendingHostSyncNoticesRef.current = [];
-        presentationJournalRef.current.clear();
-    }, []);
-
-
     // Internal state updates (turn commits, restores, and presentation assets)
     // do not represent competing player edits.
     const setGameStateInternal = useCallback((action: React.SetStateAction<GameState | null>) => {
-        const finishMutation = hostTurnAuthorityRef.current!.beginMutation();
-        _setGameState(prevState => {
-          let changed = true;
-          try {
-            const proposed = typeof action === 'function' ? (action as (prevState: GameState | null) => GameState | null)(prevState) : action;
-            const newState = sanitizeGameState(proposed);
-
-            changed = newState !== prevState;
-            gameStateRef.current = newState;
-            return newState;
-          } finally {
-            finishMutation();
-            // Even a no-op updater can invalidate a grant without changing the
-            // state identity, so request a post-render publication explicitly.
-            if (!changed && gameStateRef.current?.networkRole === 'host') {
-                queueMicrotask(() => setSnapshotEpoch(epoch => epoch + 1));
-            }
-          }
+        _setGameState(previous => {
+            const proposed = typeof action === 'function' ? action(previous) : action;
+            const next = sanitizeGameState(proposed);
+            gameStateRef.current = next;
+            return next;
         });
     }, []);
 
     const setGameState = useCallback((action: React.SetStateAction<GameState | null>) => {
-        // Once a player result is in flight, changing its base cannot undo the
-        // send. Reject the edit until the authoritative sync is received.
-        if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
-            setError(mutationMessageRef.current.host); return;
-        }
-        if (clientLocalEditBlocked(gameStateRef.current?.networkRole)) {
-            setError(mutationMessageRef.current.client); return;
-        }
-        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
-            gameStateRef.current?.networkRole, turnPhaseRef.current,
-            pendingClientSyncRef.current !== null || pendingNetworkTurnRef.current !== null || !clientTurnStampRef.current);
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
         if (revision === null) {
             setError(mutationMessageRef.current.delivery);
             return;
@@ -292,7 +132,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setGameStateInternal(previous => {
             try {
                 const next = typeof action === 'function' ? action(previous) : action;
-                return reconcileHostEditedCharacter(previous, next);
+                return next;
             }
             finally {
                 stateMutationAppliedRef.current = Math.max(stateMutationAppliedRef.current, revision);
@@ -303,42 +143,21 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
     }, [setGameStateInternal]);
 
-    const userGameplayActionBlocked = useCallback(() => {
-        if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
-            setError(mutationMessageRef.current.host); return true;
-        }
-        if (clientLocalEditBlocked(gameStateRef.current?.networkRole)) {
-            setError(mutationMessageRef.current.client); return true;
-        }
-        return false;
-    }, []);
-
-    const setPresentationState = useCallback((action: React.SetStateAction<GameState | null>) => {
-        const record = clientLocalEditBlocked(gameStateRef.current?.networkRole);
-        setGameStateInternal(previous => {
-            const next = typeof action === 'function' ? action(previous) : action;
-            if (record) presentationJournalRef.current.record(previous, next);
-            return next;
-        });
-    }, [setGameStateInternal]);
+    const userGameplayActionBlocked = useCallback(() => false, []);
+    const setPresentationState = setGameStateInternal;
 
     const [worldState, setWorldState] = useState<WorldState | null>(null);
     const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
-    const localPreferencesRef = useRef<Partial<GameSettings>>({});
     const [superInstructions, setSuperInstructions] = useState<string>('');
     // Separate context setters must invalidate authority before React can defer
     // them. Track each field independently so a partial commit cannot release
     // the hold. Local UI preference updates are intentionally not included.
     const beginSharedContextEdit = useCallback((field: 'settings' | 'instructions' | 'world' | 'map' | 'visited' | 'gameLog' | 'combatLog') => {
-        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
-            gameStateRef.current?.networkRole, turnPhaseRef.current);
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
         if (revision === null) throw new Error('Shared context mutation unexpectedly blocked');
         const entry = contextEditRef.current[field];
         const generation = contextEditGenerationRef.current;
         entry.revision = revision;
-        if (gameStateRef.current?.networkRole === 'host' && !hostContextHoldRef.current) {
-            hostContextHoldRef.current = hostTurnAuthorityRef.current!.beginMutation();
-        }
         if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
         return <T,>(value: T): T => {
             if (generation === contextEditGenerationRef.current) {
@@ -366,40 +185,20 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         edits.combatLog.revision = edits.combatLog.applied = 0;
         // Other pending user edits have their own state/history commit checks.
         gameplayMutationAppliedRef.current = gameplayMutationRevisionRef.current;
-        hostContextHoldRef.current?.();
-        hostContextHoldRef.current = null;
         if (gameplayMutationPendingRef.current) setContextEditEpoch(epoch => epoch + 1);
     }, []);
     const gameHistoryRef = useRef(gameHistory);
     const setGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
-        // Capture the marker at enqueue time. React can rebase this updater
-        // after reset has already cleared the live pending ref.
-        const restore = hostRestorePendingRef.current;
         _setGameHistory(previous => {
             const next = typeof action === 'function' ? action(previous) : action;
-            if (restore?.snapshot && (previous === restore.snapshot.gameHistory || restore.allowedHistories?.has(previous)) &&
-                next.length >= previous.length && previous.every((entry, index) => next[index] === entry)) {
-                (restore.allowedHistories ??= new WeakSet()).add(next);
-            }
             gameHistoryRef.current = next;
             return next;
         });
     }, []);
     const setUserGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
-        if (gameStateRef.current?.networkRole === 'host' && hostRestorePendingRef.current) {
-            setError(mutationMessageRef.current.host); return;
-        }
-        if (clientLocalEditBlocked(gameStateRef.current?.networkRole)) {
-            setError(mutationMessageRef.current.client); return;
-        }
-        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef,
-            gameStateRef.current?.networkRole, turnPhaseRef.current,
-            pendingClientSyncRef.current !== null || pendingNetworkTurnRef.current !== null || !clientTurnStampRef.current);
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
         if (revision === null) { setError(mutationMessageRef.current.delivery); return; }
         historyMutationRevisionRef.current = revision;
-        if (gameStateRef.current?.networkRole === 'host' && !hostHistoryHoldRef.current) {
-            hostHistoryHoldRef.current = hostTurnAuthorityRef.current!.beginMutation();
-        }
         setGameHistory(previous => {
             try { return typeof action === 'function' ? action(previous) : action; }
             finally {
@@ -427,11 +226,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setCombatLog(previous => applied(typeof action === 'function' ? action(previous) : action));
     }, [beginSharedContextEdit]);
     const setPresentationGameLog = useCallback((action: React.SetStateAction<string[]>) => {
-        const restore = hostRestorePendingRef.current;
         setGameLog(previous => {
             const next = typeof action === 'function' ? action(previous) : action;
-            recordPresentationLog(restore, previous, next);
-            recordPresentationLog(pendingClientSyncRef.current, previous, next);
             const pending = contextEditRef.current.gameLog;
             if (pending.revision !== 0 && pending.applied === pending.revision && previous === pending.expected) {
                 pending.expected = next;
@@ -481,20 +277,16 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const turnStartTimeRef = useRef<number | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
-    const peerRef = useRef<Peer | null>(null);
-    const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
-    const hostConnectionRef = useRef<DataConnection | null>(null);
     // Increment synchronously before restoring a snapshot, even before React renders.
     const syncRevisionRef = useRef(0);
     const activeTurnRef = useRef<symbol | null>(null);
-    const turnPhaseRef = useRef<'idle' | 'generating' | 'sending' | 'committed' | 'awaiting-sync'>('idle');
+    const turnPhaseRef = useRef<'idle' | 'generating' | 'committed'>('idle');
     const lastBroadcastedStateRef = useRef<{ turn: number; playerIndex: number } | null>(null);
     const lastBroadcastedCoopState = useRef<string | null>(null);
 
     const wasLoadingRef = useRef(false);
     const isTurnSubmitPendingRef = useRef(false);
 
-    const [networkChatHistory, setNetworkChatHistory] = useState<NetworkChatMessage[]>([]);
 
     const playerLevelRef = useRef<number | null>(null);
 
@@ -508,153 +300,23 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [isLoading, gameSettings]);
 
     const { t } = useLocalization();
-    mutationMessageRef.current = { delivery: t('game_edit_blocked_delivery'), host: t('host_sync_not_ready'), client: t('client_edit_host_only') };
+    mutationMessageRef.current = { delivery: t('game_state_updating') };
     const gameContextRef = useRef<GameContext | null>(null);
-
-    const publishClientIntents = useCallback((intents: ClientEditIntent[]) => {
-        clientEditIntentsRef.current = intents;
-        setClientEditIntents(intents);
-    }, []);
-    const publishClientTurnIntents = useCallback((intents: ClientTurnIntent[]) => {
-        clientTurnIntentsRef.current = intents;
-        setClientTurnIntents(intents);
-    }, []);
-    const queueClientIntentTask = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
-        const next = clientEditTasksRef.current.then(task);
-        clientEditTasksRef.current = next.then(() => undefined, () => undefined);
-        return next;
-    }, []);
-    const intentStorageFailure = useCallback(() => {
-        clientEditStorageReadyRef.current = false;
-        setClientEditStorageError(t('client_edit_storage_failed'));
-        setError(t('client_edit_storage_failed'));
-    }, [t]);
-    const intentStorageFailureRef = useRef(intentStorageFailure);
-    intentStorageFailureRef.current = intentStorageFailure;
-    const requestClientEpochSync = useCallback((host: string, epoch: string | null) => {
-        if (gameStateRef.current?.networkRole !== 'player' || gameStateRef.current.hostPeerId !== host || !hostConnectionRef.current?.open) return;
-        requestClientSyncRef.current();
-        const requestId = pendingSyncRequestRef.current;
-        if (requestId) clientEpochSyncRef.current = { host, epoch, requestId };
-    }, []);
-    const ensureClientEditEpoch = useCallback(async (host: string): Promise<boolean> => {
-        const epoch = await getClientEditEpoch(host);
-        if ((clientEpochBaselineRef.current.get(host) ?? null) === epoch) return true;
-        requestClientEpochSync(host, epoch);
-        setError(t('network_sync_not_ready'));
-        return false;
-    }, [requestClientEpochSync, t]);
-    const reloadClientIntents = useCallback(async (invalidateOnMissing = true) => {
-        const previous = clientEditIntentsRef.current, previousTurns = clientTurnIntentsRef.current;
-        const intents = await listClientEditIntents(), turns = await listClientTurnIntents();
-        const state = gameStateRef.current;
-        const missingEdit = previous.some(old => old.hostPeerId === state?.hostPeerId && old.status !== 'committed' && !intents.some(current => current.command.commandId === old.command.commandId));
-        const missingTurn = previousTurns.some(old => old.hostPeerId === state?.hostPeerId && old.status !== 'committed' && !turns.some(current => current.command.commandId === old.command.commandId));
-        if (invalidateOnMissing && state?.networkRole === 'player' && (missingEdit || missingTurn)) {
-            // Another tab resolved or discarded an intent. Its sync does not
-            // refresh this tab's grant, even when it used the same host.
-            clientTurnStampRef.current = null;
-            if (hostConnectionRef.current?.open) requestClientSyncRef.current();
-        }
-        publishClientIntents(intents);
-        publishClientTurnIntents(turns);
-        return intents;
-    }, [publishClientIntents, publishClientTurnIntents]);
-    useEffect(() => {
-        let cancelled = false;
-        void queueClientIntentTask(async () => {
-            let intents = await listClientEditIntents();
-            // A reload cannot prove whether an in-flight send reached the host.
-            for (const intent of intents) {
-                if (intent.status === 'pending') await transitionClientEditIntent(intent, 'unknown');
-                else if (intent.status === 'committed') await deleteClientEditIntent(intent, false);
-            }
-            intents = await listClientEditIntents();
-            let turns = await listClientTurnIntents();
-            for (const intent of turns) {
-                if (intent.status === 'pending') await transitionClientTurnIntent(intent, 'unknown');
-                else if (intent.status === 'committed') await deleteClientTurnIntent(intent, false);
-            }
-            turns = await listClientTurnIntents();
-            if (!cancelled) { publishClientIntents(intents); publishClientTurnIntents(turns); clientEditStorageReadyRef.current = true; setClientEditStorageError(null); }
-        }).catch(() => { if (!cancelled) intentStorageFailureRef.current(); });
-        return () => { cancelled = true; };
-    }, [queueClientIntentTask, publishClientIntents, publishClientTurnIntents]);
-
-    const resolveClientIntent = useCallback((commandId: string, sessionId: string, status: Extract<ClientEditIntentStatus, 'unknown' | 'conflict' | 'rejected' | 'committed'>, reason?: string) => {
-        void queueClientIntentTask(async () => {
-            let intent = clientEditIntentsRef.current.find(i => i.command.commandId === commandId && i.command.sessionId === sessionId);
-            if (!intent) return;
-            const updated = await transitionClientEditIntent(intent, status, reason);
-            if (updated) intent = updated;
-            else {
-                const list = await reloadClientIntents();
-                intent = list.find(i => i.command.commandId === commandId && i.command.sessionId === sessionId);
-                if (!intent) return;
-                // A concurrent unknown transition must not hide a later
-                // authoritative receipt. Never retry delivery itself.
-                if (status === 'committed' && intent.status === 'unknown') intent = (await transitionClientEditIntent(intent, 'committed')) || intent;
-            }
-            const deleted = status === 'committed' && intent.status === 'committed' && await deleteClientEditIntent(intent, false);
-            await reloadClientIntents(!deleted);
-            if (deleted && gameStateRef.current?.hostPeerId === intent.hostPeerId)
-                requestClientEpochSync(intent.hostPeerId, await getClientEditEpoch(intent.hostPeerId));
-        }).catch(intentStorageFailure);
-    }, [queueClientIntentTask, reloadClientIntents, intentStorageFailure, requestClientEpochSync]);
-    const hasBlockingClientIntent = useCallback(() => {
-        const state = gameStateRef.current;
-        return state?.networkRole === 'player' && (!clientEditStorageReadyRef.current || clientEditBusyRef.current ||
-            (clientEditIntentsRef.current.some(intent => intent.hostPeerId === state.hostPeerId && intent.status !== 'committed') ||
-             clientTurnIntentsRef.current.some(intent => intent.hostPeerId === state.hostPeerId && intent.status !== 'committed')));
-    }, []);
-    const handleClientEditResult = useCallback((message: NetworkMessage) => {
-        const p = message.payload;
-        if (!p || p.version !== 1 || typeof p.sessionId !== 'string' || typeof p.commandId !== 'string') return;
-        const intent = clientEditIntentsRef.current.find(i => i.command.commandId === p.commandId && i.command.sessionId === p.sessionId);
-        if (!intent || intent.hostPeerId !== gameStateRef.current?.hostPeerId || intent.command.playerId !== gameStateRef.current?.myPeerId) return;
-        if (p.status === 'busy' || p.status === 'stale') resolveClientIntent(p.commandId, p.sessionId, 'conflict', p.status);
-        else if (p.status === 'invalid' || p.status === 'unauthorized' || p.status === 'collision' || p.status === 'capacity' || p.status === 'rejected') resolveClientIntent(p.commandId, p.sessionId, 'rejected', typeof p.reason === 'string' && /^[a-z_]{1,64}$/.test(p.reason) ? p.reason : p.status);
-        else if (p.status === 'unknown' || p.status === 'expired') resolveClientIntent(p.commandId, p.sessionId, 'unknown', p.status);
-        // Neither pending nor a committed ACK proves that the corresponding
-        // snapshot has rendered. Only the commit effect can confirm it.
-    }, [resolveClientIntent]);
-    const handleClientEditResultRef = useRef(handleClientEditResult);
-    handleClientEditResultRef.current = handleClientEditResult;
-    const markDisconnectedClientIntents = useCallback(() => {
-        for (const intent of clientEditIntentsRef.current) {
-            if (intent.status === 'pending') resolveClientIntent(intent.command.commandId, intent.command.sessionId, 'unknown');
-        }
-        if (clientTurnIntentsRef.current.some(intent => intent.status === 'pending')) {
-            void queueClientIntentTask(async () => {
-                for (const intent of clientTurnIntentsRef.current) {
-                    if (intent.status === 'pending') await transitionClientTurnIntent(intent, 'unknown');
-                }
-                await reloadClientIntents();
-            }).catch(intentStorageFailure);
-        }
-        clientEditCapabilityRef.current = null;
-    }, [resolveClientIntent, queueClientIntentTask, reloadClientIntents, intentStorageFailure]);
-    const markDisconnectedClientIntentsRef = useRef(markDisconnectedClientIntents);
-    markDisconnectedClientIntentsRef.current = markDisconnectedClientIntents;
 
     // Unlike separate history/turn setters, this callback is pure inside the
     // React queue. A hold is acquired before scheduling and released only
     // after the matching composite update has committed.
     const setPartyTransition = useCallback((transition: (state: GameState | null, turn: number | null) => { gameState: GameState; turnNumber: number | null; message: ChatMessage } | null) => {
-        if (hostRestorePendingRef.current && gameStateRef.current?.networkRole === 'host') { setError(mutationMessageRef.current.host); return; }
-        if (clientLocalEditBlocked(gameStateRef.current?.networkRole)) { setError(mutationMessageRef.current.client); return; }
         if (pendingPartyTransitionRef.current) { setError(mutationMessageRef.current.delivery); return; }
-        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef, gameStateRef.current?.networkRole, turnPhaseRef.current,
-            pendingClientSyncRef.current !== null || pendingNetworkTurnRef.current !== null || !clientTurnStampRef.current);
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
         if (revision === null) { setError(mutationMessageRef.current.delivery); return; }
         stateMutationRevisionRef.current = revision;
         historyMutationRevisionRef.current = revision;
-        const release = hostTurnAuthorityRef.current!.beginMutation();
-        pendingPartyTransitionRef.current = { revision, release };
+        pendingPartyTransitionRef.current = { revision };
         setCore(previous => {
             const result = transition(previous.gameState, previous.turnNumber);
             if (!result) return { ...previous, partyRevision: revision };
-            const state = sanitizeGameState(reconcileHostEditedCharacter(previous.gameState, result.gameState));
+            const state = sanitizeGameState(result.gameState);
             return { ...previous, gameState: state, gameHistory: [...previous.gameHistory, result.message], turnNumber: result.turnNumber, partyRevision: revision };
         });
         setGameplayMutationEpoch(epoch => epoch + 1);
@@ -672,7 +334,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         historyMutationAppliedRef.current = Math.max(historyMutationAppliedRef.current, pending.revision);
         gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, pending.revision);
         pendingPartyTransitionRef.current = null;
-        pending.release();
     }, [core.partyRevision, gameState, gameHistory]);
 
     useEffect(() => {
@@ -691,7 +352,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             (contextEdits.gameLog.revision === 0 || gameLog === contextEdits.gameLog.expected);
         const combatLogCommitted = contextEdits.combatLog.applied === contextEdits.combatLog.revision &&
             (contextEdits.combatLog.revision === 0 || combatLog === contextEdits.combatLog.expected);
-        if (!pendingPartyTransitionRef.current && !pendingHostEditRef.current && settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameLogCommitted && combatLogCommitted && gameHistoryRef.current === gameHistory &&
+        if (!pendingPartyTransitionRef.current && settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameLogCommitted && combatLogCommitted && gameHistoryRef.current === gameHistory &&
             stateMutationAppliedRef.current === stateMutationRevisionRef.current &&
             historyMutationAppliedRef.current === historyMutationRevisionRef.current) {
             if (gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
@@ -704,25 +365,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 contextEdits.visited.revision = contextEdits.visited.applied = 0;
                 contextEdits.gameLog.revision = contextEdits.gameLog.applied = 0;
                 contextEdits.combatLog.revision = contextEdits.combatLog.applied = 0;
-                const releaseHistory = hostHistoryHoldRef.current;
-                const releaseContext = hostContextHoldRef.current;
-                hostHistoryHoldRef.current = null;
-                hostContextHoldRef.current = null;
-                releaseHistory?.();
-                releaseContext?.();
-                if (releaseHistory || releaseContext || gameState?.networkRole === 'host') setSnapshotEpoch(epoch => epoch + 1);
+
             }
         }
-    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameLog, combatLog, gameplayMutationEpoch, contextEditEpoch, core.partyRevision, core.hostEdit]);
+    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameLog, combatLog, gameplayMutationEpoch, contextEditEpoch, core.partyRevision]);
 
     useEffect(() => {
         if (gameState) {
             playerLevelRef.current = gameState.playerCharacter.level;
-            for (const player of gameState.players || []) {
-                if (player.playerId && !pendingPeerCharactersRef.current.has(player.playerId)) {
-                    pendingPeerCharacterIdsRef.current.delete(player.playerId);
-                }
-            }
+
         }
     }, [gameState]);
 
@@ -731,27 +382,26 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             playerLevelRef.current = null;
             return;
         }
-    
+
         const currentLevel = gameState.playerCharacter.level;
         const previousLevel = playerLevelRef.current;
-    
+
         if (typeof currentLevel === 'number' && previousLevel !== currentLevel) {
             playerLevelRef.current = currentLevel;
         }
-    
-        if (previousLevel !== null && typeof currentLevel === 'number' && currentLevel > previousLevel &&
-            !clientLocalEditBlocked(gameStateRef.current?.networkRole)) {
+
+        if (previousLevel !== null && typeof currentLevel === 'number' && currentLevel > previousLevel) {
             console.log(`Level up detected! From ${previousLevel} to ${currentLevel}. Scaling quest rewards.`);
-            
+
             const newExpForNextLevel = gameState.playerCharacter.experienceForNextLevel;
             const meaningfulRewardThreshold = newExpForNextLevel * 0.1;
-    
+
             setGameState(currentGameState => {
                 if (!currentGameState) return null;
-    
+
                 let questsWereUpdated = false;
                 const newLogs: string[] = [];
-    
+
                 const updatedActiveQuests = currentGameState.activeQuests.map(quest => {
                     if (quest.rewards?.experience && quest.rewards.experience < meaningfulRewardThreshold) {
                         const oldReward = quest.rewards.experience;
@@ -762,14 +412,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                               ? `Мир становится опаснее. Награда за квест «${quest.questName}» была увеличена с ${oldReward} XP до ${newReward} XP, чтобы оставаться актуальной.`
                               : `The world grows more dangerous. The reward for quest '${quest.questName}' has been increased from ${oldReward} XP to ${newReward} XP to remain relevant.`;
                             newLogs.push(logMessage);
-                            
+
                             const newRewards = { ...quest.rewards, experience: newReward };
                             return { ...quest, rewards: newRewards };
                         }
                     }
                     return quest;
                 });
-    
+
                 if (questsWereUpdated) {
                     setPresentationGameLog(currentLog => [...newLogs, ...currentLog]);
                     return {
@@ -777,7 +427,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         activeQuests: updatedActiveQuests
                     };
                 }
-    
+
                 return currentGameState;
             });
         }
@@ -796,9 +446,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 gameContextRef.current.worldStateFlags = gameState.worldStateFlags;
                 gameContextRef.current.worldEventsLog = gameState.worldEventsLog;
                 gameContextRef.current.playerCustomStates = gameState.playerCustomStates;
-                gameContextRef.current.networkRole = gameState.networkRole;
-                gameContextRef.current.peers = gameState.peers;
-                gameContextRef.current.isConnectedToHost = gameState.isConnectedToHost;
             }
             if (gameSettings) {
                 gameContextRef.current.gameSettings = gameSettings;
@@ -812,72 +459,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
     }, [gameState, gameSettings, superInstructions, worldState]);
 
-    // Complete a reserved host edit only from a committed React render, after
-    // the context synchronization effect above. No wire receipt is a commit.
-    useEffect(() => {
-        const pending = pendingHostEditRef.current;
-        const result = core.hostEdit;
-        if (!pending || !result || result.sessionId !== pending.command.sessionId || result.commandId !== pending.command.commandId) return;
-        const cancelled = hostRestorePendingRef.current !== pending.marker || hostTurnAuthorityRef.current!.getSessionId() !== result.sessionId;
-        if (!cancelled && gameStateRef.current !== pending.baseline && gameStateRef.current !== gameState) return;
-        if (!cancelled) gameStateRef.current = gameState;
-        const matched = !cancelled && result.outcome === 'applied' && !!gameState &&
-            gameState.players.find(p => p.playerId === result.playerId) === result.expectedPlayer &&
-            (!result.checksStash || gameState.temporaryStash === result.expectedStash) &&
-            gameContextRef.current?.players === gameState.players && gameHistoryRef.current === gameHistory;
-        const outcome = cancelled ? 'unknown' : result.outcome === 'rejected' ? 'rejected' : matched ? 'committed' : 'unknown';
-        hostEditLedgerRef.current!.settle(result.sessionId, result.commandId, outcome);
-        if (hostRestorePendingRef.current === pending.marker) hostRestorePendingRef.current = null;
-        pendingHostEditRef.current = null;
-        stateMutationAppliedRef.current = Math.max(stateMutationAppliedRef.current, pending.revision);
-        gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, pending.revision);
-        setGameplayMutationEpoch(epoch => epoch + 1);
-        if (pending.connection.open && connectionsRef.current.get(pending.connection.peer) === pending.connection) {
-            void sendOnOpenConnection(pending.connection, { type: 'client_edit_result', payload: { version: 1, sessionId: result.sessionId, commandId: result.commandId, status: outcome, ...(result.reason ? { reason: result.reason } : {}) } }).catch(() => {});
-        }
-        // Connections delayed by the temporary host hold must be retried only
-        // after it is removed; each handler rechecks its live connection.
-        for (const peerId of pendingRemovedPeersRef.current) {
-            pendingRemovedPeersRef.current.delete(peerId);
-            handlePeerDisconnectedRef.current(peerId);
-        }
-        for (const [peerId, entry] of pendingPeerCharactersRef.current) {
-            pendingPeerCharactersRef.current.delete(peerId);
-            pendingPeerCharacterIdsRef.current.delete(peerId);
-            if (entry.connection.open && connectionsRef.current.get(peerId) === entry.connection) addPlayerRef.current(entry.player, entry.connection);
-        }
-    }, [core.hostEdit, gameState, gameHistory, gameplayMutationEpoch, hostRestoreEpoch]);
-
-    const restoreFromSaveData = useCallback((data: SaveFile, isNetworkSync: boolean = false, networkIdentityOverride?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => {
+    const restoreFromSaveData = useCallback((source: SaveFile) => {
+        const data = localizeLegacySave(source);
         syncRevisionRef.current += 1;
-        if (!isNetworkSync) {
-            clearPendingContextEdits();
-            localPreferencesRef.current = {};
-            presentationJournalRef.current.clear();
-            pendingClientSyncRef.current = null;
-            clientTurnStampRef.current = null;
-            pendingNetworkTurnRef.current = null;
-            pendingSyncRequestRef.current = null;
-        }
-        if (!isNetworkSync && hostRestorePendingRef.current) {
-            clearHostRestorePending();
-            hostTurnAuthorityRef.current!.reset();
-        }
-        // Keep the authority and local submission locked until the host has
-        // actually committed the player snapshot, not merely queued it.
-        const hostRestoreNeeded = isNetworkSync && gameStateRef.current?.networkRole === 'host';
-        const hostBaseline = hostRestoreNeeded ? packageRestoreBaselineRef.current?.(gameStateRef.current) ?? null : null;
-        // Without the committed baseline a reset could not safely cancel an
-        // eagerly evaluated low-priority restore.
-        if (hostRestoreNeeded && !hostBaseline) throw new Error('Host restore baseline unavailable');
-        const hostRestore = hostRestoreNeeded
-            ? { snapshot: null as SaveFile | null, baseline: hostBaseline,
-                rollbackSettings: undefined as GameSettings | undefined, rollbackContext: data.gameContext, historyScheduled: false,
-                release: hostTurnAuthorityRef.current!.beginMutation() }
-            : null;
-        if (hostRestore) hostRestorePendingRef.current = hostRestore;
-        // Restoration supersedes pending host, player, and local GM tasks.
-        // Cinema has its own controller and is deliberately unaffected.
+        clearPendingContextEdits();
         if (activeTurnRef.current) abortControllerRef.current?.abort();
         // --- BACKWARD COMPATIBILITY MIGRATION FOR EVENT LOGS ---
         const migrateLocationEvents = (loc: any) => {
@@ -1033,31 +618,27 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             data.gameContext.previousTurnResponse.factionDataChanges.forEach(migrateFactionRanks);
         }
         // --- END FACTION RANK MIGRATION ---
-        
+
         let loadedSettings = data.gameContext.gameSettings;
-        if (isNetworkSync) {
-            loadedSettings = mergeNetworkLocalPreferences(loadedSettings, gameContextRef.current?.gameSettings, localPreferencesRef.current);
-            data.gameContext.gameSettings = loadedSettings;
-        }
         const loadedLanguage = loadedSettings.language || 'en';
         setLanguage(loadedLanguage);
 
         // --- CALENDAR MIGRATION AND LOCALIZATION ---
         if (loadedSettings.gameWorldInformation && loadedSettings.gameWorldInformation.calendar) {
             const calendar = loadedSettings.gameWorldInformation.calendar;
-            
-            let baseCalendarTemplate = 
-                loadedSettings.gameWorldInformation.baseInfo?.calendar || 
-                calendar || 
+
+            let baseCalendarTemplate =
+                loadedSettings.gameWorldInformation.baseInfo?.calendar ||
+                calendar ||
                 gameData.fantasy.calendar;
 
             // MIGRATION FOR OLD dayNames FORMAT (string[] instead of DayInfo[])
             // This now runs on the chosen template, ensuring consistency.
             if (baseCalendarTemplate.dayNames && baseCalendarTemplate.dayNames.length > 0 && typeof baseCalendarTemplate.dayNames[0] === 'string') {
                 console.warn("Migrating old calendar dayNames format from string[] to DayInfo[].");
-                
+
                 const isFantasyCalendar = baseCalendarTemplate.months && baseCalendarTemplate.months[0] && (baseCalendarTemplate.months[0].name === 'Месяц Начал' || baseCalendarTemplate.months[0].name === 'fantasy_month_1_name');
-        
+
                 if (isFantasyCalendar) {
                     console.log("Fantasy calendar detected. Restoring day names with descriptions.");
                     baseCalendarTemplate.dayNames = gameData.fantasy.calendar.dayNames;
@@ -1066,13 +647,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     baseCalendarTemplate.dayNames = (baseCalendarTemplate.dayNames as unknown as string[]).map((dayName: string) => ({ name: dayName, description: '' }));
                 }
             }
-            
+
             const localizedCalendar = JSON.parse(JSON.stringify(baseCalendarTemplate));
             localizedCalendar.months = localizedCalendar.months.map((month: Month) => ({ ...month, name: translate(loadedLanguage, month.name), description: month.description ? translate(loadedLanguage, month.description) : '' }));
             localizedCalendar.dayNames = localizedCalendar.dayNames.map((day: DayInfo) => ({ ...day, name: translate(loadedLanguage, day.name), description: day.description ? translate(loadedLanguage, day.description) : '' }));
-            
+
             loadedSettings.gameWorldInformation.calendar = localizedCalendar;
-            
+
             if (data.gameContext.worldState) {
                 const totalMinutes = data.gameContext.worldState.currentTimeInMinutes;
                 data.gameContext.worldState.date = calculateDate(totalMinutes, localizedCalendar);
@@ -1085,7 +666,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             console.warn("Save data missing calendar, adding default.");
             loadedSettings.gameWorldInformation.calendar = gameData.fantasy.calendar;
         }
-        
+
         // Strip provider, model, search, and image-pipeline settings from legacy saves.
         const legacyAISettings = loadedSettings as GameSettings & Record<string, unknown>;
         [
@@ -1094,63 +675,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             'useDynamicThinkingBudget', 'geminiApiKey', 'useGoogleSearch', 'imageGenerationModelPipeline',
             'pollinationsImageModel', 'useNanoBananaFallback', 'useNanoBananaPrimary',
         ].forEach(key => delete legacyAISettings[key]);
-        if (!isNetworkSync ||
-            (!Object.prototype.hasOwnProperty.call(gameContextRef.current?.gameSettings || {}, 'showImageSourceInfo') &&
-             !Object.prototype.hasOwnProperty.call(localPreferencesRef.current, 'showImageSourceInfo'))) {
-            loadedSettings.showImageSourceInfo = false;
-        }
+        loadedSettings.showImageSourceInfo = false;
 
         ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameContext.currentLocation);
         ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameState?.currentLocationData);
         gameContextRef.current = data.gameContext;
         let loadedGameState = data.gameState;
-
-        // --- NETWORK STATE RESET ON LOAD ---
-        if (!isNetworkSync) {
-            if (loadedGameState.networkRole === 'host' || loadedGameState.networkRole === 'player' || loadedGameState.networkRole === 'spectator' || !loadedGameState.networkRole) {
-                if (loadedGameState.networkRole && loadedGameState.networkRole !== 'none') {
-                    console.log(`Loaded a network game save (role: ${loadedGameState.networkRole}). Resetting to local game state.`);
-                } else if (!loadedGameState.networkRole) {
-                    console.log(`Old save file missing network role, resetting to local game state.`);
-                }
-                loadedGameState.networkRole = 'none';
-                loadedGameState.myPeerId = null;
-                loadedGameState.hostPeerId = null;
-                loadedGameState.peers = [];
-                loadedGameState.isConnectedToHost = true; // It's a local game now
-        
-                if (gameContextRef.current) {
-                    gameContextRef.current.networkRole = 'none';
-                    gameContextRef.current.peers = [];
-                    gameContextRef.current.isConnectedToHost = true;
-                }
-            }
-        } else {
-             if (networkIdentityOverride) {
-                console.log("Network sync with identity override detected.");
-                loadedGameState.networkRole = networkIdentityOverride.role;
-                loadedGameState.myPeerId = networkIdentityOverride.myPeerId;
-                loadedGameState.hostPeerId = networkIdentityOverride.hostPeerId;
-                loadedGameState.isConnectedToHost = true;
-                data.gameContext.networkRole = networkIdentityOverride.role;
-                data.gameContext.isConnectedToHost = true;
-                console.log(`🔧 OVERRIDE: Role=${loadedGameState.networkRole}, MyID=${loadedGameState.myPeerId}`);
-            } else {
-                console.log("Network sync detected - preserving network role from current state");
-                const currentGameState = gameStateRef.current;
-                if (currentGameState && (currentGameState.networkRole === 'player' || currentGameState.networkRole === 'host')) {
-                    loadedGameState.networkRole = currentGameState.networkRole;
-                    loadedGameState.myPeerId = currentGameState.myPeerId;
-                    loadedGameState.hostPeerId = currentGameState.hostPeerId;
-                    loadedGameState.peers = currentGameState.peers; 
-                    loadedGameState.isConnectedToHost = currentGameState.isConnectedToHost;
-                    console.log(`🔧 PRESERVED: Role=${currentGameState.networkRole}, MyID=${currentGameState.myPeerId}`);
-                } else {
-                     console.log(`🏠 NEW CLIENT?: Using loaded network settings from save data`);
-                }
-            }
-        }
-        // --- END NETWORK STATE RESET ---
 
         // --- APPLY EXPERIENCE MIGRATION ---
         if (loadedGameState.playerCharacter) {
@@ -1289,31 +819,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!loadedGameState.players || !Array.isArray(loadedGameState.players) || loadedGameState.players.length === 0) {
             loadedGameState.players = [loadedGameState.playerCharacter];
         }
-        if (loadedGameState.activePlayerIndex === undefined || loadedGameState.activePlayerIndex === null || loadedGameState.activePlayerIndex >= loadedGameState.players.length) {
+        if (!Number.isSafeInteger(loadedGameState.activePlayerIndex) || loadedGameState.activePlayerIndex < 0 || loadedGameState.activePlayerIndex >= loadedGameState.players.length) {
             loadedGameState.activePlayerIndex = 0;
         }
 
-        if (isNetworkSync && loadedGameState.networkRole === 'player' && loadedGameState.myPeerId) {
-            const myPlayer = loadedGameState.players.find(p => p.playerId === loadedGameState.myPeerId);
-            if (myPlayer) {
-                loadedGameState.playerCharacter = myPlayer;
-                console.log(`🎯 FIXED: Player character set to ${myPlayer.name} (${myPlayer.playerId})`);
-                loadedGameState.playerNeedsToCreateCharacter = false;
-            } else {
-                console.warn(`🚫 WARNING: Player ${loadedGameState.myPeerId} not found in players array! Triggering character creation.`);
-                loadedGameState.playerNeedsToCreateCharacter = true;
-            }
-        } else if (isNetworkSync && loadedGameState.networkRole === 'host' && loadedGameState.myPeerId) {
-            const myPlayer = loadedGameState.players.find(p => p.playerId === loadedGameState.myPeerId);
-            if (myPlayer) {
-                loadedGameState.playerCharacter = myPlayer;
-                console.log(`🏠 HOST: Host character set to ${myPlayer.name} (${myPlayer.playerId})`);
-            } else {
-                console.warn(`🚫 WARNING: Host ${loadedGameState.myPeerId} not found in players array!`);
-            }
-        }
-
-        const levelUpLogs = restorePlayerStats(loadedGameState, t, isNetworkSync);
+        const levelUpLogs = restorePlayerStats(loadedGameState, t);
         let finalGameLog = data.gameLog || [];
         if (levelUpLogs.length > 0) {
             finalGameLog = [...finalGameLog, ...levelUpLogs];
@@ -1331,32 +841,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (loadedSettings.doNotUseWorldEvents === undefined) {
             loadedSettings.doNotUseWorldEvents = false;
         }
-       
-        console.log(`🔄 RESTORE DEBUG: About to restore game state`);
-        console.log(`  - Is Network Sync: ${isNetworkSync}`);
-        console.log(`  - Loaded Network Role: ${loadedGameState.networkRole}`);
-        console.log(`  - Loaded Active Player Index: ${loadedGameState.activePlayerIndex}`);
-        console.log(`  - Loaded Players:`, loadedGameState.players.map(p => ({ name: p.name, id: p.playerId })));
-        console.log(`  - Loaded My Peer ID: ${loadedGameState.myPeerId}`);
 
-        if (!isNetworkSync) {
-            console.log("🔌 CLEANUP: Cleaning up network connections for local game load");
-            if (hostConnectionRef.current) {
-                hostConnectionRef.current.close();
-                hostConnectionRef.current = null;
-            }
-            connectionsRef.current.forEach(conn => conn.close());
-            connectionsRef.current.clear();
-            if (peerRef.current) {
-                peerRef.current.destroy();
-                peerRef.current = null;
-            }
-        } else {
-            console.log("🌐 NETWORK SYNC: Preserving network connections");
-        }
-
-        // Install rollback evidence before the first live React setter. If a
-        // later setter throws, reset must still cancel the partial restore.
         loadedGameState = sanitizeGameState(loadedGameState)!;
         const restoredCombatLog = data.combatLog ?? [];
         const restoredWorldMap = data.gameContext.worldMap ?? {};
@@ -1367,15 +852,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             gameContext: { ...data.gameContext, gameSettings: { ...loadedSettings },
                 superInstructions: data.gameContext.superInstructions || '', worldMap: restoredWorldMap,
                 visitedLocations: restoredVisitedLocations } };
-        if (hostRestore) {
-            hostRestore.rollbackSettings = loadedSettings;
-            hostRestore.snapshot = restored;
-        }
         setGameStateInternal(loadedGameState);
         setWorldState(data.gameContext.worldState);
         setGameSettings(loadedSettings);
         setSuperInstructions(data.gameContext.superInstructions || '');
-        if (hostRestore) hostRestore.historyScheduled = true;
         setGameHistory(data.gameHistory as ChatMessage[]);
         setGameLog(finalGameLog);
         setCombatLog(restoredCombatLog);
@@ -1386,7 +866,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setTurnNumber(data.gameContext.currentTurnNumber);
         setIsLoading(false);
         setError(null);
-        if (hostRestore) setHostRestoreEpoch(epoch => epoch + 1);
         return restored;
 
     }, [clearPendingContextEdits, setLanguage, t, setGameState, setWorldState, setGameSettings, setSuperInstructions, setGameHistory, setGameLog, setCombatLog, setLastJsonResponse, setSceneImagePrompt, setWorldMap, setVisitedLocations, setTurnNumber, setIsLoading, setError, language]);
@@ -1420,177 +899,23 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         fetchInitialData();
     }, []);
 
-    const syncNewPeerRef = useRef((conn: DataConnection) => {
-        console.warn("syncNewPeer called before initialization.");
-    });
-    const sendMessageRef = useRef((_message: string, _image?: { data: string; mimeType: string; } | null) => {
-        console.warn("sendMessageRef called before initialization.");
-    });
-
-    const sendNetworkChatMessage = useCallback((content: string) => {
-        const currentGameState = gameStateRef.current;
-        if (!currentGameState || !currentGameState.myPeerId) return;
-
-        let senderName: string;
-        if (currentGameState.networkRole === 'host') {
-            senderName = t('Host');
-        } else {
-            const senderPlayer = currentGameState.players.find(p => p.playerId === currentGameState!.myPeerId);
-            senderName = senderPlayer ? senderPlayer.name : (currentGameState.peers.find(p => p.id === currentGameState!.myPeerId)?.name || `Player-${currentGameState.myPeerId.slice(-4)}`);
-        }
-
-        const chatMessage: NetworkChatMessage = {
-            senderId: currentGameState.myPeerId,
-            senderName: senderName,
-            content: content,
-            timestamp: Date.now()
-        };
-
-        const message: NetworkMessage = {
-            type: 'chat_message',
-            payload: chatMessage,
-            senderId: currentGameState.myPeerId,
-        };
-
-        if (currentGameState.networkRole === 'host') {
-            setNetworkChatHistory(prev => [...prev, message.payload]);
-            connectionsRef.current.forEach(conn => {
-                conn.send(message);
+    const addPlayer = useCallback((creationData: PlayerCharacter | any) => {
+        if (!gameSettings || userGameplayActionBlocked()) return;
+        const newPlayer: PlayerCharacter = creationData.playerId ? creationData : createNewPlayerCharacter(
+            creationData, gameSettings, {
+                partyLevel: gameStateRef.current?.playerCharacter.level || 1,
+                shareCharacteristics: gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false,
+                templatePlayer: creationData.templatePlayer
             });
-        } else if (currentGameState.networkRole === 'player' && hostConnectionRef.current) {
-            hostConnectionRef.current.send(message);
-        }
-    }, [t, setNetworkChatHistory]);
-
-    const addPlayer = useCallback((creationData: PlayerCharacter | any, connection?: DataConnection) => {
-        if (!gameSettings) return;
-        if (connection) {
-            // Network identity comes from the live connection, not the payload.
-            if (gameStateRef.current?.networkRole !== 'host' || !connection.open ||
-                connectionsRef.current.get(connection.peer) !== connection || connection.metadata?.role !== 'player' ||
-                !creationData || typeof creationData !== 'object' || creationData.playerId !== connection.peer ||
-                typeof creationData.name !== 'string') return;
-            if (gameStateRef.current.players.some(player => player.playerId === connection.peer)) return;
-            if (pendingPeerCharacterIdsRef.current.has(connection.peer)) {
-                const queued = pendingPeerCharactersRef.current.get(connection.peer);
-                if (!queued || queued.connection === connection) return;
-                // A reconnected peer replaces an obsolete queued connection.
-                pendingPeerCharactersRef.current.delete(connection.peer);
-                pendingPeerCharacterIdsRef.current.delete(connection.peer);
-            }
-            if (hostRestorePendingRef.current) {
-                pendingPeerCharacterIdsRef.current.add(connection.peer);
-                pendingPeerCharactersRef.current.set(connection.peer, { player: creationData, connection });
-                return;
-            }
-        }
-        if (userGameplayActionBlocked()) return;
-        if (connection) pendingPeerCharacterIdsRef.current.add(connection.peer);
-
-        const currentPartyLevel = gameStateRef.current?.playerCharacter.level || 1;
-
-        const newPlayer: PlayerCharacter = creationData.playerId
-            ? creationData
-            : createNewPlayerCharacter(
-                creationData,
-                gameSettings,
-                {
-                    partyLevel: currentPartyLevel,
-                    shareCharacteristics: gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false,
-                    templatePlayer: creationData.templatePlayer
-                }
-            );
-
-        if (connection) pendingPeerCharacterCommitsRef.current.set(connection.peer, { player: newPlayer, connection });
-        setGameState(prevState => {
-            if (!prevState) return null;
-            // A connection can close or be replaced while React defers this
-            // updater. Never create a character for that obsolete connection.
-            if (connection && (prevState.networkRole !== 'host' || !connection.open ||
-                connectionsRef.current.get(connection.peer) !== connection ||
-                prevState.players.some(player => player.playerId === connection.peer))) return prevState;
-            const updatedPlayers = [...prevState.players, newPlayer];
-            return { ...prevState, players: updatedPlayers };
-        });
-
-        if (!connection) setGameHistory(prevHistory => {
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('player_joined', { name: newPlayer.name }),
-            };
-            return [...prevHistory, systemMessage];
-        });
-
+        setGameState(prev => prev ? { ...prev, players: [...prev.players, newPlayer] } : prev);
+        setGameHistory(prev => [...prev, { sender: 'system', content: t('player_joined', { name: newPlayer.name }) }]);
     }, [gameSettings, t, setGameState, setGameHistory, userGameplayActionBlocked]);
-
-    // Peer callbacks are registered once and must use the current settings
-    // and guards rather than the render that created the connection.
-    const addPlayerRef = useRef(addPlayer);
-    addPlayerRef.current = addPlayer;
-
-    // Publish a join notice only after the matching character really commits.
-    // The history setter acquires its own host hold before queuing the notice.
-    useEffect(() => {
-        if (gameplayMutationPendingRef.current || gameState !== gameStateRef.current) return;
-        for (const [peerId, entry] of pendingPeerCharacterCommitsRef.current) {
-            pendingPeerCharacterCommitsRef.current.delete(peerId);
-            pendingPeerCharacterIdsRef.current.delete(peerId);
-            if (gameState?.networkRole === 'host' && gameState.players.includes(entry.player)) {
-                setUserGameHistory(previous => [...previous, {
-                    sender: 'system', content: t('player_joined', { name: entry.player.name })
-                }]);
-            }
-        }
-    }, [gameState, gameplayMutationEpoch, setUserGameHistory, t]);
-
-    useEffect(() => {
-        if (gameplayMutationPendingRef.current || hostRestorePendingRef.current ||
-            gameState?.networkRole !== 'host' || gameState !== gameStateRef.current) return;
-        for (const [peerId, entry] of pendingPeerJoinCommitsRef.current) {
-            pendingPeerJoinCommitsRef.current.delete(peerId);
-            if (gameState.peers.includes(entry.peer)) {
-                setUserGameHistory(previous => [...previous, {
-                    sender: 'system', content: t('player_has_connected', { name: entry.peer.name })
-                }]);
-            }
-        }
-        for (const [peerId, peer] of pendingPeerDisconnectCommitsRef.current) {
-            pendingPeerDisconnectCommitsRef.current.delete(peerId);
-            if (!connectionsRef.current.has(peerId) && !gameState.peers.some(entry => entry.id === peerId)) {
-                setUserGameHistory(previous => [...previous, {
-                    sender: 'system', content: t('player_has_disconnected', { name: peer.name || peerId })
-                }]);
-            }
-        }
-        // A connection can open before the host's initial state exists.
-        for (const [peerId, connection] of pendingNewPeersRef.current) {
-            pendingNewPeersRef.current.delete(peerId);
-            if (connection.open && connectionsRef.current.get(peerId) === connection) syncNewPeerRef.current(connection);
-        }
-    }, [gameState, gameplayMutationEpoch, hostRestoreEpoch, setUserGameHistory, t]);
-
-    // Request notices are history, not evidence that a queued sync was sent.
-    // Defer them while a host turn/restore or another edit is in progress;
-    // then use the history commit barrier without cancelling an active turn.
-    const queueHostSyncNotice = useCallback((name: string) => {
-        pendingHostSyncNoticesRef.current.push({ sender: 'system', content: t('sync_requested_by_player', { name }) });
-        setHostSyncNoticeEpoch(epoch => epoch + 1);
-    }, [t]);
-    useEffect(() => {
-        if (gameState?.networkRole !== 'host' || gameState !== gameStateRef.current || isLoading ||
-            activeTurnRef.current || hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
-            pendingHostSyncNoticesRef.current.length === 0) return;
-        const notices = pendingHostSyncNoticesRef.current.splice(0);
-        setUserGameHistory(previous => [...previous, ...notices]);
-    }, [gameState, isLoading, hostRestoreEpoch, gameplayMutationEpoch, hostSyncNoticeEpoch, setUserGameHistory]);
 
     const removePlayer = useCallback((playerIdToRemove: string) => {
         if (userGameplayActionBlocked()) return;
         const current = gameStateRef.current;
         const matches = current?.players?.filter(p => p?.playerId === playerIdToRemove) || [];
-        if (!playerIdToRemove || matches.length !== 1 ||
-            (current?.networkRole === 'host' && (!current.myPeerId || playerIdToRemove === current.myPeerId ||
-                current.players.filter(p => p?.playerId === current.myPeerId).length !== 1))) {
+        if (!playerIdToRemove || matches.length !== 1) {
             setError(t('player_remove_identity_conflict'));
             return;
         }
@@ -1601,23 +926,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const targets = prevState.players.filter(p => p?.playerId === playerIdToRemove);
             if (targets.length !== 1) return null;
             const playerToRemove = targets[0];
-            const isHost = prevState.networkRole === 'host';
-            if (isHost && (!prevState.myPeerId || playerIdToRemove === prevState.myPeerId ||
-                prevState.players.filter(p => p?.playerId === prevState.myPeerId).length !== 1 ||
-                !prevState.playerCharacter?.playerId ||
-                prevState.players.filter(p => p?.playerId === prevState.playerCharacter.playerId).length !== 1)) return null;
-
-            // Preserve the currently displayed character in its own roster
-            // record, never in the active turn's unrelated record.
-            const roster = isHost ? prevState.players.map(p => p.playerId === prevState.playerCharacter.playerId ? prevState.playerCharacter : p) : prevState.players;
-            const newPlayers = roster.filter(p => p.playerId !== playerIdToRemove);
+            const newPlayers = prevState.players.filter(p => p.playerId !== playerIdToRemove);
             let newActivePlayerIndex = prevState.activePlayerIndex;
             const removedPlayerIndex = prevState.players.findIndex(p => p.playerId === playerIdToRemove);
 
             if (removedPlayerIndex < newActivePlayerIndex) newActivePlayerIndex--;
             else if (removedPlayerIndex === newActivePlayerIndex || newActivePlayerIndex >= newPlayers.length) newActivePlayerIndex = 0;
             newActivePlayerIndex = Math.max(0, Math.min(newPlayers.length - 1, newActivePlayerIndex));
-            const newPc = isHost ? newPlayers.find(p => p.playerId === prevState.myPeerId)! : newPlayers[newActivePlayerIndex];
+            const newPc = newPlayers[newActivePlayerIndex];
 
             const newState = { ...prevState, players: newPlayers, activePlayerIndex: newActivePlayerIndex, playerCharacter: newPc };
             const systemMessage: ChatMessage = { sender: 'system', content: t('player_removed', { name: playerToRemove.name }) };
@@ -1625,35 +941,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
     }, [t, setPartyTransition, userGameplayActionBlocked]);
 
-    const handlePeerDisconnected = useCallback((peerId: string) => {
-        if (gameStateRef.current?.networkRole !== 'host' || connectionsRef.current.has(peerId)) return;
-        if (hostRestorePendingRef.current) {
-            pendingRemovedPeersRef.current.add(peerId);
-            return;
-        }
-        const peer = gameStateRef.current.peers.find(entry => entry.id === peerId);
-        if (!peer) return;
-        pendingPeerDisconnectCommitsRef.current.set(peerId, peer);
-        setGameState(prev => {
-            // A reconnect can happen after the close handler, before React
-            // executes this updater. Never remove the replacement peer.
-            if (!prev || prev.networkRole !== 'host' || connectionsRef.current.has(peerId) ||
-                !prev.peers.some(entry => entry.id === peerId)) return prev;
-            return { ...prev, peers: prev.peers.filter(entry => entry.id !== peerId) };
-        });
-    }, [setGameState]);
-    const handlePeerDisconnectedRef = useRef(handlePeerDisconnected);
-    handlePeerDisconnectedRef.current = handlePeerDisconnected;
-
     const passTurnToPlayer = useCallback((targetPlayerIndex: number) => {
         setPartyTransition((prevState, currentTurnNumber) => {
             if (!prevState || !gameSettings) return null;
             if (targetPlayerIndex === prevState.activePlayerIndex) return null;
-
-            if (prevState.networkRole !== 'none' && prevState.networkRole !== 'host') {
-                console.warn("Non-host trying to pass turn in network game");
-                return null;
-            }
 
             if (!Array.isArray(prevState.players) || !Number.isSafeInteger(targetPlayerIndex) ||
                 targetPlayerIndex < 0 || targetPlayerIndex >= prevState.players.length ||
@@ -1681,21 +972,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return null;
             }
 
-            // After a network restore the host displays its own character, not
-            // necessarily the active participant. Never copy the host over a
-            // different active player's authoritative roster entry.
-            const isNetworkHost = nextGameState.networkRole === 'host';
-            const ownIndex = isNetworkHost ? nextGameState.players.findIndex((p: PlayerCharacter) => p.playerId === nextGameState.myPeerId) : -1;
-            const displayed = nextGameState.playerCharacter as PlayerCharacter;
-            if (isNetworkHost && (!nextGameState.myPeerId || ownIndex < 0 || !displayed ||
-                (displayed.playerId !== nextGameState.myPeerId && displayed.playerId !== outgoingPlayerSnapshot.playerId))) {
-                console.error('Cannot pass network turn with an ambiguous host/active character.');
-                return null;
-            }
-            if (isNetworkHost && displayed.playerId === nextGameState.myPeerId) nextGameState.players[ownIndex] = displayed;
-            const outgoingPlayerCharacterState = isNetworkHost && displayed.playerId !== outgoingPlayerSnapshot.playerId
-                ? { ...outgoingPlayerSnapshot }
-                : { ...displayed };
+            const outgoingPlayerCharacterState = { ...nextGameState.playerCharacter };
             let updatedOutgoingSnapshot = { ...outgoingPlayerSnapshot, ...outgoingPlayerCharacterState };
 
             if (gameSettings.cooperativeGameType === 'MultiplePersonalities' && !gameSettings.multiplePersonalitiesSettings?.shareNpcReputation) {
@@ -1784,14 +1061,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
 
             nextGameState.activePlayerIndex = targetPlayerIndex;
-            if (isNetworkHost) {
-                // Share rules may alter the incoming character; persist those
-                // fields before each peer chooses its own display character.
-                nextGameState.players[targetPlayerIndex] = newActivePlayerCharacter;
-                nextGameState.playerCharacter = nextGameState.players[ownIndex];
-            } else {
-                nextGameState.playerCharacter = newActivePlayerCharacter;
-            }
+            nextGameState.playerCharacter = newActivePlayerCharacter;
             nextGameState.encounteredNPCs = nextEncounteredNPCs;
             nextGameState.encounteredFactions = nextEncounteredFactions;
 
@@ -1812,123 +1082,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
     }, [gameSettings, t, setPartyTransition]);
 
-    const cleanupNetwork = useCallback(() => {
-        console.log("Performing full network cleanup on game load...");
-        if (hostConnectionRef.current) {
-            hostConnectionRef.current.close();
-            hostConnectionRef.current = null;
-        }
-        connectionsRef.current.forEach(conn => conn.close());
-        connectionsRef.current.clear();
-        if (peerRef.current) {
-            peerRef.current.destroy();
-            peerRef.current = null;
-        }
-    }, []);
-
-    const broadcastFullSync = useCallback((saveData: SaveFile, syncRequestId?: string) => {
-        console.log("Broadcasting full sync to all clients...");
-        const currentGameState = gameStateRef.current;
-
-        if (currentGameState?.networkRole !== 'host') {
-            console.warn("Non-host trying to broadcast sync!");
-            return Promise.reject(new Error("Only the host can broadcast a full sync."));
-        }
-
-        // Keep requests received during a React mutation until a committed
-        // snapshot can be published. A request is never acknowledged by an
-        // unrelated in-flight snapshot.
-        if (syncRequestId) queuedHostSyncRequestsRef.current.add(syncRequestId);
-        // An asynchronously retained snapshot must never receive a fresh grant.
-        if (saveData.gameState !== currentGameState || gameplayMutationPendingRef.current) return Promise.resolve();
-        const stamp = hostTurnAuthorityRef.current!.issue();
-        // A pending React mutation means this snapshot might be stale. The
-        // state-change effect publishes the committed snapshot after render.
-        if (!stamp) return Promise.resolve();
-        const requests = [...queuedHostSyncRequestsRef.current];
-        queuedHostSyncRequestsRef.current.clear();
-        const ids: (string | undefined)[] = requests.length ? requests : [undefined];
-        return Promise.all(ids.map(id => {
-            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: networkSafeSaveFile(saveData), protocol: stamp, editCapability: CLIENT_EDIT_CAPABILITY, stackEditCapability: STACK_EDIT_CAPABILITY, moveEditCapability: MOVE_EDIT_CAPABILITY, stashEditCapability: STASH_EDIT_CAPABILITY, stashDestroyCapability: STASH_DESTROY_CAPABILITY, editReceipts: hostEditLedgerRef.current!.receipts(stamp), ...(id ? { syncRequestId: id } : {}) } };
-            return broadcastToConnections(connectionsRef.current.values(), syncMessage);
-        })).then(() => undefined);
-    }, []);
-
-    const onClientEdit = useCallback((connection: DataConnection, message: NetworkMessage) => {
-        const ledger = hostEditLedgerRef.current!;
-        const context = { connection, connections: connectionsRef.current, state: gameStateRef.current,
-            busy: !!activeTurnRef.current || isTurnSubmitPendingRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current || isLoading };
-        const reply = (payload: Record<string, unknown>) => {
-            void sendOnOpenConnection(connection, { type: 'client_edit_result', payload }).catch(() => {});
-        };
-        if (message.type === 'client_edit_status') {
-            const p = message.payload;
-            if (!p || typeof p !== 'object' || Array.isArray(p) || Object.keys(p).sort().join(',') !== 'commandId,sessionId,version' ||
-                p.version !== 1 || typeof p.sessionId !== 'string' || p.sessionId.length > 128 ||
-                typeof p.commandId !== 'string' || p.commandId.length > 128) return;
-            reply({ version: 1, sessionId: p.sessionId, commandId: p.commandId, status: ledger.status(p.commandId, p.sessionId, context) });
-            return;
-        }
-        const decision = ledger.begin(message.payload, context);
-        if (decision.status !== 'reserved') {
-            const p = message.payload;
-            reply({ version: 1, ...(typeof p?.sessionId === 'string' && p.sessionId.length <= 128 ? { sessionId: p.sessionId } : {}),
-                ...(typeof p?.commandId === 'string' && p.commandId.length <= 128 ? { commandId: p.commandId } : {}), status: decision.status });
-            return;
-        }
-        const command = decision.command;
-        const baseline = gameStateRef.current!;
-        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef, baseline.networkRole, turnPhaseRef.current);
-        if (revision === null) {
-            ledger.settle(command.sessionId, command.commandId, 'rejected');
-            reply({ version: 1, sessionId: command.sessionId, commandId: command.commandId, status: 'rejected' });
-            return;
-        }
-        stateMutationRevisionRef.current = revision;
-        const marker = { snapshot: null, release: () => {} };
-        hostRestorePendingRef.current = marker;
-        pendingHostEditRef.current = { command, revision, baseline, connection, marker };
-        const settings = gameContextRef.current?.gameSettings;
-        setCore(previous => {
-            const candidate = previous.gameState === baseline && settings && hostRestorePendingRef.current === marker &&
-                hostTurnAuthorityRef.current!.getSessionId() === command.sessionId && connection.open && connectionsRef.current.get(connection.peer) === connection
-                ? command.version === 1 ? applyAuthoritativeEquipment(baseline, command, settings)
-                    : command.version === 5 ? applyAuthoritativeStashDestroy(baseline, { ...command.command, playerId: command.playerId }, settings)
-                    : command.version === 4 ? applyAuthoritativeStash(baseline, { ...command.command, playerId: command.playerId, commandId: command.commandId }, settings)
-                    : command.version === 3 ? applyAuthoritativeMove(baseline, { playerId: command.playerId, itemId: command.command.itemId, destinationId: command.command.destinationId }, settings)
-                    : command.command.type === 'split'
-                        ? applyAuthoritativeSplit(baseline, { playerId: command.playerId, commandId: command.commandId, itemId: command.command.itemId, quantity: command.command.quantity }, settings)
-                        : applyAuthoritativeMerge(baseline, { playerId: command.playerId, sourceId: command.command.itemId, targetId: command.command.targetItemId }, settings)
-                : { status: 'rejected' as const, state: baseline, reason: 'stale' };
-            const expectedPlayer = candidate.status === 'applied' ? candidate.state.players.find(p => p.playerId === command.playerId) : undefined;
-            return { ...previous, gameState: candidate.status === 'applied' ? candidate.state : previous.gameState,
-                hostEdit: { sessionId: command.sessionId, commandId: command.commandId, playerId: command.playerId,
-                    outcome: candidate.status, expectedPlayer,
-                    ...(candidate.status === 'applied' && (command.version === 4 || command.version === 5) ? { checksStash: true, expectedStash: candidate.state.temporaryStash } : {}),
-                    ...(candidate.status === 'rejected' ? { reason: candidate.reason } : {}) } };
-        });
-        setGameplayMutationEpoch(epoch => epoch + 1);
-        reply({ version: 1, sessionId: command.sessionId, commandId: command.commandId, status: 'pending' });
-    }, [isLoading]);
-    const onClientEditRef = useRef(onClientEdit);
-    onClientEditRef.current = onClientEdit;
-
-    // A local file load resets network identity. Never tear down a live or
-    // connecting session, or replace a state that changed while I/O was open.
+    // Do not replace a state that changed while the save was being read.
     const beginLocalLoad = useCallback((): (() => boolean) | null => {
         const initialState = gameStateRef.current;
         const initialSyncRevision = syncRevisionRef.current;
         const initialGameplayRevision = gameplayMutationRevisionRef.current;
         const canCommit = () => {
-            const role = gameStateRef.current?.networkRole;
-            const blocked = !!peerRef.current || !!hostConnectionRef.current || (role && role !== 'none') ||
-                !!activeTurnRef.current || isTurnSubmitPendingRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+            const blocked = !!activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current ||
                 gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
                 gameplayMutationRevisionRef.current !== initialGameplayRevision;
             if (blocked) {
                 setError(language === 'ru'
-                    ? 'Загрузка локального сохранения недоступна во время сетевой сессии или изменения игры. Закройте сетевую сессию либо дождитесь завершения текущего действия и повторите загрузку.'
-                    : 'Loading a local save is unavailable during a network session or while the game is changing. Close the network session or wait for the current action, then retry.');
+                    ? 'Загрузка недоступна во время хода или изменения игры. Дождитесь завершения действия и повторите загрузку.'
+                    : 'Loading is unavailable while the game is changing. Wait for the current action and retry.');
                 return false;
             }
             return true;
@@ -1936,9 +1102,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         return canCommit() ? canCommit : null;
     }, [language, setError]);
 
-    // Peer event handlers outlive the render in which they were registered.
-    const packageSaveDataRef = useRef<((state: GameState | null) => SaveFile | null) | null>(null);
-    const packageRestoreBaselineRef = useRef<((state: GameState | null) => SaveFile | null) | null>(null);
     const allManagers = useMemo(() => {
         const saveLoadManager = createSaveLoadManager({
             gameContextRef, gameStateRef, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt,
@@ -1946,8 +1109,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
 
         const { packageSaveData } = saveLoadManager;
-        packageSaveDataRef.current = state => state ? packageSaveData(state) : null;
-        packageRestoreBaselineRef.current = state => state ? packageSaveData(state, false) : null;
 
         const turnManager = createTurnManager({
             gameState, setGameState: setGameStateInternal, gameHistory, setGameHistory,
@@ -1955,34 +1116,24 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setLastJsonResponse, setLastRequestJson,
             setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions,
             setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
-            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef, gameplayMutationRevisionRef, gameplayMutationPendingRef,
+            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, gameplayMutationRevisionRef, gameplayMutationPendingRef,
             setSuperInstructions, setGameSettings,
             setLanguage,
             t,
             turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel,
             language, gameSettings,
-            hostConnectionRef,
             gameStateRef,
-            broadcastFullSync,
             combatLog,
             gameLog,
-            // Pass true for manual turn snapshots to ensure data integrity if desired, 
-            // or false if these snapshots shouldn't trigger cleanup. 
+            // Pass true for manual turn snapshots to ensure data integrity if desired,
+            // or false if these snapshots shouldn't trigger cleanup.
             // For safety, we disable GC on internal turn snapshots to avoid accidental loss during rapid turns.
             packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false),
             setLastTurnSaveFile
         });
 
-        const { startGame: baseStartGame, initializeAndRunFirstTurn: baseInitializeAndRunFirstTurn } = turnManager;
-
-        const initializeAndRunFirstTurn = (creationData: any, networkConfig?: { role: NetworkRole; peerId?: string }) => {
-            baseInitializeAndRunFirstTurn(creationData, networkConfig);
-        };
-        
-
         return {
             ...turnManager,
-            initializeAndRunFirstTurn,
             ...saveLoadManager,
             ...guardGameplayActions(createInventoryActions({
                 setGameState, gameContextRef, t, gameState
@@ -1995,251 +1146,46 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 gameContextRef, setError, t, setGameLog: setPresentationGameLog, setMusicPrompt,
                 setIsMusicLoading, setIsMusicPlayerVisible, previousMusicQueries
             }),
-            ...createMultiplayerManager({
-                setGameState,
-                setGameStateForConnection: setGameStateInternal,
-                setGameHistory,
-                setError,
-                t,
-                initializeAndRunFirstTurn: (creationData, networkConfig) => {
-                    const initialContext = createInitialContext(creationData, language);
-                    gameContextRef.current = initialContext;
-
-                    const firstTurnManager = createTurnManager({ gameState: null, setGameState: setGameStateInternal, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, clientTurnStampRef, pendingNetworkTurnRef, hostRestorePendingRef, gameplayMutationRevisionRef, gameplayMutationPendingRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
-                    firstTurnManager.initializeAndRunFirstTurn(creationData, networkConfig);
-                },
-                restoreFromSaveData,
-                packageSaveData: state => packageSaveDataRef.current?.(state) ?? null,
-                broadcastFullSync,
-                addPlayer: (creationData, connection) => addPlayerRef.current(creationData, connection),
-                onPeerDisconnected: peerId => handlePeerDisconnectedRef.current(peerId),
-                removePlayer,
-                passTurnToPlayer,
-                gameContextRef,
-                peerRef,
-                connectionsRef,
-                hostConnectionRef,
-                setIsLoading,
-                activeTurnRef,
-                gameplayMutationPendingRef,
-                hostRestorePendingRef,
-                abortControllerRef,
-                turnPhaseRef,
-                hostTurnAuthority: hostTurnAuthorityRef.current!,
-                clientTurnStampRef,
-                pendingNetworkTurnRef,
-                observedHostStampRef,
-                pendingClientSyncRef,
-                pendingSyncRequestRef,
-                scheduleClientSyncCommit,
-                queueHostSyncNotice,
-                clearHostRestorePending,
-                syncNewPeerRef,
-                sendMessageRef,
-                gameStateRef,
-                onClientEdit: (connection, message) => onClientEditRef.current(connection, message),
-                onClientEditResult: message => handleClientEditResultRef.current(message),
-                onClientEditDisconnect: () => markDisconnectedClientIntentsRef.current(),
-                onChatMessage: (message: NetworkChatMessage) => {
-                    setNetworkChatHistory(prev => [...prev, message]);
-                }
-            }),
-            broadcastFullSync
         };
     }, [
         gameState, gameHistory, isLoading, error, combatLog, gameLog, lastJsonResponse, sceneImagePrompt,
         gameSettings, superInstructions, language, t, restoreFromSaveData, setGameState, setGameHistory, setUserGameLog, setUserCombatLog, setPresentationGameLog, setUserWorldMap, setUserWorldState, setUserVisitedLocations, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, setSuperInstructions, setGameSettings, setLanguage, setAutosaveTimestamp, setDbSaveSlots, setMusicPrompt, setIsMusicLoading, setIsMusicPlayerVisible,
-        setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, beginLocalLoad, broadcastFullSync, queueHostSyncNotice
+        setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, beginLocalLoad
     ]);
 
-    requestClientSyncRef.current = allManagers.requestSyncFromHost;
-
-    // Client edits are explicit, durable intents. They never call the
-    // local inventory manager or mutates the client character optimistically.
-    const submitClientEdit = useCallback(async (operation: EquipmentEditOperation | StackEditOperation | MoveEditOperation | StashEditOperation | StashDestroyOperation) => {
-        const state = gameStateRef.current, stamp = clientTurnStampRef.current, connection = hostConnectionRef.current;
-        if (state?.networkRole !== 'player') return;
-        if (hasBlockingClientIntent()) { setError(t('client_edit_pending_turn')); return; }
-        if (isLoading || activeTurnRef.current || isTurnSubmitPendingRef.current || pendingClientSyncRef.current || pendingSyncRequestRef.current ||
-            !stamp || !connection?.open || !state.hostPeerId || !state.myPeerId || !operation.itemId) { setError(t('client_edit_unavailable')); return; }
-        if (!clientEditCapabilityRef.current?.enabled || clientEditCapabilityRef.current.sessionId !== stamp.sessionId) { setError(t('client_edit_capability_missing')); return; }
-        if ((operation.type === 'split' || operation.type === 'merge') && !clientEditCapabilityRef.current.stacks) { setError(t('client_edit_capability_missing')); return; }
-        if ((operation.type === 'stash_drop' || operation.type === 'stash_take') && !clientEditCapabilityRef.current.stash) { setError(t('client_edit_capability_missing')); return; }
-        if (operation.type === 'stash_destroy' && !clientEditCapabilityRef.current.stashDestroy) { setError(t('client_edit_capability_missing')); return; }
-        if (operation.type === 'move' && !clientEditCapabilityRef.current.move) { setError(t('client_edit_capability_missing')); return; }
-        if (gameContextRef.current?.gameSettings.cooperativeGameType !== 'FullParty') { setError(t('client_edit_unavailable')); return; }
-        const identity = captureTurnSubmissionIdentity(state, stamp, connection);
-        const envelope = { sessionId: stamp.sessionId, commandId: crypto.randomUUID(), playerId: state.myPeerId, base: { ...stamp } };
-        const command: ClientEditCommand = operation.type === 'equip' || operation.type === 'unequip'
-            ? { ...envelope, version: 1, command: operation }
-            : operation.type === 'stash_destroy' ? { ...envelope, version: 5, command: operation }
-            : operation.type === 'stash_drop' || operation.type === 'stash_take' ? { ...envelope, version: 4, command: operation }
-            : operation.type === 'move' ? { ...envelope, version: 3, command: operation }
-            : { ...envelope, version: 2, command: operation };
-        clientEditBusyRef.current = true;
-        let sentIntent: ClientEditIntent | null = null;
-        try {
-            await withClientHostLock(state.hostPeerId, true, async () => {
-                sentIntent = await queueClientIntentTask(async () => {
-                    if (!await ensureClientEditEpoch(state.hostPeerId!)) return null;
-                    if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) { setError(t('client_edit_session_changed')); return null; }
-                    const draft = await createClientEditIntent({ hostPeerId: state.hostPeerId!, command });
-                    await reloadClientIntents();
-                    if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
-                        setError(t('client_edit_session_changed')); return null;
-                    }
-                    const pending = await transitionClientEditIntent(draft, 'pending');
-                    if (!pending) throw new Error('Intent changed in another tab');
-                    await reloadClientIntents();
-                    if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
-                        await transitionClientEditIntent(pending, 'conflict'); await reloadClientIntents();
-                        setError(t('client_edit_session_changed')); return null;
-                    }
-                    return pending;
-                });
-                if (!sentIntent) return;
-                if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
-                    resolveClientIntent(command.commandId, command.sessionId, 'conflict', 'stale');
-                    setError(t('client_edit_session_changed'));
-                    return;
-                }
-                // The pending record exists before the first send; an error or
-                // timeout cannot establish that the peer did not receive it.
-                await sendOnOpenConnection(connection, { type: 'client_edit_command', payload: command }, 10000);
-                const pendingIntent = sentIntent;
-                window.setTimeout(() => {
-                    const current = clientEditIntentsRef.current.find(i => i.command.commandId === pendingIntent.command.commandId);
-                    if (current?.status === 'pending') { resolveClientIntent(current.command.commandId, current.command.sessionId, 'unknown'); setError(t('client_edit_unknown')); }
-                }, 10000);
-            });
-        } catch (error) {
-            if (sentIntent) { resolveClientIntent(command.commandId, command.sessionId, 'unknown'); setError(t('client_edit_unknown')); }
-            else if (error instanceof ClientCoordinationBusy || error instanceof ClientCoordinationUnavailable) setError(t('client_edit_coordination_unavailable'));
-            else if (error instanceof ClientEditIntentAlreadyExists) {
-                try { await reloadClientIntents(); setError(t('client_edit_pending_turn')); } catch { intentStorageFailure(); }
-            } else intentStorageFailure();
-        } finally {
-            clientEditBusyRef.current = false;
-        }
-    }, [allManagers, hasBlockingClientIntent, isLoading, t, queueClientIntentTask, reloadClientIntents, resolveClientIntent, intentStorageFailure, ensureClientEditEpoch]);
-    const equipItemForClient = useCallback((item: Item, slot: string) => {
-        if (gameStateRef.current?.networkRole !== 'player') return allManagers.equipItem(item, slot);
-        void submitClientEdit({ type: 'equip', itemId: item.existedId || '', slot });
-    }, [allManagers, submitClientEdit]);
-    const unequipItemForClient = useCallback((item: Item) => {
-        if (gameStateRef.current?.networkRole !== 'player') return allManagers.unequipItem(item);
-        void submitClientEdit({ type: 'unequip', itemId: item.existedId || '' });
-    }, [allManagers, submitClientEdit]);
-    const dropItemForClient = useCallback((item: Item) => {
-        if (gameStateRef.current?.networkRole !== 'player') return allManagers.dropItem(item);
-        void submitClientEdit({ type: 'stash_drop', itemId: item.existedId || '' });
-    }, [allManagers, submitClientEdit]);
-    const takeStashItemForClient = useCallback((item: Item, quantity: number) => {
-        if (gameStateRef.current?.networkRole !== 'player') return allManagers.moveFromStashToInventory(item, quantity);
-        if (!Number.isSafeInteger(quantity) || quantity <= 0) { setError(t('client_edit_unavailable')); return; }
-        void submitClientEdit({ type: 'stash_take', itemId: item.existedId || '', quantity });
-    }, [allManagers, submitClientEdit, t]);
-    const destroyStashItemForClient = useCallback((item: Item) => {
-        if (gameStateRef.current?.networkRole !== 'player') return allManagers.dropItemFromStash(item);
-        void submitClientEdit({ type: 'stash_destroy', itemId: item.existedId || '' });
-    }, [allManagers, submitClientEdit]);
-    const moveItemForClient = useCallback((item: Item, destinationId: string | null) => {
-        if (gameStateRef.current?.networkRole !== 'player') return allManagers.moveItem(item, destinationId);
-        if (destinationId !== null && (!destinationId || destinationId === item.existedId)) { setError(t('client_edit_unavailable')); return; }
-        void submitClientEdit({ type: 'move', itemId: item.existedId || '', destinationId });
-    }, [allManagers, submitClientEdit, t]);
-    const splitItemForClient = useCallback((item: Item, quantity: number) => {
-        if (gameStateRef.current?.networkRole !== 'player') return allManagers.splitItemStack(item, quantity);
-        if (!Number.isSafeInteger(quantity) || quantity <= 0) { setError(t('client_edit_unavailable')); return; }
-        void submitClientEdit({ type: 'split', itemId: item.existedId || '', quantity });
-    }, [allManagers, submitClientEdit, t]);
-    const mergeItemsForClient = useCallback((source: Item, target: Item) => {
-        if (gameStateRef.current?.networkRole !== 'player') return allManagers.mergeItemStacks(source, target);
-        if (!target.existedId || source.existedId === target.existedId) { setError(t('client_edit_unavailable')); return; }
-        void submitClientEdit({ type: 'merge', itemId: source.existedId || '', targetItemId: target.existedId });
-    }, [allManagers, submitClientEdit, t]);
-    const retryClientEditStorage = useCallback(() => {
-        void queueClientIntentTask(async () => { await reloadClientIntents(); clientEditStorageReadyRef.current = true; setClientEditStorageError(null); }).catch(intentStorageFailure);
-    }, [queueClientIntentTask, reloadClientIntents, intentStorageFailure]);
-    const discardClientEditIntent = useCallback((commandId: string) => {
-        void queueClientIntentTask(async () => {
-            const intent = clientEditIntentsRef.current.find(i => i.command.commandId === commandId);
-            if (!intent) return;
-            await withClientHostLock(intent.hostPeerId, intent.status === 'pending' || intent.status === 'unknown', async () => {
-                // Revoke locally before deletion; send the nonce-bound refresh
-                // after the epoch and deletion have committed together.
-                if (intent.status !== 'draft' && gameStateRef.current?.networkRole === 'player') {
-                    clientTurnStampRef.current = null;
-                }
-                if (!await deleteClientEditIntent(intent, true)) throw new Error('Intent changed in another tab');
-                await reloadClientIntents(false);
-                requestClientEpochSync(intent.hostPeerId, await getClientEditEpoch(intent.hostPeerId));
-            });
-        }).catch(error => {
-            if (error instanceof ClientCoordinationBusy || error instanceof ClientCoordinationUnavailable) setError(t('client_edit_coordination_unavailable'));
-            else intentStorageFailure();
-        });
-    }, [queueClientIntentTask, reloadClientIntents, intentStorageFailure, requestClientEpochSync, t]);
-    const discardClientTurnIntent = useCallback((commandId: string) => {
-        void queueClientIntentTask(async () => {
-            const intent = clientTurnIntentsRef.current.find(i => i.command.commandId === commandId);
-            if (!intent) return;
-            await withClientHostLock(intent.hostPeerId, intent.status === 'pending' || intent.status === 'unknown', async () => {
-                if (intent.status !== 'draft' && gameStateRef.current?.networkRole === 'player') clientTurnStampRef.current = null;
-                if (!await deleteClientTurnIntent(intent, true)) throw new Error('Turn intent changed in another tab');
-                await reloadClientIntents(false);
-                requestClientEpochSync(intent.hostPeerId, await getClientEditEpoch(intent.hostPeerId));
-            });
-        }).catch(error => {
-            if (error instanceof ClientCoordinationBusy || error instanceof ClientCoordinationUnavailable) setError(t('client_edit_coordination_unavailable'));
-            else intentStorageFailure();
-        });
-    }, [queueClientIntentTask, reloadClientIntents, intentStorageFailure, requestClientEpochSync, t]);
-    const reconcileClientEditIntent = useCallback((commandId: string) => {
-        const intent = clientEditIntentsRef.current.find(i => i.command.commandId === commandId), state = gameStateRef.current, conn = hostConnectionRef.current;
-        if (!intent || state?.networkRole !== 'player' || !conn?.open || state.hostPeerId !== intent.hostPeerId ||
-            state.myPeerId !== intent.command.playerId || observedHostStampRef.current?.sessionId !== intent.command.sessionId) {
-            setError(t('client_edit_unknown')); return;
-        }
-        void sendOnOpenConnection(conn, { type: 'client_edit_status', payload: { version: 1, sessionId: intent.command.sessionId, commandId } }).catch(() => setError(t('client_edit_unknown')));
-        allManagers.requestSyncFromHost();
-    }, [allManagers, t]);
 
     // The manager exposes a low-level recovery primitive for its own turn
     // machinery. Do not expose it from the hook without checking the live
     // session: the checkpoint's role is not the current connection's role.
     const resumeInterruptedTurnSafely = useCallback((recovery: Parameters<typeof allManagers.resumeInterruptedTurn>[0]) => {
-        const role = gameStateRef.current?.networkRole;
-        if (recovery.baseState.networkRole !== 'none' || peerRef.current || hostConnectionRef.current ||
-            (role && role !== 'none') || activeTurnRef.current || isTurnSubmitPendingRef.current || hostRestorePendingRef.current || gameplayMutationPendingRef.current) {
+        if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none') || activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current) {
             setError(language === 'ru'
-                ? 'Возобновление прерванного хода доступно только в стабильной локальной игре без активного сетевого соединения.'
-                : 'Interrupted-turn recovery is only available in a stable local game without an active network connection.');
+                ? 'Возобновление доступно только для локального прерванного хода, когда игра не занята.'
+                : 'Interrupted-turn recovery requires a local checkpoint and an idle game.');
             return;
         }
-        return allManagers.resumeInterruptedTurn(recovery);
+        const localized = localizeLegacyState(recovery.baseState, recovery.context);
+        return allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
     }, [allManagers, language, setError]);
 
     const resumeInterruptedGameTurn = useCallback(async () => {
         const initialState = gameStateRef.current;
         const initialSyncRevision = syncRevisionRef.current;
         const initialGameplayRevision = gameplayMutationRevisionRef.current;
-        const blocked = () => !!peerRef.current || !!hostConnectionRef.current ||
-            (!!gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none') ||
-            !!activeTurnRef.current || isTurnSubmitPendingRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+        const blocked = () => !!activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current ||
             gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
             gameplayMutationRevisionRef.current !== initialGameplayRevision;
         const reject = () => {
             setError(language === 'ru'
-                ? 'Возобновление прерванного хода доступно только в стабильной локальной игре без активного сетевого соединения. Состояние изменилось или игра занята; повторите запрос позже.'
-                : 'Interrupted-turn recovery requires a stable local game without an active network connection. The state changed or the game is busy; try again later.');
+                ? 'Состояние изменилось или игра занята; повторите запрос позже.'
+                : 'The state changed or the game is busy; try again later.');
             return false;
         };
         if (blocked()) return reject();
         const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
         if (blocked()) return reject();
         if (!recovery) return false;
-        if (recovery.baseState.networkRole !== 'none') {
+        if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none')) {
             setError(language === 'ru'
                 ? 'Автовозобновление прерванного хода поддерживается только для локальной игры. Для сетевой игры восстановите последнее сохранение вручную.'
                 : 'Automatic interrupted-turn recovery is only supported for local games. For network games, restore the latest save manually.');
@@ -2251,7 +1197,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (blocked()) return reject();
         setInterruptedTurnRecovery(null);
         setError(null);
-        void allManagers.resumeInterruptedTurn(recovery);
+        const localized = localizeLegacyState(recovery.baseState, recovery.context);
+        void allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
         return true;
     }, [allManagers, interruptedTurnRecovery, language, setError]);
 
@@ -2259,13 +1206,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const initialState = gameStateRef.current;
         const syncRevision = syncRevisionRef.current;
         const gameplayRevision = gameplayMutationRevisionRef.current;
-        const blocked = () => !!peerRef.current || !!hostConnectionRef.current ||
-            (!!gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none') ||
-            !!activeTurnRef.current || isTurnSubmitPendingRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+        const blocked = () => !!activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current ||
             gameStateRef.current !== initialState || syncRevisionRef.current !== syncRevision || gameplayMutationRevisionRef.current !== gameplayRevision;
         const reject = () => setError(language === 'ru'
-            ? 'Отмена сохранённого прерванного хода недоступна во время сетевой сессии или изменения игры. Повторите запрос после завершения текущего действия.'
-            : 'Discarding an interrupted turn is unavailable during a network session or while the game is changing. Try again after the current action.');
+            ? 'Отмена сохранённого прерванного хода недоступна во время изменения игры. Повторите запрос после завершения текущего действия.'
+            : 'Discarding an interrupted turn is unavailable while the game is changing. Try again after the current action.');
         if (blocked()) { reject(); return; }
         try {
             const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
@@ -2333,7 +1278,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const initialRevision = syncRevisionRef.current;
         const initialGameplayRevision = gameplayMutationRevisionRef.current;
         const recoveryBusy = () => !!activeTurnRef.current || isTurnSubmitPendingRef.current ||
-            !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+            gameplayMutationPendingRef.current ||
             gameplayMutationRevisionRef.current !== initialGameplayRevision;
         const rejectBusy = () => {
             setError(language === 'ru'
@@ -2341,16 +1286,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 : 'Recovery is unavailable during a turn or game update. Wait for it to finish and try again.');
             return false;
         };
-        const isClientCheckpoint = (role: string | undefined) => role === 'player' || role === 'spectator';
-        const networkActive = () => !!peerRef.current || !!hostConnectionRef.current ||
-            (!!gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none');
-        const rejectRecovery = () => {
-            setError(language === 'ru'
-                ? 'Локальное восстановление недоступно во время сетевой сессии или из снимка клиента/зрителя. Закройте сессию и используйте сохранение хоста либо запросите синхронизацию у хоста.'
-                : 'Local recovery is unavailable during a network session or from a player/spectator checkpoint. Close the session and use the host save, or request sync from the host.');
-            return false;
-        };
-        if (isClientCheckpoint(metadata?.networkRole) || networkActive()) return rejectRecovery();
         if (recoveryBusy()) return rejectBusy();
 
         const attemptedMarker = markCrashRecoveryAttempt();
@@ -2370,7 +1305,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             // IndexedDB is asynchronous and metadata can be stale or absent.
             // Recheck both the actual checkpoint and the current session before
             // a local restore resets network identity or overwrites newer state.
-            if (isClientCheckpoint(data.gameState?.networkRole) || networkActive()) return rejectRecovery();
             if (recoveryBusy()) return rejectBusy();
             if (gameStateRef.current !== initialState || syncRevisionRef.current !== initialRevision) {
                 setError(language === 'ru'
@@ -2399,23 +1333,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
     }, [turnNumber, gameState, allManagers, saveCrashRecoveryFromData]);
 
-    useEffect(() => {
-        return () => {
-            if (peerRef.current) {
-                peerRef.current.destroy();
-            }
-        };
-    }, []);
-
     const updateGameSettings = useCallback((newSettings: Partial<GameSettings>) => {
-        // Local display/media preferences are not game-rule edits. Shared
-        // rules must stay host-owned until they have an authoritative protocol.
+        // Display/media preferences do not invalidate game-rule edits.
         const shared = Object.keys(newSettings).some(key => !isLocalPreferenceKey(key));
         if (shared && userGameplayActionBlocked()) return;
         const applied = shared ? beginSharedContextEdit('settings') : null;
-        // Record before scheduling the React update so a racing host snapshot
-        // cannot erase a local preference that has not committed yet.
-        updateLocalPreferences(localPreferencesRef.current, newSettings);
         setGameSettings(prevSettings => {
             if (!prevSettings) return applied ? applied(prevSettings) : prevSettings;
 
@@ -2456,7 +1378,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             return newLocations;
         });
-        
+
         setGameState(prev => {
             if(!prev) return null;
             if(prev.currentLocationData?.locationId === locationId){
@@ -2473,18 +1395,18 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const updatePlayerPortrait = useCallback((playerId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => {
         setGameState(prevState => {
             if (!prevState || !prevState.players || prevState.players.length === 0) return prevState;
-    
+
             const matches = prevState.players.flatMap((p, index) => p?.playerId === playerId ? [index] : []);
             const pcIndex = matches.length === 1 && playerId ? matches[0] : -1;
             if (pcIndex === -1) {
                 console.warn(`updatePlayerPortrait: Player with ID ${playerId} not found.`);
                 return prevState;
             }
-    
+
             const newPlayers = [...prevState.players];
             const playerToUpdate = { ...newPlayers[pcIndex] };
             let newImageCache = { ...prevState.imageCache };
-    
+
             if (portraitData.custom !== undefined) {
                 const currentKey = playerToUpdate.portrait;
                 if (currentKey && currentKey.startsWith('custom-portrait-')) {
@@ -2503,28 +1425,28 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 if (currentKey && currentKey.startsWith('custom-portrait-')) {
                     delete newImageCache[currentKey];
                 }
-                
+
                 // FIX: When accepting a new prompt, update image_prompt, clear pending_image_prompt, and reset portrait.
                 // This ensures the new prompt becomes the active one.
                 playerToUpdate.image_prompt = portraitData.prompt;
                 playerToUpdate.pending_image_prompt = null;
                 playerToUpdate.portrait = null;
             }
-    
+
             newPlayers[pcIndex] = playerToUpdate;
-    
+
             let newPlayerCharacter = prevState.playerCharacter;
             if (prevState.playerCharacter?.playerId === playerId) {
                 newPlayerCharacter = playerToUpdate;
             }
-    
+
             const newState = {
                 ...prevState,
                 players: newPlayers,
                 playerCharacter: newPlayerCharacter,
                 imageCache: newImageCache,
             };
-    
+
             return newState;
         });
     }, [setGameState]);
@@ -2565,7 +1487,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     }
                 }
                 newNpc.custom_image_prompt = null;
-                
+
                 // FIX: When accepting a new prompt, update image_prompt and clear pending_image_prompt.
                 newNpc.image_prompt = portraitData.prompt;
                 newNpc.pending_image_prompt = null;
@@ -2582,7 +1504,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return newState;
         });
     }, [setGameState]);
-    
+
     // FIX: Added deleteImageFromCache function to manage the image cache.
     const deleteImageFromCache = useCallback((prompt: string) => {
         setPresentationState(prev => {
@@ -2612,20 +1534,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [setPresentationState]);
 
     const regenerateLastResponse = useCallback(async (): Promise<boolean> => {
-        // The local restore tears down network connections and rewinds the
-        // whole snapshot. It cannot safely regenerate a shared network turn.
-        if (gameStateRef.current?.networkRole && gameStateRef.current.networkRole !== 'none') {
-            setError(t('network_regeneration_unsupported'));
-            return false;
-        }
         const turnSaveToUse = lastTurnSaveFile;
 
         if (!turnSaveToUse) {
             setError(t('no_regeneration_data'));
             return false;
         }
-        // A peer may already be connecting before networkRole is committed.
-        // Reuse the local-restore guard before the synchronous teardown.
         if (!beginLocalLoad()) return false;
 
         try {
@@ -2646,189 +1560,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         passTurnToPlayer(nextPlayerIndex);
     }, [gameState, gameSettings, passTurnToPlayer]);
-
-    useEffect(() => {
-        if (gameState?.networkRole === 'host' && turnNumber !== null) {
-            const currentTurnInfo = { turn: turnNumber, playerIndex: gameState.activePlayerIndex };
-            const lastState = lastBroadcastedStateRef.current;
-
-            const shouldBroadcast = !lastState ||
-                lastState.turn < currentTurnInfo.turn ||
-                (lastState.turn === currentTurnInfo.turn && lastState.playerIndex !== currentTurnInfo.playerIndex);
-
-            if (shouldBroadcast) {
-                // For broadcasts to clients, we generally want a clean state, but maybe full GC isn't strictly necessary every sync.
-                // However, if the host GCs, the clients will receive the GC'd state.
-                // Let's keep GC ON for broadcasts to keep packet size smaller if possible, or OFF for speed.
-                // Prompt asked to only GC on MANUAL saves. So OFF here.
-                const saveData = allManagers.packageSaveData(gameState, false);
-                if (saveData) {
-                    lastBroadcastedStateRef.current = currentTurnInfo;
-                    void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
-                }
-            }
-        }
-    }, [turnNumber, gameState?.activePlayerIndex, gameState, allManagers]);
-
-    useEffect(() => {
-        if (gameState?.networkRole === 'host') {
-            const currentCoopState = JSON.stringify({
-                collective: gameState.collectiveActionState,
-                simultaneous: gameState.simultaneousActionState
-            });
-
-            if (currentCoopState !== lastBroadcastedCoopState.current) {
-                console.log("Co-op state changed on host, broadcasting sync.");
-                const saveData = allManagers.packageSaveData(gameState, false);
-                if (saveData) {
-                    lastBroadcastedCoopState.current = currentCoopState;
-                    void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
-                }
-            }
-        }
-    }, [gameState, allManagers]);
-
-    useEffect(() => {
-        if (gameState?.networkRole !== 'host' || gameState !== gameStateRef.current) return;
-        // History and logs can change independently of gameState.
-        hostTurnAuthorityRef.current!.revoke();
-        const saveData = allManagers.packageSaveData(gameState, false);
-        if (saveData) void allManagers.broadcastFullSync(saveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
-    }, [gameState, snapshotEpoch, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, worldState, worldMap, visitedLocations, turnNumber]);
-
-    // A grant is usable only after React has committed the entire snapshot,
-    // including the history/log closures used by the current turn manager.
-    useEffect(() => {
-        const pending = pendingClientSyncRef.current;
-        const stamp = commitClientSnapshot(pending, {
-            gameState, currentGameState: gameStateRef.current, gameHistory, gameLog,
-            combatLog, lastJsonResponse, sceneImagePrompt, worldState, gameSettings, superInstructions,
-            worldMap, visitedLocations, turnNumber
-        });
-        if (!stamp || !pending || !gameState || pendingSyncRequestRef.current) return;
-        const journal = presentationJournalRef.current;
-        journal.acknowledge(pending.snapshot.gameState);
-        if (!journal.matches(gameState)) {
-            if (!pending.presentationReplayRequested) {
-                pending.presentationReplayRequested = true;
-                setGameStateInternal(previous => {
-                    pending.presentationReplayRequested = false;
-                    return previous ? journal.apply(previous) : previous;
-                });
-                setClientSyncEpoch(epoch => epoch + 1);
-            }
-            return;
-        }
-        const epochSync = clientEpochSyncRef.current;
-        if (epochSync && epochSync.host === gameState.hostPeerId && epochSync.requestId === pending.syncRequestId) {
-            clientEpochBaselineRef.current.set(epochSync.host, epochSync.epoch);
-            clientEpochSyncRef.current = null;
-        }
-        clientTurnStampRef.current = stamp;
-        clientEditCapabilityRef.current = { sessionId: stamp.sessionId, enabled: pending.editCapability === true, stacks: pending.stackEditCapability === true, move: pending.moveEditCapability === true, stash: pending.stashEditCapability === true, stashDestroy: pending.stashDestroyCapability === true };
-        for (const intent of clientEditIntentsRef.current) {
-            if ((intent.status === 'pending' || intent.status === 'unknown') && intent.hostPeerId === gameState.hostPeerId &&
-                intent.command.playerId === gameState.myPeerId && pending.editReceipts?.some(receipt => canConfirmEdit(
-                    { sessionId: intent.command.sessionId, commandId: intent.command.commandId, baseRevision: intent.command.base.revision }, receipt, pending.stamp, stamp))) {
-                resolveClientIntent(intent.command.commandId, intent.command.sessionId, 'committed');
-            }
-        }
-        pendingClientSyncRef.current = null;
-        pendingNetworkTurnRef.current = null;
-        setError(prev => prev === t('network_sync_stalled') ? null : prev);
-        setIsLoading(activeTurnRef.current !== null);
-    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, worldState, gameSettings, superInstructions, worldMap, visitedLocations, turnNumber, clientSyncEpoch, t]);
-
-    useEffect(() => {
-        const pending = hostRestorePendingRef.current;
-        if (!pending?.snapshot) return;
-        if (!snapshotMatchesRendered(pending.snapshot, {
-            gameState, currentGameState: gameStateRef.current, gameHistory, gameLog,
-            combatLog, lastJsonResponse, sceneImagePrompt, worldState, gameSettings, superInstructions,
-            worldMap, visitedLocations, turnNumber
-        }, pending.allowedGameLogs)) return;
-        hostRestorePendingRef.current = null;
-        pending.release();
-        for (const peerId of pendingRemovedPeersRef.current) {
-            pendingRemovedPeersRef.current.delete(peerId);
-            handlePeerDisconnected(peerId);
-        }
-        for (const [peerId, connection] of pendingNewPeersRef.current) {
-            pendingNewPeersRef.current.delete(peerId);
-            if (connection.open && connectionsRef.current.get(peerId) === connection) {
-                syncNewPeerRef.current(connection);
-            }
-        }
-        // A peer can finish character creation while the accepted snapshot is
-        // still waiting for React. Apply it only after that snapshot commits,
-        // and only if the same connection is still alive.
-        for (const [peerId, entry] of pendingPeerCharactersRef.current) {
-            pendingPeerCharactersRef.current.delete(peerId);
-            pendingPeerCharacterIdsRef.current.delete(peerId);
-            if (entry.connection.open && connectionsRef.current.get(peerId) === entry.connection) {
-                addPlayer(entry.player, entry.connection);
-            }
-        }
-        setError(prev => prev === t('host_sync_not_ready') ? null : prev);
-        // Re-render to publish a snapshot after the authority hold is released.
-        setSnapshotEpoch(epoch => epoch + 1);
-    }, [gameState, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt, worldState, gameSettings, superInstructions, worldMap, visitedLocations, turnNumber, hostRestoreEpoch, t]);
-
-    // A divergent local update must not leave the player silently waiting
-    // forever. Keep the grant blocked and offer an explicit recovery path.
-    useEffect(() => {
-        const pending = pendingClientSyncRef.current;
-        if (!pending) return;
-        const timer = window.setTimeout(() => {
-            if (pendingClientSyncRef.current !== pending) return;
-            setError(t('network_sync_stalled'));
-            setIsLoading(activeTurnRef.current !== null);
-        }, 3000);
-        return () => window.clearTimeout(timer);
-    }, [clientSyncEpoch, t]);
-
-    useEffect(() => {
-        const pending = hostRestorePendingRef.current;
-        if (!pending) return;
-        const timer = window.setTimeout(() => {
-            if (hostRestorePendingRef.current === pending) setError(t('host_sync_not_ready'));
-        }, 3000);
-        return () => window.clearTimeout(timer);
-    }, [hostRestoreEpoch, t]);
-
-    const forceSyncAll = useCallback(() => {
-        if (gameState?.networkRole !== 'host') {
-            console.warn("forceSyncAll called by non-host.");
-            return;
-        }
-        console.log("Host is forcing a full sync...");
-        hostTurnAuthorityRef.current!.revoke();
-        const saveData = allManagers.packageSaveData(gameState, false);
-        if (saveData) {
-            void allManagers.broadcastFullSync(saveData).then(() => {
-                const systemMessage: ChatMessage = { sender: 'system', content: t('host_forced_sync') };
-                setGameHistory(prev => [...prev, systemMessage]);
-            }).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
-        } else {
-            console.error("Could not package save data for forced sync.");
-        }
-    }, [gameState, allManagers, t, setGameHistory]);
-
-    useEffect(() => {
-        if (gameState?.networkRole === 'host') {
-            const currentLength = gameState.players?.length;
-            const prevLength = prevPlayersLengthRef.current;
-
-            if (typeof prevLength === 'number' && typeof currentLength === 'number' && currentLength !== prevLength) {
-                console.log(`Player list changed on host (${prevLength} -> ${currentLength}), broadcasting new state...`);
-                const newSaveData = allManagers.packageSaveData(gameState, false);
-                if (newSaveData) {
-                    void allManagers.broadcastFullSync(newSaveData).catch(error => setError(`${t('error_sync_failed')}\n\n${formatError(error)}`));
-                }
-            }
-        }
-        prevPlayersLengthRef.current = gameState?.players?.length;
-    }, [gameState, allManagers]);
 
     const deleteActiveSkill = useCallback((skillName: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
@@ -2857,17 +1588,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const deleteActiveEffect = useCallback((characterType: 'player' | 'npc', characterId: string | null, effectId: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
-    
+
         setGameState(prevState => {
             if (!prevState) return null;
             const newState = JSON.parse(JSON.stringify(prevState));
-    
+
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.activePlayerEffects = (pc.activePlayerEffects || []).filter((e: Effect) => e.effectId !== effectId);
-                
+
                 newState.playerCharacter = recalculateDerivedStats(pc);
-    
+
                 if (gameContextRef.current) {
                     gameContextRef.current.playerCharacter = newState.playerCharacter;
                 }
@@ -2876,9 +1607,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 if (npcIndex > -1) {
                     const npc = newState.encounteredNPCs[npcIndex];
                     npc.activeEffects = (npc.activeEffects || []).filter((e: Effect) => e.effectId !== effectId);
-                    
+
                     newState.encounteredNPCs[npcIndex] = recalculateDerivedStats(npc);
-    
+
                     if (gameContextRef.current) {
                         gameContextRef.current.encounteredNPCs = newState.encounteredNPCs;
                     }
@@ -2917,7 +1648,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setGameState(prevState => {
             if (!prevState) return null;
             const newState = JSON.parse(JSON.stringify(prevState));
-            
+
             let woundToRemove: Wound | undefined;
 
             if (characterType === 'player') {
@@ -3108,30 +1839,30 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setGameState(prevState => {
             if (!prevState) return null;
             if (!prevState.playerCharacter.playerCustomStates) return prevState;
-    
+
             const pc = prevState.playerCharacter;
             const initialLength = pc.playerCustomStates.length;
-            const newPlayerCustomStates = pc.playerCustomStates.filter(s => 
+            const newPlayerCustomStates = pc.playerCustomStates.filter(s =>
                 s.stateId !== idOrName && s.stateName !== idOrName
             );
-    
+
             if (newPlayerCustomStates.length === initialLength) {
                 console.warn(`Could not find player custom state to delete with identifier: ${idOrName}`);
                 return prevState; // No change
             }
-    
+
             const newPc = { ...pc, playerCustomStates: newPlayerCustomStates };
             const newState = { ...prevState, playerCharacter: newPc, playerCustomStates: newPlayerCustomStates };
-            
+
             if (gameContextRef.current) {
                 gameContextRef.current.playerCustomStates = newPlayerCustomStates;
                 gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerCustomStates: newPlayerCustomStates };
             }
-            
+
             return newState;
         });
     }, [gameSettings, setGameState]);
-    
+
     const deleteNpcCustomState = useCallback((npcId: string, idOrName: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
@@ -3248,7 +1979,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const clearNpcJournalsNow = useCallback(() => {
         if (!gameSettings) return;
-        
+
         setGameState(prevState => {
             if (!prevState) return null;
 
@@ -3281,7 +2012,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const handlePrimaryMusicClick = () => {
         generateMusicPrompt();
     };
-    
+
     const stopPlayingCinematic = useCallback(() => {
         setPlayingCinematic(null);
     }, []);
@@ -3290,327 +2021,24 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const cinemaFrames = playingCinematic?.frames || null;
     const closeCinemaPlayer = stopPlayingCinematic;
 
-    const syncNewPeer = useCallback((conn: DataConnection) => {
-        if (!conn.open || connectionsRef.current.get(conn.peer) !== conn) return;
-        const current = gameStateRef.current;
-        if (!current || hostRestorePendingRef.current) {
-            pendingNewPeersRef.current.set(conn.peer, conn);
-            return;
-        }
-        if (current.networkRole !== 'host') return;
-        const newPeer: PeerInfo = { id: conn.peer, name: conn.metadata?.playerName || `Player-${conn.peer.slice(-4)}` };
-        pendingPeerJoinCommitsRef.current.set(conn.peer, { peer: newPeer, connection: conn });
-        let previousInput: GameState | null = null;
-        let previousResult: GameState | null = null;
-        setGameState(prev => {
-            // Recheck the connection even on a React replay: it may have been
-            // replaced or closed while this update was deferred.
-            if (!prev || prev.networkRole !== 'host' || !conn.open || connectionsRef.current.get(conn.peer) !== conn) return prev;
-            // StrictMode invokes this updater twice and commits the first
-            // result. Preserve its identity for the eager state ref and the
-            // post-commit publication barrier, but recompute on a rebase.
-            if (prev === previousInput && previousResult) return previousResult;
-            const updatedPeers = [...prev.peers.filter(p => p.id !== newPeer.id), newPeer];
-            previousInput = prev;
-            return previousResult = { ...prev, peers: updatedPeers };
-        });
-        // The normal post-commit host effect publishes the fresh snapshot.
-        // Sending here would package a possibly stale React closure.
-    }, [setGameState]);
-
-    useEffect(() => {
-        syncNewPeerRef.current = syncNewPeer;
-    }, [syncNewPeer]);
-
-    const beginTurnSubmission = useCallback(() => {
-        if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current) return false;
-        if (!gameStateRef.current || !gameContextRef.current) return false;
-        if (gameStateRef.current.networkRole === 'spectator') { setError(t('spectator_cannot_submit_turn')); return false; }
-        if (hostRestorePendingRef.current) { setError(t('host_sync_not_ready')); return false; }
-        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return false; }
-        if (gameStateRef.current.networkRole === 'player' && (pendingNetworkTurnRef.current || pendingClientSyncRef.current ||
-            turnPhaseRef.current === 'sending' || turnPhaseRef.current === 'awaiting-sync' || !clientTurnStampRef.current || !hostConnectionRef.current?.open)) {
-            setError(t('network_sync_not_ready'));
-            return false;
-        }
-
+    const runLocalSubmission = useCallback(async (kind: 'action' | 'question', text: string, image?: { data: string; mimeType: string } | null) => {
+        if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current || !gameStateRef.current || !gameContextRef.current) return;
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
         isTurnSubmitPendingRef.current = true;
-        return true;
-    }, [isLoading, t]);
-
-    const withClientTurnCoordination = useCallback(async <T,>(identity: ReturnType<typeof captureTurnSubmissionIdentity>, work: () => Promise<T>): Promise<T | undefined> => {
-        if (identity.role !== 'player') return work();
-        if (!identity.hostPeerId) { setError(t('network_sync_not_ready')); return undefined; }
+        const startingRevision = syncRevisionRef.current;
+        const startingGameplayRevision = gameplayMutationRevisionRef.current;
         try {
-            return await withClientHostLock(identity.hostPeerId, false, async () => {
-                try { await queueClientIntentTask(reloadClientIntents); }
-                catch { intentStorageFailure(); return undefined; }
-                if (hasBlockingClientIntent()) { setError(t('client_edit_pending_turn')); return undefined; }
-                try { if (!await ensureClientEditEpoch(identity.hostPeerId!)) { return undefined; } }
-                catch { intentStorageFailure(); return undefined; }
-                if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
-                    setError(t('turn_session_changed_before_start')); return undefined;
-                }
-                return work();
-            });
-        } catch (error) {
-            if (error instanceof ClientCoordinationBusy) { setError(t('client_edit_coordination_unavailable')); return undefined; }
-            throw error;
-        }
-    }, [queueClientIntentTask, reloadClientIntents, hasBlockingClientIntent, intentStorageFailure, ensureClientEditEpoch, t]);
-
-    const sendMessageWithStashClear = useCallback(async (message: string, image?: { data: string; mimeType: string; } | null, clearCollective = false) => {
-        if (!beginTurnSubmission()) return;
-
-        const startingRevision = syncRevisionRef.current;
-        const startingGameplayRevision = gameplayMutationRevisionRef.current;
-        const startingIdentity = captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current);
-        try { return await withClientTurnCoordination(startingIdentity, async () => {
-            try {
-                await savePreActionCrashRecovery();
-                if (gameStateRef.current?.networkRole === 'spectator') {
-                    setError(t('spectator_cannot_submit_turn'));
-                    return;
-                }
-                if (!sameTurnSubmissionIdentity(startingIdentity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
-                    setError(t('turn_session_changed_before_start'));
-                    return;
-                }
-                if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
-                    gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
-                    setError(t('turn_sync_before_send'));
-                    return;
-                }
-
-                if (message.trim().toLowerCase() === '[system action] pass turn') {
-                    passTurnManually();
-                    return;
-                }
-
-                return await allManagers.sendMessage(message, image, clearCollective);
-            } catch (e) {
-                throw e;
+            await savePreActionCrashRecovery();
+            if (syncRevisionRef.current !== startingRevision ||
+                gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
+                setError(t('turn_game_state_changed')); return;
             }
-        }); } finally {
-            // A very fast turn can batch loading=true and loading=false into
-            // one render. Release this reservation when its own task finishes.
-            // In-flight client delivery remains blocked by pendingNetworkTurnRef.
-            isTurnSubmitPendingRef.current = false;
-        }
-    }, [allManagers, beginTurnSubmission, passTurnManually, savePreActionCrashRecovery, withClientTurnCoordination, t]);
-
-    const askQuestionWithRecovery = useCallback(async (question: string, image?: { data: string; mimeType: string; } | null) => {
-        if (!beginTurnSubmission()) return;
-
-        const startingRevision = syncRevisionRef.current;
-        const startingGameplayRevision = gameplayMutationRevisionRef.current;
-        const startingIdentity = captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current);
-        try { return await withClientTurnCoordination(startingIdentity, async () => {
-            try {
-                await savePreActionCrashRecovery();
-                if (gameStateRef.current?.networkRole === 'spectator') {
-                    setError(t('spectator_cannot_submit_turn'));
-                    return;
-                }
-                if (!sameTurnSubmissionIdentity(startingIdentity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
-                    setError(t('turn_session_changed_before_start'));
-                    return;
-                }
-                if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
-                    gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
-                    setError(t('turn_sync_before_send'));
-                    return;
-                }
-                return await allManagers.askQuestion(question, image);
-            } catch (e) {
-                throw e;
-            }
-        }); } finally {
-            // A very fast turn can batch loading=true and loading=false into
-            // one render. Release this reservation when its own task finishes.
-            // In-flight client delivery remains blocked by pendingNetworkTurnRef.
-            isTurnSubmitPendingRef.current = false;
-        }
-    }, [allManagers, beginTurnSubmission, savePreActionCrashRecovery, withClientTurnCoordination, t]);
-
-    useEffect(() => {
-        (sendMessageRef as React.MutableRefObject<any>).current = sendMessageWithStashClear;
-    }, [sendMessageWithStashClear]);
-
-    const myPlayerId = gameState?.myPeerId;
-
-    const initiateCollectiveAction = useCallback((participantIds: string[], prompt: string, remoteInitiator?: { id: string; name: string }) => {
-        const currentState = gameStateRef.current;
-        if (!currentState) return;
-
-        const isRemote = !!remoteInitiator;
-        const initiatorId = isRemote ? remoteInitiator.id : (myPlayerId || '');
-        const initiatorName = isRemote ? remoteInitiator.name : (currentState.players.find(p => p.playerId === initiatorId)?.name || 'Player');
-
-        if (currentState.networkRole === 'host') {
-            setGameState(prevState => {
-                if (!prevState) return null;
-                const newCollectiveState: CollectiveActionState = {
-                    isActive: true,
-                    initiatorId: initiatorId,
-                    initiatorName: initiatorName,
-                    prompt: prompt,
-                    participantIds: participantIds,
-                    actions: {}
-                };
-                return { ...prevState, collectiveActionState: newCollectiveState };
-            });
-        } else if (currentState.networkRole === 'player' && hostConnectionRef.current && !isRemote) {
-            const message: NetworkMessage = {
-                type: 'request_collective_action',
-                payload: { participantIds, prompt, initiatorId, initiatorName },
-                senderId: initiatorId
-            };
-            hostConnectionRef.current.send(message);
-        }
-    }, [t, setGameState, myPlayerId]);
-
-    const submitCollectiveAction = useCallback((action: string, senderOverrideId?: string) => {
-        const currentState = gameStateRef.current;
-        if (!currentState || !currentState.collectiveActionState?.isActive) return;
-
-        const effectiveSenderId = senderOverrideId || currentState.myPeerId;
-        if (!effectiveSenderId) {
-            console.warn(`[HOST/CLIENT] submit_collective_action: No effective sender ID. Returning.`);
-            return;
-        }
-
-        if (currentState.networkRole === 'host') {
-            console.log(`[HOST] Processing submit_collective_action from senderId: ${effectiveSenderId}, Action: "${action}"`);
-            setGameState(prevState => {
-                if (!prevState) {
-                    console.warn(`[HOST] submit_collective_action: prevState is null, cannot update.`);
-                    return null;
-                }
-                if (!prevState.collectiveActionState?.isActive) {
-                    console.warn(`[HOST] submit_collective_action: collectiveActionState is not active, returning previous state.`);
-                    return prevState;
-                }
-
-                const currentActions = { ...prevState.collectiveActionState.actions };
-
-                if (currentActions[effectiveSenderId] === action) {
-                    console.warn(`[HOST] submit_collective_action: Action for ${effectiveSenderId} is already set to the same value. Skipping update.`);
-                    return prevState;
-                }
-
-                currentActions[effectiveSenderId] = action; // Update the action for the specific sender
-
-                const newCollectiveState = { ...prevState.collectiveActionState, actions: currentActions };
-                const newState = { ...prevState, collectiveActionState: newCollectiveState };
-
-                console.log(`[HOST] Updated collectiveActionState for ${effectiveSenderId}:`, newCollectiveState.actions);
-                return newState;
-            });
-        } else if (currentState.networkRole === 'player' && hostConnectionRef.current) {
-            const message: NetworkMessage = {
-                type: 'submit_collective_action',
-                payload: { action },
-                senderId: effectiveSenderId // This should be the client's myPeerId
-            };
-            console.log(`[CLIENT] Sending 'submit_collective_action' to host. MyPeerId: ${effectiveSenderId}, Action: "${action}"`);
-            hostConnectionRef.current.send(message);
-
-
-        }
-    }, [setGameState]);
-
-    const processCollectiveActions = useCallback(() => {
-        const currentState = gameStateRef.current;
-        if (!currentState || !currentState.collectiveActionState?.isActive) return;
-        if (userGameplayActionBlocked()) return;
-
-        const { prompt, actions, initiatorName } = currentState.collectiveActionState;
-        let combinedMessage = `[${t('Collective Action requested by {name}', { name: initiatorName })}: ${prompt}]\n`;
-
-        currentState.players.forEach(p => {
-            if (actions[p.playerId]) {
-                combinedMessage += `${p.name}: ${actions[p.playerId]}\n`;
-            }
-        });
-
-        // Keep the pending collective action intact until the resulting turn
-        // commits. Clearing it here would invalidate the async pre-turn
-        // recovery barrier and lose the gathered actions without a GM turn.
-        void sendMessageWithStashClear(combinedMessage.trim(), undefined, true);
-    }, [t, sendMessageWithStashClear, userGameplayActionBlocked]);
-
-    const cancelCollectiveAction = useCallback(() => {
-        setGameState(prevState => {
-            if (!prevState) return null;
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('collective_action_cancelled', { name: prevState.collectiveActionState?.initiatorName || 'Player' })
-            };
-            setGameHistory(prevHistory => [...prevHistory, systemMessage]);
-            return { ...prevState, collectiveActionState: null };
-        });
-    }, [t, setGameHistory, setGameState]);
-
-    const initiateSimultaneousAction = useCallback(() => {
-        const currentState = gameStateRef.current;
-        if (!currentState) return;
-
-        if (currentState.networkRole === 'host') {
-            const newSimultaneousState: SimultaneousActionState = {
-                isActive: true,
-                actions: {}
-            };
-            setGameState(prevState => {
-                if (!prevState) return null;
-                return { ...prevState, simultaneousActionState: newSimultaneousState };
-            });
-        } else if (currentState.networkRole === 'player' && hostConnectionRef.current) {
-            const message: NetworkMessage = {
-                type: 'request_simultaneous_action',
-                payload: {},
-                senderId: myPlayerId!,
-            };
-            hostConnectionRef.current.send(message);
-        }
-    }, [setGameState, myPlayerId]);
-
-    const submitSimultaneousAction = useCallback((action: string) => {
-        const currentState = gameStateRef.current;
-        if (!currentState || !currentState.simultaneousActionState?.isActive || !myPlayerId) return;
-
-        const myPlayerIdConst = myPlayerId;
-
-        if (currentState.networkRole === 'host') {
-            setGameState(prevState => {
-                if (!prevState || !prevState.simultaneousActionState?.isActive) return prevState;
-                const newActions = { ...prevState.simultaneousActionState.actions, [myPlayerIdConst]: action };
-                const newSimultaneousState = { ...prevState.simultaneousActionState, actions: newActions };
-                return { ...prevState, simultaneousActionState: newSimultaneousState };
-            });
-        } else if (currentState.networkRole === 'player' && hostConnectionRef.current) {
-            const message: NetworkMessage = {
-                type: 'simultaneous_action_submit',
-                payload: { action },
-                senderId: myPlayerIdConst
-            };
-            hostConnectionRef.current.send(message);
-
-
-        }
-    }, [setGameState, myPlayerId]);
-
-    const cancelSimultaneousAction = useCallback(() => {
-        setGameState(prevState => {
-            if (!prevState) return null;
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('simultaneous_action_cancelled')
-            };
-            setGameHistory(prevHistory => [...prevHistory, systemMessage]);
-            return { ...prevState, simultaneousActionState: null };
-        });
-    }, [t, setGameHistory, setGameState]);
+            if (kind === 'action' && text.trim().toLowerCase() === '[system action] pass turn') return passTurnManually();
+            return kind === 'action' ? await allManagers.sendMessage(text, image) : await allManagers.askQuestion(text, image);
+        } finally { isTurnSubmitPendingRef.current = false; }
+    }, [isLoading, t, savePreActionCrashRecovery, passTurnManually, allManagers]);
+    const sendMessageWithStashClear = useCallback((message: string, image?: { data: string; mimeType: string } | null) => runLocalSubmission('action', message, image), [runLocalSubmission]);
+    const askQuestionWithRecovery = useCallback((question: string, image?: { data: string; mimeType: string } | null) => runLocalSubmission('question', question, image), [runLocalSubmission]);
 
     const cinemaAbortControllerRef = useRef<AbortController | null>(null);
     const cancelCinemaGeneration = useCallback(() => {
@@ -3641,7 +2069,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             };
 
             const prompt = getCinemaPrompt(cinemaContext, userPrompt);
-            
+
             const result = await executeCancellableJsonGeneration(
                 prompt,
                 cinemaContext,
@@ -3677,7 +2105,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     }
                 }
             }
-            
+
             if (cinemaController.signal.aborted) return;
             setPresentationState(prev => {
                 if (!prev) return null;
@@ -3783,7 +2211,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setPlayingCinematic(cinematic);
         }
     }, []);
-    
+
     const exportCinematic = useCallback((cinematicId: string) => {
         const cinematic = gameStateRef.current?.cinematics?.find(c => c.id === cinematicId);
         if (cinematic) {
@@ -3905,7 +2333,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         try {
             const cinematic = gameStateRef.current?.cinematics?.find(c => c.id === cinematicId);
             if (!cinematic) throw new Error("Cinematic not found");
-            
+
             const fullText = cinematic.frames.map(f => f.subtitle).join('\n');
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const response = await ai.models.generateContent({
@@ -3941,21 +2369,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         isLoading,
         error,
         ...allManagers,
-        equipItem: equipItemForClient,
-        unequipItem: unequipItemForClient,
-        moveItem: moveItemForClient,
-        dropItem: dropItemForClient,
-        moveFromStashToInventory: takeStashItemForClient,
-        dropItemFromStash: destroyStashItemForClient,
-        splitItemStack: splitItemForClient,
-        mergeItemStacks: mergeItemsForClient,
-        clientEditIntents,
-        clientTurnIntents,
-        discardClientTurnIntent,
-        clientEditStorageError,
-        retryClientEditStorage,
-        discardClientEditIntent,
-        reconcileClientEditIntent,
         resumeInterruptedTurn: resumeInterruptedTurnSafely,
         sendMessage: sendMessageWithStashClear,
         askQuestion: askQuestionWithRecovery,
@@ -4004,14 +2417,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         deletePassiveSkill,
         onEditNpcMemory,
         onDeleteNpcMemory,
-        forceSyncAll,
-        initiateCollectiveAction,
-        submitCollectiveAction,
-        processCollectiveActions,
-        cancelCollectiveAction,
-        initiateSimultaneousAction,
-        submitSimultaneousAction,
-        cancelSimultaneousAction,
         clearAllCompletedFactionProjects,
         clearAllCompletedNpcActivities,
         onDeleteCurrentActivity,
@@ -4042,8 +2447,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         closeCinemaPlayer,
         lastTurnSaveFile,
         regenerateLastResponse,
-        networkChatHistory,
-        sendNetworkChatMessage,
         deleteActiveEffect,
         forgetHealedWound,
         forgetActiveWound,

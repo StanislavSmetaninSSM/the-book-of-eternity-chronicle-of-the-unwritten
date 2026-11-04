@@ -1,3 +1,5 @@
+> **Historical / superseded:** Multiplayer was removed in favor of single-player gameplay. This document records the former implementation and is not a current design or implementation plan.
+
 # Аудит операций перед авторитетными клиентскими командами
 
 **Состояние аудита:** начат; это перечень и предварительная классификация, не доказательство полного покрытия всех обходных путей и не утверждение о проверке безопасности сети. Основан на коде ветки после `52835fd`. Подробные требования и критерии: [спецификация](client-authoritative-edits-spec.md), задачи 0.3 и 1.1–1.5.

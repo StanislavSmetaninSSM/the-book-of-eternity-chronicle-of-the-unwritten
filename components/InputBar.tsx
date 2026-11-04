@@ -1,10 +1,10 @@
 
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { 
-    PaperAirplaneIcon, 
-    ArrowPathIcon, 
-    QuestionMarkCircleIcon, 
+import {
+    PaperAirplaneIcon,
+    ArrowPathIcon,
+    QuestionMarkCircleIcon,
     XCircleIcon,
     ListBulletIcon,
     CodeBracketIcon,
@@ -41,8 +41,6 @@ interface InputBarProps {
   onGetMusicSuggestion: () => void;
   isMusicLoading: boolean;
   isMusicPlayerVisible: boolean;
-  onRequestCollectiveAction: () => void;
-  onInitiateSimultaneousAction: () => void;
   onToggleStealth: () => void;
   isMusicPlayerDocked: boolean;
   undockMusicPlayer: () => void;
@@ -71,7 +69,7 @@ const MarkdownToolbar: React.FC<{
     onInsert: (text: string) => void;
 }> = ({ textareaRef, onInsert }) => {
     const { t } = useLocalization();
-    
+
     const applyFormat = (syntaxStart: string, syntaxEnd: string = syntaxStart) => {
         const textarea = textareaRef.current;
         if (!textarea) return;
@@ -79,7 +77,7 @@ const MarkdownToolbar: React.FC<{
         const start = textarea.selectionStart;
         const end = textarea.selectionEnd;
         const selectedText = textarea.value.substring(start, end);
-        
+
         let newText;
         let cursorOffset;
 
@@ -90,10 +88,10 @@ const MarkdownToolbar: React.FC<{
             newText = `${syntaxStart}${syntaxEnd}`;
             cursorOffset = start + syntaxStart.length;
         }
-        
+
         insertText(newText, start, end, cursorOffset);
     };
-    
+
     const applyLinePrefix = (prefix: string) => {
         const textarea = textareaRef.current;
         if (!textarea) return;
@@ -112,7 +110,7 @@ const MarkdownToolbar: React.FC<{
         const before = textarea.value.substring(0, selectionStart);
         const after = textarea.value.substring(selectionEnd);
         const newFullText = `${before}${textToInsert}${after}`;
-        
+
         onInsert(newFullText);
 
         setTimeout(() => {
@@ -147,7 +145,7 @@ const MarkdownToolbar: React.FC<{
     );
 }
 
-export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, gameSettings, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onRequestCollectiveAction, onInitiateSimultaneousAction, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
+export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, gameSettings, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
   const [content, setContent] = useState('');
   const [isActionDraftReady, setIsActionDraftReady] = useState(false);
   const [loadedActionDraftKey, setLoadedActionDraftKey] = useState<string | null>(null);
@@ -204,51 +202,20 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       : null).catch(reportActionDraftError);
   }, [isQuestionMode, isActionDraftReady, loadedActionDraftKey, playerActionDraftKey]);
 
-  const lastPlayerMessage = useMemo(() => 
+  const lastPlayerMessage = useMemo(() =>
     history.slice().reverse().find(m => m.sender === 'player'),
   [history]);
 
-  const { isDisabled, placeholderText, isMyTurn } = useMemo(() => {
-    if (isLoading) {
-        return { isDisabled: true, placeholderText: t("Waiting for game synchronization..."), isMyTurn: false };
-    }
-    if (!gameState || !gameSettings) {
-        return { isDisabled: isLoading, placeholderText: t("What do you do next?"), isMyTurn: true };
-    }
-    
-    if (gameState.networkRole === 'spectator') {
-        return { isDisabled: true, placeholderText: t('spectator_cannot_submit_turn'), isMyTurn: false };
-    }
+  const isDisabled = isLoading;
+  const isMyTurn = true;
+  const placeholderText = isLoading ? t("Waiting for game synchronization...") : isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?");
 
-    // If not in a network game, it's always the local player's turn and enabled.
-    if (gameState.networkRole === 'none') {
-        return { isDisabled: false, placeholderText: isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?"), isMyTurn: true };
-    }
-
-    const myPlayerId = gameState.myPeerId;
-    const activePlayer = gameState.players[gameState.activePlayerIndex];
-    
-    // For multiplayer mode, if we haven't synced our ID yet.
-    if (!myPlayerId || !activePlayer) {
-        return { isDisabled: true, placeholderText: t("Waiting for game to sync..."), isMyTurn: false };
-    }
-    
-    const localIsMyTurn = activePlayer.playerId === myPlayerId;
-    const disabled = !localIsMyTurn;
-    
-    let placeholder = isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?");
-    if (!localIsMyTurn) {
-        placeholder = t("It's not your turn.");
-    }
-    return { isDisabled: disabled, placeholderText: placeholder, isMyTurn: localIsMyTurn };
-  }, [gameState, gameSettings, isLoading, isQuestionMode, t]);
-  
   const doSubmit = useCallback(() => {
     if (isDisabled || (content.trim() === '' && !selectedImage)) return;
     if (playerActionDraftKey) {
       void savePlayerActionDraft(playerActionDraftKey, null).catch(reportActionDraftError);
     }
-    
+
     const imagePayload = selectedImage ? { data: selectedImage.dataUrl.split(',')[1], mimeType: selectedImage.mimeType } : null;
 
     if (isQuestionMode) {
@@ -257,7 +224,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
     } else {
         onSendMessage(content, imagePayload);
     }
-    
+
     setContent('');
     setSelectedImage(null);
     setActiveView('write');
@@ -275,7 +242,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
   const handleRepeat = () => {
     if (lastPlayerMessage && !isLoading) {
       const isLastMessageAQuestion = lastPlayerMessage.content.startsWith('[Question]');
-      
+
       if (isLastMessageAQuestion) {
         const originalQuestion = lastPlayerMessage.content.substring('[Question] '.length);
         onAskQuestion(originalQuestion, null);
@@ -293,7 +260,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
     if (level >= 26) return 'bg-yellow-500';
     return 'bg-cyan-500';
   };
-  
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
@@ -399,7 +366,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
             {t('Preview')}
           </button>
         </div>
-        
+
         {activeView === 'write' ? (
           <div>
             <MarkdownToolbar textareaRef={textareaRef} onInsert={updateContent} />
@@ -503,32 +470,8 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
             >
                 <ArchiveBoxXMarkIcon className="h-5 w-5" />
             </button>
-            {gameSettings?.cooperativeGameType !== 'None' && isMyTurn && (
-                <>
-                <button
-                    type="button"
-                    onClick={onRequestCollectiveAction}
-                    disabled={isDisabled}
-                    aria-label={t("Request Collective Action")}
-                    className="p-2 rounded-md bg-gray-700/60 text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={t("Request Collective Action")}
-                >
-                    <UserGroupIcon className="h-5 w-5" />
-                </button>
-                <button
-                    type="button"
-                    onClick={onInitiateSimultaneousAction}
-                    disabled={isDisabled}
-                    aria-label={t("Simultaneous Combat Round")}
-                    className="p-2 rounded-md bg-gray-700/60 text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={t("Simultaneous Combat Round")}
-                >
-                    <SimultaneousIcon className="h-5 w-5" />
-                </button>
-                </>
-            )}
         </div>
-        
+
         <div className="flex items-center gap-2">
             <button
                 type="button"

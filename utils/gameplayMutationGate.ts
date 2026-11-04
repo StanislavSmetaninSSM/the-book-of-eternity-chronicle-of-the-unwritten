@@ -1,17 +1,5 @@
-import type { NetworkRole } from '../types';
-
-/** Until host-authoritative edit commands exist, never make a client-only
- * gameplay or history change that a later host snapshot can silently erase. */
-export function clientLocalEditBlocked(role: NetworkRole | undefined): boolean {
-    return role === 'player' || role === 'spectator';
-}
-
-/** Starting a local edit while a result is in flight cannot revoke that send. */
-export function beginGameplayMutation(
-    revision: { current: number }, pending: { current: boolean },
-    role: NetworkRole | undefined, phase: string, syncPending = false
-): number | null {
-    if (role === 'player' && (syncPending || phase === 'sending' || phase === 'awaiting-sync')) return null;
+/** Reserve a gameplay edit until React has committed it. */
+export function beginGameplayMutation(revision: { current: number }, pending: { current: boolean }): number {
     pending.current = true;
     return ++revision.current;
 }
@@ -26,7 +14,6 @@ export function gameplayMutationCommitted(
     return true;
 }
 
-/** Guard whole user actions, including writes outside the GameState setter. */
 export function guardGameplayActions<T extends Record<string, (...args: any[]) => unknown>>(
     actions: T, blocked: () => boolean
 ): { [K in keyof T]: (...args: Parameters<T[K]>) => ReturnType<T[K]> | undefined } {

@@ -1,3 +1,5 @@
+> **Historical / superseded:** Multiplayer was removed in favor of single-player gameplay. This document records the former implementation and is not a current design or implementation plan.
+
 # Матрица прямых пользовательских callbacks hook
 
 Для всех строк текущее решение: **временно заблокировать player/spectator**, доступны host/none при действующих проверках настроек; право удалённой команды не предоставлено. Все будущие команды требуют проверки соединения, session/base revision, operation ID, атомарности, commit/ACK и конфликта. Изменение имени, отсутствие или дубли ID не дают права угадывать цель. Удаления и массовые очистки необратимы без сохранённой истории; их политика требует отдельного решения. Обычная синхронизация context после commit общая для всех state-полей; в таблице дополнительно отмечены прямые записи в `gameContextRef` внутри updater, которые пока сами по себе не являются commit.
