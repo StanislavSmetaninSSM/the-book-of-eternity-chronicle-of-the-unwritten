@@ -737,9 +737,17 @@ export const createPlayerActionsManager = (
     };
 
     const moveToLocationStorage = (locationId: string, storageId: string, item: Item, quantity: number) => {
+        if (!item.existedId || !Number.isSafeInteger(quantity) || quantity <= 0) return;
         setGameState(prevState => {
             if (!prevState || !prevState.currentLocationData || prevState.currentLocationData.locationId !== locationId) return prevState;
-    
+            const storages = prevState.currentLocationData.locationStorages;
+            if (!Array.isArray(storages) || !Array.isArray(prevState.playerCharacter.inventory)) return prevState;
+            const matchingStorages = storages.filter(storage => storage?.storageId === storageId);
+            if (matchingStorages.length !== 1 || !Array.isArray(matchingStorages[0].contents)) return prevState;
+            const priorStorage = matchingStorages[0];
+            const sourceItems = prevState.playerCharacter.inventory.filter(entry => entry.existedId === item.existedId);
+            if (sourceItems.length !== 1 || !Number.isSafeInteger(sourceItems[0].count) || sourceItems[0].count <= 0) return prevState;
+
             const newState = JSON.parse(JSON.stringify(prevState));
             let pc = newState.playerCharacter as PlayerCharacter;
             let location = newState.currentLocationData as Location;
@@ -759,6 +767,7 @@ export const createPlayerActionsManager = (
     
             const existingStack = storage.contents.find(i => i.name === itemToMove.name && !i.equipmentSlot);
             if (existingStack) {
+                if (!Number.isSafeInteger(existingStack.count) || existingStack.count < 0 || !Number.isSafeInteger(existingStack.count + validQuantity)) return prevState;
                 existingStack.count += validQuantity;
             } else {
                 storage.contents.push({ ...itemToMove, existedId: generateId('item') });
@@ -783,9 +792,17 @@ export const createPlayerActionsManager = (
     };
 
     const retrieveFromLocationStorage = (locationId: string, storageId: string, item: Item, quantity: number) => {
+        if (!item.existedId || !Number.isSafeInteger(quantity) || quantity <= 0) return;
         setGameState(prevState => {
             if (!prevState || !prevState.currentLocationData || prevState.currentLocationData.locationId !== locationId) return prevState;
-    
+            const storages = prevState.currentLocationData.locationStorages;
+            if (!Array.isArray(storages) || !Array.isArray(prevState.playerCharacter.inventory)) return prevState;
+            const matchingStorages = storages.filter(storage => storage?.storageId === storageId);
+            if (matchingStorages.length !== 1 || !Array.isArray(matchingStorages[0].contents)) return prevState;
+            const priorStorage = matchingStorages[0];
+            const sourceItems = priorStorage.contents.filter(entry => entry.existedId === item.existedId);
+            if (sourceItems.length !== 1 || !Number.isSafeInteger(sourceItems[0].count) || sourceItems[0].count <= 0) return prevState;
+
             const newState = JSON.parse(JSON.stringify(prevState));
             let pc = newState.playerCharacter as PlayerCharacter;
             let location = newState.currentLocationData as Location;
@@ -812,6 +829,7 @@ export const createPlayerActionsManager = (
 
             const existingStack = pc.inventory.find(i => i.name === itemToMove.name && !i.equipmentSlot);
             if (existingStack) {
+                if (!Number.isSafeInteger(existingStack.count) || existingStack.count < 0 || !Number.isSafeInteger(existingStack.count + validQuantity)) return prevState;
                 existingStack.count += validQuantity;
             } else {
                 pc.inventory.push({ ...itemToMove, existedId: generateId('item') });
