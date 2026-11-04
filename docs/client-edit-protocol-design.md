@@ -60,3 +60,9 @@ IndexedDB schema v3 хранит случайную метку по host ID; с�
 ## Ограниченный stash v4
 
 Capability `{protocol: "host-stash-edit", version: 4}` отдельно разрешает `stash_drop {itemId}` и `stash_take {itemId, quantity}`. Используются те же строгие envelope, actor/base validation, ledger и durable intent; host commit и отмена незакоммиченного candidate охватывают и игрока, и `temporaryStash`. Это не разрешение на удаление из stash, location storage, контейнеры или другие передачи.
+
+### Подготовительный контракт переноса исполнения ходов
+
+`utils/hostTurnCommand.ts` содержит **не подключённый и не объявляемый в capability** черновой контракт для host-run action/question: ограниченный текст и изображение, идентификатор, actor и base без клиентского SaveFile; strict shape; асинхронный SHA-256 fingerprint без хранения изображения в ledger; повторная проверка соединения, роли, host session и active player после hash; атомарное резервирование через существующую authority; collision/dedupe, ограниченный session ledger и потенциальные snapshot receipts. При hash failure, смене сессии или соединения команда не резервируется. Тесты проверяют эти свойства, но не запуск ГМ.
+
+Это не замена существующего пути: `turn_result_from_player` всё ещё принимает большую часть клиентского SaveFile. Прежде чем объявлять capability или отключать старый путь, нужны сквозное host execution action/question с актуальными правилами, обработка collective actions на основе состояния хоста, сериализация с остальными операциями и lifecycle, durable client intent с корректной работой изображений и неопределённого исхода, commit barrier на весь результат/историю/контекст, status и receipt, реальная UI/multiplayer проверка отказов и перезапуска. Ограничения 32 000 символов и 4 MiB для подготовительного контракта ещё нужно согласовать с поведением загрузчика изображений при интеграции. Никакой exactly-once гарантии через перезапуск хоста здесь нет.
