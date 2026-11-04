@@ -3199,10 +3199,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (current.networkRole !== 'host') return;
         const newPeer: PeerInfo = { id: conn.peer, name: conn.metadata?.playerName || `Player-${conn.peer.slice(-4)}` };
         pendingPeerJoinCommitsRef.current.set(conn.peer, { peer: newPeer, connection: conn });
+        let previousInput: GameState | null = null;
+        let previousResult: GameState | null = null;
         setGameState(prev => {
+            // Recheck the connection even on a React replay: it may have been
+            // replaced or closed while this update was deferred.
             if (!prev || prev.networkRole !== 'host' || !conn.open || connectionsRef.current.get(conn.peer) !== conn) return prev;
+            // StrictMode invokes this updater twice and commits the first
+            // result. Preserve its identity for the eager state ref and the
+            // post-commit publication barrier, but recompute on a rebase.
+            if (prev === previousInput && previousResult) return previousResult;
             const updatedPeers = [...prev.peers.filter(p => p.id !== newPeer.id), newPeer];
-            return { ...prev, peers: updatedPeers };
+            previousInput = prev;
+            return previousResult = { ...prev, peers: updatedPeers };
         });
         // The normal post-commit host effect publishes the fresh snapshot.
         // Sending here would package a possibly stale React closure.

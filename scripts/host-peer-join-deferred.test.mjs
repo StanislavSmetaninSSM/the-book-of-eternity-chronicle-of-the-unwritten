@@ -26,3 +26,12 @@ test('peer connection notice is issued only after its matching committed peer',a
  const scope={gameState:state,gameStateRef:{current:state},gameplayMutationPendingRef:pending,hostRestorePendingRef:{current:null},pendingPeerJoinCommitsRef:{current:new Map([['p',{peer,connection:conn}]])},pendingPeerDisconnectCommitsRef:{current:new Map()},pendingNewPeersRef:{current:new Map()},connectionsRef:{current:new Map()},syncNewPeerRef:{current:()=>{}},setUserGameHistory:update=>{history=update(history)},t:k=>k};
  vm.runInNewContext(`${js}\ndrain();`,{...scope});assert.equal(history.length,0);pending.current=false;vm.runInNewContext(`${js}\ndrain();`,{...scope});assert.equal(history.length,1);vm.runInNewContext(`${js}\ndrain();`,{...scope});assert.equal(history.length,1);
 });
+
+test('StrictMode join replay keeps commit identity but rechecks a disconnected peer',async()=>{
+ const text=await readFile(new URL('../hooks/useGameLogic.ts',import.meta.url),'utf8'),src=ts.createSourceFile('hook.ts',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);let cb;function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(src)==='syncNewPeer'&&n.initializer&&ts.isCallExpression(n.initializer))cb=n.initializer.arguments[0];ts.forEachChild(n,visit)}visit(src);assert.ok(cb);
+ const js=ts.transpileModule(`const syncNewPeer=${cb.getText(src)}; syncNewPeer(conn);`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+ const state={networkRole:'host',peers:[]},conn={peer:'p',open:true,metadata:{playerName:'Alice'}},connections={current:new Map([['p',conn]])},queued=[];
+ vm.runInNewContext(js,{conn,gameStateRef:{current:state},connectionsRef:connections,hostRestorePendingRef:{current:null},pendingNewPeersRef:{current:new Map()},pendingPeerJoinCommitsRef:{current:new Map()},setGameState:update=>queued.push(update)});
+ const first=queued[0](state),second=queued[0](state);assert.equal(second,first,'same valid input must produce the committed object');assert.equal(first.peers[0].id,'p');
+ conn.open=false;assert.equal(queued[0](state),state,'replay must recheck the connection before consulting the cached result');
+});
