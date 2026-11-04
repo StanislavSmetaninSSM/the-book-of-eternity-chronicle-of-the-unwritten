@@ -58,7 +58,7 @@ export class HostTurnCommandLedger {
         // Copy before awaiting the digest; mutation of the caller's object can
         // never change either the validated operation or its fingerprint.
         const command: HostTurnCommand = Object.freeze({ version: 1, sessionId: raw.sessionId, commandId: raw.commandId, playerId: raw.playerId,
-            base: Object.freeze({ ...raw.base }), kind: raw.kind, text: raw.text, image: raw.image ? Object.freeze({ ...raw.image }) : null });
+            base: Object.freeze({ version: 1, sessionId: raw.base.sessionId, revision: raw.base.revision }), kind: raw.kind, text: raw.text, image: raw.image ? Object.freeze({ data: raw.image.data, mimeType: raw.image.mimeType }) : null });
         if (!this.authorized(getContext(), command.playerId)) return { status: 'unauthorized' };
         let hash: string;
         try {
