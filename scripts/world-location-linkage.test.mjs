@@ -29,7 +29,7 @@ test('normal turns and GM questions build context from the resolved response', a
   const { readFile } = await import('node:fs/promises');
   const source = await readFile(new URL('../hooks/logic/turn.ts', import.meta.url), 'utf8');
   assert.equal((source.match(/buildNextContext\(context, processedResponse, newState, newHistoryWithAnswer, true, onWorldMapWarning\)/g) || []).length, 2);
-  assert.equal((source.match(/buildNextContext\(context, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning\)/g) || []).length, 2);
+  assert.equal((source.match(/buildNextContext\(\{ \.\.\.context, superInstructions: retainedSuperInstructions \}, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning\)/g) || []).length, 2);
 });
 
 test('implicit scene presence reflects NPC changes from the same turn', async () => {

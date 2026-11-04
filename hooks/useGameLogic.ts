@@ -454,12 +454,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         wasLoadingRef.current = isLoading;
     }, [isLoading, gameSettings]);
 
-    useEffect(() => {
-        if (!isLoading) {
-            isTurnSubmitPendingRef.current = false;
-        }
-    }, [isLoading]);
-
     const { t } = useLocalization();
     mutationMessageRef.current = { delivery: t('game_edit_blocked_delivery'), host: t('host_sync_not_ready'), client: t('client_edit_host_only') };
     const gameContextRef = useRef<GameContext | null>(null);
@@ -3272,7 +3266,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (gameStateRef.current.networkRole === 'spectator') { setError(t('spectator_cannot_submit_turn')); return false; }
         if (hostRestorePendingRef.current) { setError(t('host_sync_not_ready')); return false; }
         if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return false; }
-        if (gameStateRef.current.networkRole === 'player' && (!clientTurnStampRef.current || !hostConnectionRef.current?.open)) {
+        if (gameStateRef.current.networkRole === 'player' && (pendingNetworkTurnRef.current || pendingClientSyncRef.current ||
+            turnPhaseRef.current === 'sending' || turnPhaseRef.current === 'awaiting-sync' || !clientTurnStampRef.current || !hostConnectionRef.current?.open)) {
             setError(t('network_sync_not_ready'));
             return false;
         }
@@ -3283,21 +3278,21 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const withClientTurnCoordination = useCallback(async <T,>(identity: ReturnType<typeof captureTurnSubmissionIdentity>, work: () => Promise<T>): Promise<T | undefined> => {
         if (identity.role !== 'player') return work();
-        if (!identity.hostPeerId) { setError(t('network_sync_not_ready')); isTurnSubmitPendingRef.current = false; return undefined; }
+        if (!identity.hostPeerId) { setError(t('network_sync_not_ready')); return undefined; }
         try {
             return await withClientHostLock(identity.hostPeerId, false, async () => {
                 try { await queueClientIntentTask(reloadClientIntents); }
-                catch { intentStorageFailure(); isTurnSubmitPendingRef.current = false; return undefined; }
-                if (hasBlockingClientIntent()) { setError(t('client_edit_pending_turn')); isTurnSubmitPendingRef.current = false; return undefined; }
-                try { if (!await ensureClientEditEpoch(identity.hostPeerId!)) { isTurnSubmitPendingRef.current = false; return undefined; } }
-                catch { intentStorageFailure(); isTurnSubmitPendingRef.current = false; return undefined; }
+                catch { intentStorageFailure(); return undefined; }
+                if (hasBlockingClientIntent()) { setError(t('client_edit_pending_turn')); return undefined; }
+                try { if (!await ensureClientEditEpoch(identity.hostPeerId!)) { return undefined; } }
+                catch { intentStorageFailure(); return undefined; }
                 if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
-                    setError(t('turn_session_changed_before_start')); isTurnSubmitPendingRef.current = false; return undefined;
+                    setError(t('turn_session_changed_before_start')); return undefined;
                 }
                 return work();
             });
         } catch (error) {
-            if (error instanceof ClientCoordinationBusy) { setError(t('client_edit_coordination_unavailable')); isTurnSubmitPendingRef.current = false; return undefined; }
+            if (error instanceof ClientCoordinationBusy) { setError(t('client_edit_coordination_unavailable')); return undefined; }
             throw error;
         }
     }, [queueClientIntentTask, reloadClientIntents, hasBlockingClientIntent, intentStorageFailure, ensureClientEditEpoch, t]);
@@ -3308,38 +3303,38 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const startingRevision = syncRevisionRef.current;
         const startingGameplayRevision = gameplayMutationRevisionRef.current;
         const startingIdentity = captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current);
-        return withClientTurnCoordination(startingIdentity, async () => {
+        try { return await withClientTurnCoordination(startingIdentity, async () => {
             try {
                 await savePreActionCrashRecovery();
                 if (gameStateRef.current?.networkRole === 'spectator') {
-                    isTurnSubmitPendingRef.current = false;
                     setError(t('spectator_cannot_submit_turn'));
                     return;
                 }
                 if (!sameTurnSubmissionIdentity(startingIdentity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
-                    isTurnSubmitPendingRef.current = false;
                     setError(t('turn_session_changed_before_start'));
                     return;
                 }
                 if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
                     gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
-                    isTurnSubmitPendingRef.current = false;
                     setError(t('turn_sync_before_send'));
                     return;
                 }
 
                 if (message.trim().toLowerCase() === '[system action] pass turn') {
                     passTurnManually();
-                    isTurnSubmitPendingRef.current = false;
                     return;
                 }
 
                 return await allManagers.sendMessage(message, image, clearCollective);
             } catch (e) {
-                isTurnSubmitPendingRef.current = false;
                 throw e;
             }
-        });
+        }); } finally {
+            // A very fast turn can batch loading=true and loading=false into
+            // one render. Release this reservation when its own task finishes.
+            // In-flight client delivery remains blocked by pendingNetworkTurnRef.
+            isTurnSubmitPendingRef.current = false;
+        }
     }, [allManagers, beginTurnSubmission, passTurnManually, savePreActionCrashRecovery, withClientTurnCoordination, t]);
 
     const askQuestionWithRecovery = useCallback(async (question: string, image?: { data: string; mimeType: string; } | null) => {
@@ -3348,31 +3343,32 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const startingRevision = syncRevisionRef.current;
         const startingGameplayRevision = gameplayMutationRevisionRef.current;
         const startingIdentity = captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current);
-        return withClientTurnCoordination(startingIdentity, async () => {
+        try { return await withClientTurnCoordination(startingIdentity, async () => {
             try {
                 await savePreActionCrashRecovery();
                 if (gameStateRef.current?.networkRole === 'spectator') {
-                    isTurnSubmitPendingRef.current = false;
                     setError(t('spectator_cannot_submit_turn'));
                     return;
                 }
                 if (!sameTurnSubmissionIdentity(startingIdentity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
-                    isTurnSubmitPendingRef.current = false;
                     setError(t('turn_session_changed_before_start'));
                     return;
                 }
                 if (syncRevisionRef.current !== startingRevision || hostRestorePendingRef.current ||
                     gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
-                    isTurnSubmitPendingRef.current = false;
                     setError(t('turn_sync_before_send'));
                     return;
                 }
                 return await allManagers.askQuestion(question, image);
             } catch (e) {
-                isTurnSubmitPendingRef.current = false;
                 throw e;
             }
-        });
+        }); } finally {
+            // A very fast turn can batch loading=true and loading=false into
+            // one render. Release this reservation when its own task finishes.
+            // In-flight client delivery remains blocked by pendingNetworkTurnRef.
+            isTurnSubmitPendingRef.current = false;
+        }
     }, [allManagers, beginTurnSubmission, savePreActionCrashRecovery, withClientTurnCoordination, t]);
 
     useEffect(() => {

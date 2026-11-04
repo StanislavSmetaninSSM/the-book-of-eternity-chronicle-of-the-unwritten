@@ -179,3 +179,5 @@ React DOM `StrictMode` воспроизводил двойную запись с
 
 
 Клиентская очередь: `retryClientEditStorage` повторно читает локальное хранилище; `reconcileClientEditIntent` запрашивает статус и свежий snapshot только в той же идентичности; `discardClientEditIntent` явно удаляет намерение, инвалидируя клиентский grant и запрашивая sync при открытом соединении. `equipItem` и `unequipItem` для player проходят через durable intent и host command; другие client gameplay-операции остаются под guard. После reload PeerJS выдаёт новый ID, поэтому безопасная сверка старой команды может быть невозможна; результат остаётся неизвестным. Эта интеграция ещё не закрывает этапы 3–4 полностью.
+
+`discardClientTurnIntent` явно удаляет сохранённый turn intent под host lock; pending/unknown не означают отсутствие commit, grant отзывается и требуется nonce-связанная синхронизация. Текущий player-turn ещё не создаёт такие intent; сверка с новым host-run turn ledger не подключена.

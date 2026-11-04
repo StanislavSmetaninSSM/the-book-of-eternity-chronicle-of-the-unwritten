@@ -1,6 +1,6 @@
 import type { GameContext, SaveFile } from '../types';
 import { snapshotMatchesRendered } from '../hooks/logic/multiplayer';
-import { isLocalPreferenceKey, sharedSettingsEqual } from './localGamePreferences';
+import { isLocalPreferenceKey } from './localGamePreferences';
 
 type Rendered = Parameters<typeof snapshotMatchesRendered>[1] & { currentContext: GameContext | null };
 type HostTurnCandidate = { snapshot: SaveFile; stateSignature: string; contextSignature: string; historySignature: string };
@@ -59,13 +59,11 @@ const sameStrings = (a: unknown, b: unknown): boolean => Array.isArray(a) && Arr
 export function hostTurnResultCommitted(candidate: HostTurnCandidate | null, rendered: Rendered): boolean {
     try {
         if (!candidate || !rendered.currentContext || !rendered.gameState) return false;
-        const snapshot = candidate.snapshot, current = rendered.currentContext, expected = snapshot.gameContext;
+        const snapshot = candidate.snapshot, current = rendered.currentContext;
         if (!sameStrings(snapshot.gameLog, rendered.gameLog) || !sameStrings(snapshot.combatLog, rendered.combatLog) ||
             candidate.stateSignature !== signature(stateForSignature(rendered.gameState)) ||
             candidate.contextSignature !== signature(contextForSignature(current)) ||
             candidate.historySignature !== signature(rendered.gameHistory.slice(0, snapshot.gameHistory.length))) return false;
-        const keys = Object.keys(expected) as (keyof GameContext)[];
-        if (keys.some(key => key === 'gameSettings' ? !sharedSettingsEqual(expected.gameSettings, current.gameSettings) : current[key] !== expected[key])) return false;
         return snapshotMatchesRendered({ ...snapshot, gameLog: rendered.gameLog, combatLog: rendered.combatLog, sceneImagePrompt: rendered.sceneImagePrompt }, rendered);
     } catch { return false; }
 }
