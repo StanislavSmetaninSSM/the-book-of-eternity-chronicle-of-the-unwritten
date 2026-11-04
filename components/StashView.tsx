@@ -5,6 +5,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import { ArchiveBoxXMarkIcon, ExclamationTriangleIcon, TrashIcon, ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import ImageRenderer from './ImageRenderer';
 import MarkdownRenderer from './MarkdownRenderer';
+import ConfirmationModal from './ConfirmationModal';
 
 interface StashViewProps {
   stash: Item[];
@@ -14,6 +15,7 @@ interface StashViewProps {
   imageCache: Record<string, ImageCacheEntry>;
   onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
   gameSettings: GameSettings | null;
+  confirmDrop?: boolean;
 }
 
 const qualityColorMap: Record<string, string> = {
@@ -37,8 +39,9 @@ const qualityColorMap: Record<string, string> = {
     'Уникальный': 'border-yellow-600/80',
 };
 
-const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, onDrop, imageCache, onImageGenerated, gameSettings }) => {
+const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, onDrop, imageCache, onImageGenerated, gameSettings, confirmDrop = false }) => {
     const { t } = useLocalization();
+    const [pendingDrop, setPendingDrop] = useState<Item | null>(null);
     const [quantities, setQuantities] = useState<Record<string, string>>({});
 
     const handleQuantityChange = (itemId: string, value: string, max: number) => {
@@ -112,7 +115,7 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                                     {t('Take')}
                                 </button>
                                 <button
-                                    onClick={() => onDrop(item)}
+                                    onClick={() => confirmDrop ? setPendingDrop(item) : onDrop(item)}
                                     className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold text-red-300 bg-red-600/20 rounded-md hover:bg-red-600/40 transition-colors"
                                 >
                                     <TrashIcon className="w-4 h-4" />
@@ -123,6 +126,13 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                     );
                 })}
             </div>
+            <ConfirmationModal isOpen={!!pendingDrop} onClose={() => setPendingDrop(null)} onConfirm={() => {
+                // A new snapshot invalidates the item the user confirmed.
+                if (pendingDrop && stash.includes(pendingDrop)) onDrop(pendingDrop);
+                setPendingDrop(null);
+            }} title={t('Drop')}>
+                <p>{t('stash_destroy_confirmation', { name: pendingDrop?.name || '' })}</p>
+            </ConfirmationModal>
         </div>
     );
 };

@@ -4,8 +4,9 @@ export type EquipmentEditOperation = { type: 'equip'; itemId: string; slot: stri
 export type StackEditOperation = { type: 'split'; itemId: string; quantity: number } | { type: 'merge'; itemId: string; targetItemId: string };
 export type MoveEditOperation = { type: 'move'; itemId: string; destinationId: string | null };
 export type StashEditOperation = { type: 'stash_drop'; itemId: string } | { type: 'stash_take'; itemId: string; quantity: number };
+export type StashDestroyOperation = { type: 'stash_destroy'; itemId: string };
 type EditEnvelope = { sessionId: string; commandId: string; playerId: string; base: TurnSyncStamp };
-export type ClientEditCommand = (EditEnvelope & { version: 1; command: EquipmentEditOperation }) | (EditEnvelope & { version: 2; command: StackEditOperation }) | (EditEnvelope & { version: 3; command: MoveEditOperation }) | (EditEnvelope & { version: 4; command: StashEditOperation });
+export type ClientEditCommand = (EditEnvelope & { version: 1; command: EquipmentEditOperation }) | (EditEnvelope & { version: 2; command: StackEditOperation }) | (EditEnvelope & { version: 3; command: MoveEditOperation }) | (EditEnvelope & { version: 4; command: StashEditOperation }) | (EditEnvelope & { version: 5; command: StashDestroyOperation });
 export type EditOutcome = 'pending' | 'committed' | 'rejected' | 'unknown';
 export type EditDecision = EditOutcome | 'reserved' | 'invalid' | 'unauthorized' | 'expired' | 'collision' | 'busy' | 'stale' | 'capacity';
 
@@ -20,7 +21,7 @@ const identifier = (value: unknown): value is string => typeof value === 'string
 export function isClientEditCommand(input: unknown): input is ClientEditCommand {
     try {
         if (!object(input) || new TextEncoder().encode(JSON.stringify(input)).length > 4096 ||
-            !fields(input, ['version', 'sessionId', 'commandId', 'playerId', 'base', 'command']) || (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4) ||
+            !fields(input, ['version', 'sessionId', 'commandId', 'playerId', 'base', 'command']) || (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4 && input.version !== 5) ||
             !identifier(input.sessionId) || !identifier(input.playerId) || typeof input.commandId !== 'string' ||
             !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(input.commandId) ||
             !object(input.base) || !fields(input.base, ['version', 'sessionId', 'revision']) || !isTurnSyncStamp(input.base) ||
@@ -32,6 +33,7 @@ export function isClientEditCommand(input: unknown): input is ClientEditCommand 
         if (input.version === 3 && input.command.type === 'move') return fields(input.command, ['type', 'itemId', 'destinationId']) && (input.command.destinationId === null || identifier(input.command.destinationId) && input.command.destinationId !== input.command.itemId);
         if (input.version === 4 && input.command.type === 'stash_drop') return fields(input.command, ['type', 'itemId']);
         if (input.version === 4 && input.command.type === 'stash_take') return fields(input.command, ['type', 'itemId', 'quantity']) && Number.isSafeInteger(input.command.quantity) && (input.command.quantity as number) > 0;
+        if (input.version === 5 && input.command.type === 'stash_destroy') return fields(input.command, ['type', 'itemId']);
         return false;
     } catch { return false; }
 }
@@ -154,4 +156,10 @@ export function canConfirmEdit(
         snapshotStamp.sessionId !== intent.sessionId || committedStamp.sessionId !== snapshotStamp.sessionId ||
         committedStamp.revision !== snapshotStamp.revision) return false;
     return snapshotStamp.revision >= (receipt.resultRevision as number);
+}
+
+/** Destruction is separately negotiated so v4 hosts cannot mistake it for a transfer. */
+export const STASH_DESTROY_CAPABILITY = Object.freeze({ protocol: 'host-stash-destroy', version: 5 } as const);
+export function hasStashDestroyCapability(value: unknown): boolean {
+    return object(value) && fields(value, ['protocol', 'version']) && value.protocol === 'host-stash-destroy' && value.version === 5;
 }

@@ -1,10 +1,10 @@
 import { ClientCoordinationBusy, ClientCoordinationUnavailable, withClientHostLock } from '../utils/clientEditCoordination';
 import { ClientEditIntentAlreadyExists, createClientEditIntent, listClientEditIntents, getClientEditEpoch, transitionClientEditIntent, deleteClientEditIntent, type ClientEditIntent, type ClientEditIntentStatus } from '../utils/clientEditIntentStore';
-import { HostEditLedger, CLIENT_EDIT_CAPABILITY, STACK_EDIT_CAPABILITY, MOVE_EDIT_CAPABILITY, STASH_EDIT_CAPABILITY, canConfirmEdit, type ClientEditCommand, type EquipmentEditOperation, type StackEditOperation, type MoveEditOperation, type StashEditOperation } from '../utils/clientEditProtocol';
+import { HostEditLedger, CLIENT_EDIT_CAPABILITY, STACK_EDIT_CAPABILITY, MOVE_EDIT_CAPABILITY, STASH_EDIT_CAPABILITY, STASH_DESTROY_CAPABILITY, canConfirmEdit, type ClientEditCommand, type EquipmentEditOperation, type StackEditOperation, type MoveEditOperation, type StashEditOperation, type StashDestroyOperation } from '../utils/clientEditProtocol';
 import { applyAuthoritativeEquipment } from '../utils/clientEquipment';
 import { applyAuthoritativeSplit, applyAuthoritativeMerge } from '../utils/clientInventoryStack';
 import { applyAuthoritativeMove } from '../utils/clientInventoryMove';
-import { applyAuthoritativeStash } from '../utils/clientInventoryStash';
+import { applyAuthoritativeStash, applyAuthoritativeStashDestroy } from '../utils/clientInventoryStash';
 import { captureTurnSubmissionIdentity, sameTurnSubmissionIdentity } from '../utils/turnSubmissionIdentity';
 import { reconcileHostEditedCharacter } from '../utils/hostEditedCharacter';
 import { recordPresentationLog, type PendingPresentationLog } from '../utils/presentationLogSync';
@@ -145,7 +145,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const clientEditStorageReadyRef = useRef(false);
     const clientEditBusyRef = useRef(false);
     const [clientEditStorageError, setClientEditStorageError] = useState<string | null>(null);
-    const clientEditCapabilityRef = useRef<{ sessionId: string; enabled: boolean; stacks: boolean; move: boolean; stash: boolean } | null>(null);
+    const clientEditCapabilityRef = useRef<{ sessionId: string; enabled: boolean; stacks: boolean; move: boolean; stash: boolean; stashDestroy: boolean } | null>(null);
     const clientEditTasksRef = useRef<Promise<void>>(Promise.resolve());
     const requestClientSyncRef = useRef<() => void>(() => {});
     const clientEpochBaselineRef = useRef(new Map<string, string | null>());
@@ -1772,7 +1772,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         queuedHostSyncRequestsRef.current.clear();
         const ids: (string | undefined)[] = requests.length ? requests : [undefined];
         return Promise.all(ids.map(id => {
-            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: networkSafeSaveFile(saveData), protocol: stamp, editCapability: CLIENT_EDIT_CAPABILITY, stackEditCapability: STACK_EDIT_CAPABILITY, moveEditCapability: MOVE_EDIT_CAPABILITY, stashEditCapability: STASH_EDIT_CAPABILITY, editReceipts: hostEditLedgerRef.current!.receipts(stamp), ...(id ? { syncRequestId: id } : {}) } };
+            const syncMessage: NetworkMessage = { type: 'full_sync', payload: { saveFile: networkSafeSaveFile(saveData), protocol: stamp, editCapability: CLIENT_EDIT_CAPABILITY, stackEditCapability: STACK_EDIT_CAPABILITY, moveEditCapability: MOVE_EDIT_CAPABILITY, stashEditCapability: STASH_EDIT_CAPABILITY, stashDestroyCapability: STASH_DESTROY_CAPABILITY, editReceipts: hostEditLedgerRef.current!.receipts(stamp), ...(id ? { syncRequestId: id } : {}) } };
             return broadcastToConnections(connectionsRef.current.values(), syncMessage);
         })).then(() => undefined);
     }, []);
@@ -1816,6 +1816,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const candidate = previous.gameState === baseline && settings && hostRestorePendingRef.current === marker &&
                 hostTurnAuthorityRef.current!.getSessionId() === command.sessionId && connection.open && connectionsRef.current.get(connection.peer) === connection
                 ? command.version === 1 ? applyAuthoritativeEquipment(baseline, command, settings)
+                    : command.version === 5 ? applyAuthoritativeStashDestroy(baseline, { ...command.command, playerId: command.playerId }, settings)
                     : command.version === 4 ? applyAuthoritativeStash(baseline, { ...command.command, playerId: command.playerId, commandId: command.commandId }, settings)
                     : command.version === 3 ? applyAuthoritativeMove(baseline, { playerId: command.playerId, itemId: command.command.itemId, destinationId: command.command.destinationId }, settings)
                     : command.command.type === 'split'
@@ -1826,7 +1827,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return { ...previous, gameState: candidate.status === 'applied' ? candidate.state : previous.gameState,
                 hostEdit: { sessionId: command.sessionId, commandId: command.commandId, playerId: command.playerId,
                     outcome: candidate.status, expectedPlayer,
-                    ...(candidate.status === 'applied' && command.version === 4 ? { checksStash: true, expectedStash: candidate.state.temporaryStash } : {}),
+                    ...(candidate.status === 'applied' && (command.version === 4 || command.version === 5) ? { checksStash: true, expectedStash: candidate.state.temporaryStash } : {}),
                     ...(candidate.status === 'rejected' ? { reason: candidate.reason } : {}) } };
         });
         setGameplayMutationEpoch(epoch => epoch + 1);
@@ -1976,7 +1977,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     // Client edits are explicit, durable intents. They never call the
     // local inventory manager or mutates the client character optimistically.
-    const submitClientEdit = useCallback(async (operation: EquipmentEditOperation | StackEditOperation | MoveEditOperation | StashEditOperation) => {
+    const submitClientEdit = useCallback(async (operation: EquipmentEditOperation | StackEditOperation | MoveEditOperation | StashEditOperation | StashDestroyOperation) => {
         const state = gameStateRef.current, stamp = clientTurnStampRef.current, connection = hostConnectionRef.current;
         if (state?.networkRole !== 'player') return;
         if (hasBlockingClientIntent()) { setError(t('client_edit_pending_turn')); return; }
@@ -1985,12 +1986,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!clientEditCapabilityRef.current?.enabled || clientEditCapabilityRef.current.sessionId !== stamp.sessionId) { setError(t('client_edit_capability_missing')); return; }
         if ((operation.type === 'split' || operation.type === 'merge') && !clientEditCapabilityRef.current.stacks) { setError(t('client_edit_capability_missing')); return; }
         if ((operation.type === 'stash_drop' || operation.type === 'stash_take') && !clientEditCapabilityRef.current.stash) { setError(t('client_edit_capability_missing')); return; }
+        if (operation.type === 'stash_destroy' && !clientEditCapabilityRef.current.stashDestroy) { setError(t('client_edit_capability_missing')); return; }
         if (operation.type === 'move' && !clientEditCapabilityRef.current.move) { setError(t('client_edit_capability_missing')); return; }
         if (gameContextRef.current?.gameSettings.cooperativeGameType !== 'FullParty') { setError(t('client_edit_unavailable')); return; }
         const identity = captureTurnSubmissionIdentity(state, stamp, connection);
         const envelope = { sessionId: stamp.sessionId, commandId: crypto.randomUUID(), playerId: state.myPeerId, base: { ...stamp } };
         const command: ClientEditCommand = operation.type === 'equip' || operation.type === 'unequip'
             ? { ...envelope, version: 1, command: operation }
+            : operation.type === 'stash_destroy' ? { ...envelope, version: 5, command: operation }
             : operation.type === 'stash_drop' || operation.type === 'stash_take' ? { ...envelope, version: 4, command: operation }
             : operation.type === 'move' ? { ...envelope, version: 3, command: operation }
             : { ...envelope, version: 2, command: operation };
@@ -2057,6 +2060,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!Number.isSafeInteger(quantity) || quantity <= 0) { setError(t('client_edit_unavailable')); return; }
         void submitClientEdit({ type: 'stash_take', itemId: item.existedId || '', quantity });
     }, [allManagers, submitClientEdit, t]);
+    const destroyStashItemForClient = useCallback((item: Item) => {
+        if (gameStateRef.current?.networkRole !== 'player') return allManagers.dropItemFromStash(item);
+        void submitClientEdit({ type: 'stash_destroy', itemId: item.existedId || '' });
+    }, [allManagers, submitClientEdit]);
     const moveItemForClient = useCallback((item: Item, destinationId: string | null) => {
         if (gameStateRef.current?.networkRole !== 'player') return allManagers.moveItem(item, destinationId);
         if (destinationId !== null && (!destinationId || destinationId === item.existedId)) { setError(t('client_edit_unavailable')); return; }
@@ -2624,7 +2631,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             clientEpochSyncRef.current = null;
         }
         clientTurnStampRef.current = stamp;
-        clientEditCapabilityRef.current = { sessionId: stamp.sessionId, enabled: pending.editCapability === true, stacks: pending.stackEditCapability === true, move: pending.moveEditCapability === true, stash: pending.stashEditCapability === true };
+        clientEditCapabilityRef.current = { sessionId: stamp.sessionId, enabled: pending.editCapability === true, stacks: pending.stackEditCapability === true, move: pending.moveEditCapability === true, stash: pending.stashEditCapability === true, stashDestroy: pending.stashDestroyCapability === true };
         for (const intent of clientEditIntentsRef.current) {
             if ((intent.status === 'pending' || intent.status === 'unknown') && intent.hostPeerId === gameState.hostPeerId &&
                 intent.command.playerId === gameState.myPeerId && pending.editReceipts?.some(receipt => canConfirmEdit(
@@ -3843,6 +3850,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         moveItem: moveItemForClient,
         dropItem: dropItemForClient,
         moveFromStashToInventory: takeStashItemForClient,
+        dropItemFromStash: destroyStashItemForClient,
         splitItemStack: splitItemForClient,
         mergeItemStacks: mergeItemsForClient,
         clientEditIntents,

@@ -65,3 +65,25 @@ export function applyAuthoritativeStash(state: GameState, request: Request, sett
         return { status: 'applied', state: { ...state, players, temporaryStash: newStash } };
     } catch { return reject('invalid_state'); }
 }
+
+/** Destruction changes only the shared stash; do not serialize/recalculate an
+ * unrelated character. Reject ambiguous IDs, containers and sentient objects. */
+export function applyAuthoritativeStashDestroy(state: GameState, request: { playerId: string; itemId: string }, settings: GameSettings): Result {
+    const reject = (reason: string): Result => ({ status: 'rejected', state, reason });
+    try {
+        if (settings?.cooperativeGameType !== 'FullParty') return reject('unsupported_mode');
+        if (state.networkRole !== 'host' || !state.myPeerId || state.playerCharacter?.playerId !== state.myPeerId ||
+            !request.playerId || request.playerId === state.myPeerId || !Array.isArray(state.players)) return reject('owner');
+        const ids = state.players.map(p => p?.playerId);
+        if (ids.some(id => !id) || new Set(ids).size !== ids.length || !ids.includes(state.myPeerId) || !ids.includes(request.playerId)) return reject('identity');
+        if (typeof request.itemId !== 'string' || !request.itemId || !Array.isArray(state.temporaryStash)) return reject('invalid');
+        const matches = state.temporaryStash.filter(item => item?.existedId === request.itemId);
+        if (matches.length !== 1 || idOccurrences(state, request.itemId) !== 1) return reject('identity');
+        const item = matches[0];
+        const owners = [...state.players, ...(state.encounteredNPCs || [])];
+        if (owners.some(owner => owner?.equippedItems && Object.values(owner.equippedItems).includes(request.itemId)) ||
+            item.isContainer || item.isSentient || item.contentsPath || item.initialId !== undefined ||
+            !Number.isSafeInteger(item.count) || item.count <= 0) return reject('item');
+        return { status: 'applied', state: { ...state, temporaryStash: state.temporaryStash.filter(entry => entry !== item) } };
+    } catch { return reject('invalid_state'); }
+}
