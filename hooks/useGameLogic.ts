@@ -1529,12 +1529,35 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         })).then(() => undefined);
     }, []);
 
+    // A local file load resets network identity. Never tear down a live or
+    // connecting session, or replace a state that changed while I/O was open.
+    const beginLocalLoad = useCallback((): (() => boolean) | null => {
+        const initialState = gameStateRef.current;
+        const initialSyncRevision = syncRevisionRef.current;
+        const initialGameplayRevision = gameplayMutationRevisionRef.current;
+        const canCommit = () => {
+            const role = gameStateRef.current?.networkRole;
+            const blocked = !!peerRef.current || !!hostConnectionRef.current || (role && role !== 'none') ||
+                !!activeTurnRef.current || !!hostRestorePendingRef.current || gameplayMutationPendingRef.current ||
+                gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
+                gameplayMutationRevisionRef.current !== initialGameplayRevision;
+            if (blocked) {
+                setError(language === 'ru'
+                    ? 'Загрузка локального сохранения недоступна во время сетевой сессии или изменения игры. Закройте сетевую сессию либо дождитесь завершения текущего действия и повторите загрузку.'
+                    : 'Loading a local save is unavailable during a network session or while the game is changing. Close the network session or wait for the current action, then retry.');
+                return false;
+            }
+            return true;
+        };
+        return canCommit() ? canCommit : null;
+    }, [language, setError]);
+
     // Peer event handlers outlive the render in which they were registered.
     const packageSaveDataRef = useRef<((state: GameState | null) => SaveFile | null) | null>(null);
     const allManagers = useMemo(() => {
         const saveLoadManager = createSaveLoadManager({
             gameContextRef, gameStateRef, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt,
-            restoreFromSaveData, t, setAutosaveTimestamp, setDbSaveSlots, cleanupNetwork, setIsSaving,
+            restoreFromSaveData, t, setAutosaveTimestamp, setDbSaveSlots, beginLocalLoad, setIsSaving,
         });
 
         const { packageSaveData } = saveLoadManager;
@@ -1637,7 +1660,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [
         gameState, gameHistory, isLoading, error, combatLog, gameLog, lastJsonResponse, sceneImagePrompt,
         gameSettings, superInstructions, language, t, restoreFromSaveData, setGameState, setGameHistory, setUserGameLog, setUserCombatLog, setPresentationGameLog, setUserWorldMap, setUserWorldState, setUserVisitedLocations, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, setSuperInstructions, setGameSettings, setLanguage, setAutosaveTimestamp, setDbSaveSlots, setMusicPrompt, setIsMusicLoading, setIsMusicPlayerVisible,
-        setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, broadcastFullSync, queueHostSyncNotice
+        setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, beginLocalLoad, broadcastFullSync, queueHostSyncNotice
     ]);
 
     // The manager exposes a low-level recovery primitive for its own turn

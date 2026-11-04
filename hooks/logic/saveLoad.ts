@@ -19,7 +19,7 @@ export const createSaveLoadManager = (
         t,
         setAutosaveTimestamp,
         setDbSaveSlots,
-        cleanupNetwork,
+        beginLocalLoad,
         setIsSaving
     }: {
         gameContextRef: React.MutableRefObject<GameContext | null>,
@@ -33,7 +33,7 @@ export const createSaveLoadManager = (
         t: TFunction,
         setAutosaveTimestamp: React.Dispatch<React.SetStateAction<string | null>>,
         setDbSaveSlots: React.Dispatch<React.SetStateAction<DBSaveSlotInfo[]>>,
-        cleanupNetwork: () => void,
+        beginLocalLoad: () => (() => boolean) | null,
         setIsSaving: React.Dispatch<React.SetStateAction<boolean>>,
     }
 ) => {
@@ -234,42 +234,24 @@ export const createSaveLoadManager = (
     };
 
     const loadGame = async (): Promise<boolean> => {
-        // ФИКС: НЕ очищать сеть если это сетевая игра
-        const currentGameState = gameStateRef.current;
-        if (!currentGameState || currentGameState.networkRole === 'none') {
-            console.log("🔌 CLEANUP: Cleaning up network for local game load");
-            cleanupNetwork();
-        } else {
-            console.log("🌐 NETWORK: Preserving network connection for multiplayer game");
-        }
-
+        const canCommit = beginLocalLoad();
+        if (!canCommit) return false;
         const data = await loadGameFromFile(t);
-        if (data) {
-            restoreFromSaveData(data);
-            return true;
-        }
-        return false;
+        if (!data || !canCommit()) return false;
+        restoreFromSaveData(data);
+        return true;
     };
 
     const loadAutosave = async (): Promise<boolean> => {
-        // ФИКС: НЕ очищать сеть если это сетевая игра
-        const currentGameState = gameStateRef.current;
-        if (!currentGameState || currentGameState.networkRole === 'none') {
-            console.log("🔌 CLEANUP: Cleaning up network for local autosave load");
-            cleanupNetwork();
-        } else {
-            console.log("🌐 NETWORK: Preserving network connection for multiplayer autosave");
-        }
-
+        const canCommit = beginLocalLoad();
+        if (!canCommit) return false;
         const data = await loadFromDB();
-        if (data) {
-            restoreFromSaveData(data);
-            return true;
-        }
-        alert(t("No autosave data found."));
-        return false;
+        if (!data) { alert(t("No autosave data found.")); return false; }
+        if (!canCommit()) return false;
+        restoreFromSaveData(data);
+        return true;
     };
-    
+
     const refreshDbSaveSlots = async () => {
         try {
             const slots = await listDBSlots();
@@ -298,23 +280,14 @@ export const createSaveLoadManager = (
     };
 
     const loadGameFromSlot = async (slotId: number): Promise<boolean> => {
-        // ФИКС: НЕ очищать сеть если это сетевая игра
-        const currentGameState = gameStateRef.current;
-        if (!currentGameState || currentGameState.networkRole === 'none') {
-            console.log("🔌 CLEANUP: Cleaning up network for slot load");
-            cleanupNetwork();
-        } else {
-            console.log("🌐 NETWORK: Preserving network connection for multiplayer slot load");
-        }
-
+        const canCommit = beginLocalLoad();
+        if (!canCommit) return false;
         try {
             const data = await loadFromDBSlot(slotId);
-            if (data) {
-                restoreFromSaveData(data);
-                return true;
-            }
-            alert(t('No data found in this slot.'));
-            return false;
+            if (!data) { alert(t('No data found in this slot.')); return false; }
+            if (!canCommit()) return false;
+            restoreFromSaveData(data);
+            return true;
         } catch (e) {
             console.error("Load from slot failed", e);
             alert(t('Failed to load game.'));
