@@ -1276,41 +1276,46 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [gameState, isLoading, hostRestoreEpoch, gameplayMutationEpoch, hostSyncNoticeEpoch, setUserGameHistory]);
 
     const removePlayer = useCallback((playerIdToRemove: string) => {
+        if (userGameplayActionBlocked()) return;
+        const current = gameStateRef.current;
+        const matches = current?.players?.filter(p => p?.playerId === playerIdToRemove) || [];
+        if (!playerIdToRemove || matches.length !== 1 ||
+            (current?.networkRole === 'host' && (!current.myPeerId || playerIdToRemove === current.myPeerId ||
+                current.players.filter(p => p?.playerId === current.myPeerId).length !== 1))) {
+            setError(t('player_remove_identity_conflict'));
+            return;
+        }
         setGameState(prevState => {
-            if (!prevState || prevState.players.length <= 1) return prevState;
+            if (!prevState || prevState.players.length <= 1 || !Number.isSafeInteger(prevState.activePlayerIndex) ||
+                prevState.activePlayerIndex < 0 || prevState.activePlayerIndex >= prevState.players.length) return prevState;
 
-            const playerToRemove = prevState.players.find(p => p.playerId === playerIdToRemove);
-            if (!playerToRemove) return prevState;
+            const targets = prevState.players.filter(p => p?.playerId === playerIdToRemove);
+            if (targets.length !== 1) return prevState;
+            const playerToRemove = targets[0];
+            const isHost = prevState.networkRole === 'host';
+            if (isHost && (!prevState.myPeerId || playerIdToRemove === prevState.myPeerId ||
+                prevState.players.filter(p => p?.playerId === prevState.myPeerId).length !== 1 ||
+                !prevState.playerCharacter?.playerId ||
+                prevState.players.filter(p => p?.playerId === prevState.playerCharacter.playerId).length !== 1)) return prevState;
 
-            const newPlayers = prevState.players.filter(p => p.playerId !== playerIdToRemove);
+            // Preserve the currently displayed character in its own roster
+            // record, never in the active turn's unrelated record.
+            const roster = isHost ? prevState.players.map(p => p.playerId === prevState.playerCharacter.playerId ? prevState.playerCharacter : p) : prevState.players;
+            const newPlayers = roster.filter(p => p.playerId !== playerIdToRemove);
             let newActivePlayerIndex = prevState.activePlayerIndex;
             const removedPlayerIndex = prevState.players.findIndex(p => p.playerId === playerIdToRemove);
 
-            if (removedPlayerIndex < newActivePlayerIndex) {
-                newActivePlayerIndex--;
-            }
-            else if (removedPlayerIndex === newActivePlayerIndex || newActivePlayerIndex >= newPlayers.length) {
-                newActivePlayerIndex = 0;
-            }
+            if (removedPlayerIndex < newActivePlayerIndex) newActivePlayerIndex--;
+            else if (removedPlayerIndex === newActivePlayerIndex || newActivePlayerIndex >= newPlayers.length) newActivePlayerIndex = 0;
             newActivePlayerIndex = Math.max(0, Math.min(newPlayers.length - 1, newActivePlayerIndex));
-            const newPc = newPlayers[newActivePlayerIndex];
+            const newPc = isHost ? newPlayers.find(p => p.playerId === prevState.myPeerId)! : newPlayers[newActivePlayerIndex];
 
-            const newState = {
-                ...prevState,
-                players: newPlayers,
-                activePlayerIndex: newActivePlayerIndex,
-                playerCharacter: newPc,
-            };
-
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('player_removed', { name: playerToRemove.name }),
-            };
+            const newState = { ...prevState, players: newPlayers, activePlayerIndex: newActivePlayerIndex, playerCharacter: newPc };
+            const systemMessage: ChatMessage = { sender: 'system', content: t('player_removed', { name: playerToRemove.name }) };
             setGameHistory(prev => [...prev, systemMessage]);
-
             return newState;
         });
-    }, [t, setGameState, setGameHistory]);
+    }, [t, setGameState, setGameHistory, userGameplayActionBlocked]);
 
     const handlePeerDisconnected = useCallback((peerId: string) => {
         if (gameStateRef.current?.networkRole !== 'host' || connectionsRef.current.has(peerId)) return;
@@ -1342,15 +1347,18 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return prevState;
             }
 
-            if (targetPlayerIndex < 0 || targetPlayerIndex >= prevState.players.length) {
-                console.error(`Invalid targetPlayerIndex: ${targetPlayerIndex}, players length: ${prevState.players.length}`);
+            if (!Array.isArray(prevState.players) || !Number.isSafeInteger(targetPlayerIndex) ||
+                targetPlayerIndex < 0 || targetPlayerIndex >= prevState.players.length ||
+                !Number.isSafeInteger(prevState.activePlayerIndex) || prevState.activePlayerIndex < 0 ||
+                prevState.activePlayerIndex >= prevState.players.length || !prevState.players[targetPlayerIndex]) {
+                console.error(`Invalid targetPlayerIndex: ${targetPlayerIndex}`);
                 return prevState;
             }
 
             const playerIds = new Set();
             for (const player of prevState.players) {
-                if (playerIds.has(player.playerId)) {
-                    console.error(`Duplicate playerId detected before turn pass: ${player.playerId}`);
+                if (!player || !player.playerId || playerIds.has(player.playerId)) {
+                    console.error(`Missing or duplicate playerId detected before turn pass: ${player?.playerId}`);
                     return prevState;
                 }
                 playerIds.add(player.playerId);
@@ -1359,14 +1367,27 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const nextGameState = JSON.parse(JSON.stringify(prevState));
 
             const currentActivePlayerIndex = nextGameState.activePlayerIndex;
-            const outgoingPlayerCharacterState = { ...nextGameState.playerCharacter };
             const outgoingPlayerSnapshot = nextGameState.players[currentActivePlayerIndex];
-
             if (!outgoingPlayerSnapshot) {
                 console.error(`No player found at current active index: ${currentActivePlayerIndex}`);
                 return prevState;
             }
 
+            // After a network restore the host displays its own character, not
+            // necessarily the active participant. Never copy the host over a
+            // different active player's authoritative roster entry.
+            const isNetworkHost = nextGameState.networkRole === 'host';
+            const ownIndex = isNetworkHost ? nextGameState.players.findIndex((p: PlayerCharacter) => p.playerId === nextGameState.myPeerId) : -1;
+            const displayed = nextGameState.playerCharacter as PlayerCharacter;
+            if (isNetworkHost && (!nextGameState.myPeerId || ownIndex < 0 || !displayed ||
+                (displayed.playerId !== nextGameState.myPeerId && displayed.playerId !== outgoingPlayerSnapshot.playerId))) {
+                console.error('Cannot pass network turn with an ambiguous host/active character.');
+                return prevState;
+            }
+            if (isNetworkHost && displayed.playerId === nextGameState.myPeerId) nextGameState.players[ownIndex] = displayed;
+            const outgoingPlayerCharacterState = isNetworkHost && displayed.playerId !== outgoingPlayerSnapshot.playerId
+                ? { ...outgoingPlayerSnapshot }
+                : { ...displayed };
             let updatedOutgoingSnapshot = { ...outgoingPlayerSnapshot, ...outgoingPlayerCharacterState };
 
             if (gameSettings.cooperativeGameType === 'MultiplePersonalities' && !gameSettings.multiplePersonalitiesSettings?.shareNpcReputation) {
@@ -1455,7 +1476,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
 
             nextGameState.activePlayerIndex = targetPlayerIndex;
-            nextGameState.playerCharacter = newActivePlayerCharacter;
+            if (isNetworkHost) {
+                // Share rules may alter the incoming character; persist those
+                // fields before each peer chooses its own display character.
+                nextGameState.players[targetPlayerIndex] = newActivePlayerCharacter;
+                nextGameState.playerCharacter = nextGameState.players[ownIndex];
+            } else {
+                nextGameState.playerCharacter = newActivePlayerCharacter;
+            }
             nextGameState.encounteredNPCs = nextEncounteredNPCs;
             nextGameState.encounteredFactions = nextEncounteredFactions;
 
@@ -1933,7 +1961,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setGameState(prevState => {
             if (!prevState || !prevState.players || prevState.players.length === 0) return prevState;
     
-            const pcIndex = prevState.players.findIndex(p => p.playerId === playerId);
+            const matches = prevState.players.flatMap((p, index) => p?.playerId === playerId ? [index] : []);
+            const pcIndex = matches.length === 1 && playerId ? matches[0] : -1;
             if (pcIndex === -1) {
                 console.warn(`updatePlayerPortrait: Player with ID ${playerId} not found.`);
                 return prevState;
@@ -1972,7 +2001,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             newPlayers[pcIndex] = playerToUpdate;
     
             let newPlayerCharacter = prevState.playerCharacter;
-            if (prevState.activePlayerIndex === pcIndex) {
+            if (prevState.playerCharacter?.playerId === playerId) {
                 newPlayerCharacter = playerToUpdate;
             }
     

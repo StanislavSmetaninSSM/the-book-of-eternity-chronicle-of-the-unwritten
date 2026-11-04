@@ -1,6 +1,7 @@
 export const general = {
   en: {
     "turn_session_changed_before_start": "The session or active player changed while preparing your action. It was not started; review the current game before trying again.",
+    "player_remove_identity_conflict": "The player could not be removed: the identity is ambiguous or it belongs to the host of the active session.",
     "spectator_cannot_submit_turn": "Spectators cannot submit turns or questions. Ask the host to participate as a player.",
     "network_regeneration_unsupported": "Regenerating a previous turn is not supported in a network game. The current session has not been changed.",
     "client_edit_host_only": "This change is temporarily available only to the host. Ask the host to make it; client changes are blocked to prevent losing them during synchronization.",
@@ -245,6 +246,7 @@ export const general = {
   ru: {
     "network_regeneration_unsupported": "Повторная генерация предыдущего хода в сетевой игре не поддерживается. Текущая сессия не изменена.",
     "turn_session_changed_before_start": "Сессия или активный игрок изменились во время подготовки действия. Оно не было начато; проверьте текущее состояние игры перед повтором.",
+    "player_remove_identity_conflict": "Игрок не удалён: идентификатор неоднозначен либо принадлежит хосту текущей сессии.",
     "spectator_cannot_submit_turn": "Зрители не могут отправлять ходы или вопросы. Попросите хоста подключить вас как игрока.",
     "client_edit_host_only": "Это изменение временно доступно только хосту. Попросите хоста выполнить его: локальные изменения клиента заблокированы, чтобы они не терялись при синхронизации.",
     "game_state_updating": "Изменение игрового состояния ещё применяется. Дождитесь его завершения перед ходом.",
