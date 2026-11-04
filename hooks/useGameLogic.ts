@@ -81,7 +81,23 @@ const formatTime = (totalMinutes: number) => {
 
 
 export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
-    const [gameState, _setGameState] = useState<GameState | null>(null);
+    // Party transitions must change the active player, turn number and history
+    // in one React update. Independent setters are still exposed to the rest of
+    // the lifecycle, but share one ordered state queue.
+    const [core, setCore] = useState<{ gameState: GameState | null; gameHistory: ChatMessage[]; turnNumber: number | null; partyRevision: number }>({ gameState: null, gameHistory: [], turnNumber: null, partyRevision: 0 });
+    const { gameState, gameHistory, turnNumber } = core;
+    const _setGameState = useCallback((action: React.SetStateAction<GameState | null>) => setCore(previous => {
+        const next = typeof action === 'function' ? action(previous.gameState) : action;
+        return next === previous.gameState ? previous : { ...previous, gameState: next };
+    }), []);
+    const _setGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => setCore(previous => {
+        const next = typeof action === 'function' ? action(previous.gameHistory) : action;
+        return next === previous.gameHistory ? previous : { ...previous, gameHistory: next };
+    }), []);
+    const setTurnNumber = useCallback((action: React.SetStateAction<number | null>) => setCore(previous => {
+        const next = typeof action === 'function' ? action(previous.turnNumber) : action;
+        return next === previous.turnNumber ? previous : { ...previous, turnNumber: next };
+    }), []);
     const gameStateRef = useRef(gameState);
     const [snapshotEpoch, setSnapshotEpoch] = useState(0);
     const gameplayMutationRevisionRef = useRef(0);
@@ -91,6 +107,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const gameplayMutationPendingRef = useRef(false);
     const [gameplayMutationEpoch, setGameplayMutationEpoch] = useState(0);
     const mutationMessageRef = useRef({ delivery: '', host: '', client: '' });
+    const pendingPartyTransitionRef = useRef<{ revision: number; release: () => void } | null>(null);
     const hostHistoryHoldRef = useRef<(() => void) | null>(null);
     const hostContextHoldRef = useRef<(() => void) | null>(null);
     const contextEditRef = useRef({
@@ -268,7 +285,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         hostContextHoldRef.current = null;
         if (gameplayMutationPendingRef.current) setContextEditEpoch(epoch => epoch + 1);
     }, []);
-    const [gameHistory, _setGameHistory] = useState<ChatMessage[]>([]);
     const gameHistoryRef = useRef(gameHistory);
     const setGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
         _setGameHistory(previous => {
@@ -335,7 +351,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
     const [worldMap, setWorldMap] = useState<Record<string, Location>>({});
     const [visitedLocations, setVisitedLocations] = useState<Location[]>([]);
-    const [turnNumber, setTurnNumber] = useState<number | null>(null);
     // These wrappers are only passed to guarded user actions. Turn/restore
     // setters keep their separate lifecycle and must not self-cancel.
     const setUserWorldState = useCallback((action: React.SetStateAction<WorldState | null>) => {
@@ -409,6 +424,44 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     mutationMessageRef.current = { delivery: t('game_edit_blocked_delivery'), host: t('host_sync_not_ready'), client: t('client_edit_host_only') };
     const gameContextRef = useRef<GameContext | null>(null);
 
+    // Unlike separate history/turn setters, this callback is pure inside the
+    // React queue. A hold is acquired before scheduling and released only
+    // after the matching composite update has committed.
+    const setPartyTransition = useCallback((transition: (state: GameState | null, turn: number | null) => { gameState: GameState; turnNumber: number | null; message: ChatMessage } | null) => {
+        if (hostRestorePendingRef.current && gameStateRef.current?.networkRole === 'host') { setError(mutationMessageRef.current.host); return; }
+        if (clientLocalEditBlocked(gameStateRef.current?.networkRole)) { setError(mutationMessageRef.current.client); return; }
+        if (pendingPartyTransitionRef.current) { setError(mutationMessageRef.current.delivery); return; }
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef, gameStateRef.current?.networkRole, turnPhaseRef.current,
+            pendingClientSyncRef.current !== null || pendingNetworkTurnRef.current !== null || !clientTurnStampRef.current);
+        if (revision === null) { setError(mutationMessageRef.current.delivery); return; }
+        stateMutationRevisionRef.current = revision;
+        historyMutationRevisionRef.current = revision;
+        const release = hostTurnAuthorityRef.current!.beginMutation();
+        pendingPartyTransitionRef.current = { revision, release };
+        setCore(previous => {
+            const result = transition(previous.gameState, previous.turnNumber);
+            if (!result) return { ...previous, partyRevision: revision };
+            const state = sanitizeGameState(reconcileHostEditedCharacter(previous.gameState, result.gameState));
+            return { ...previous, gameState: state, gameHistory: [...previous.gameHistory, result.message], turnNumber: result.turnNumber, partyRevision: revision };
+        });
+        setGameplayMutationEpoch(epoch => epoch + 1);
+        if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
+    }, []);
+
+    useEffect(() => {
+        const pending = pendingPartyTransitionRef.current;
+        if (!pending || core.partyRevision !== pending.revision) return;
+        // These refs are published from the committed render, never from a
+        // speculative invocation of the party transition reducer.
+        gameStateRef.current = gameState;
+        gameHistoryRef.current = gameHistory;
+        stateMutationAppliedRef.current = Math.max(stateMutationAppliedRef.current, pending.revision);
+        historyMutationAppliedRef.current = Math.max(historyMutationAppliedRef.current, pending.revision);
+        gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, pending.revision);
+        pendingPartyTransitionRef.current = null;
+        pending.release();
+    }, [core.partyRevision, gameState, gameHistory]);
+
     useEffect(() => {
         const contextEdits = contextEditRef.current;
         const settingsCommitted = contextEdits.settings.applied === contextEdits.settings.revision &&
@@ -425,7 +478,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             (contextEdits.gameLog.revision === 0 || gameLog === contextEdits.gameLog.expected);
         const combatLogCommitted = contextEdits.combatLog.applied === contextEdits.combatLog.revision &&
             (contextEdits.combatLog.revision === 0 || combatLog === contextEdits.combatLog.expected);
-        if (settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameLogCommitted && combatLogCommitted && gameHistoryRef.current === gameHistory &&
+        if (!pendingPartyTransitionRef.current && settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameLogCommitted && combatLogCommitted && gameHistoryRef.current === gameHistory &&
             stateMutationAppliedRef.current === stateMutationRevisionRef.current &&
             historyMutationAppliedRef.current === historyMutationRevisionRef.current) {
             if (gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
@@ -447,7 +500,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 if (releaseHistory || releaseContext || gameState?.networkRole === 'host') setSnapshotEpoch(epoch => epoch + 1);
             }
         }
-    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameLog, combatLog, gameplayMutationEpoch, contextEditEpoch]);
+    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameLog, combatLog, gameplayMutationEpoch, contextEditEpoch, core.partyRevision]);
 
     useEffect(() => {
         if (gameState) {
@@ -1285,18 +1338,18 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(t('player_remove_identity_conflict'));
             return;
         }
-        setGameState(prevState => {
+        setPartyTransition((prevState, currentTurnNumber) => {
             if (!prevState || prevState.players.length <= 1 || !Number.isSafeInteger(prevState.activePlayerIndex) ||
-                prevState.activePlayerIndex < 0 || prevState.activePlayerIndex >= prevState.players.length) return prevState;
+                prevState.activePlayerIndex < 0 || prevState.activePlayerIndex >= prevState.players.length) return null;
 
             const targets = prevState.players.filter(p => p?.playerId === playerIdToRemove);
-            if (targets.length !== 1) return prevState;
+            if (targets.length !== 1) return null;
             const playerToRemove = targets[0];
             const isHost = prevState.networkRole === 'host';
             if (isHost && (!prevState.myPeerId || playerIdToRemove === prevState.myPeerId ||
                 prevState.players.filter(p => p?.playerId === prevState.myPeerId).length !== 1 ||
                 !prevState.playerCharacter?.playerId ||
-                prevState.players.filter(p => p?.playerId === prevState.playerCharacter.playerId).length !== 1)) return prevState;
+                prevState.players.filter(p => p?.playerId === prevState.playerCharacter.playerId).length !== 1)) return null;
 
             // Preserve the currently displayed character in its own roster
             // record, never in the active turn's unrelated record.
@@ -1312,10 +1365,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             const newState = { ...prevState, players: newPlayers, activePlayerIndex: newActivePlayerIndex, playerCharacter: newPc };
             const systemMessage: ChatMessage = { sender: 'system', content: t('player_removed', { name: playerToRemove.name }) };
-            setGameHistory(prev => [...prev, systemMessage]);
-            return newState;
+            return { gameState: newState, turnNumber: currentTurnNumber, message: systemMessage };
         });
-    }, [t, setGameState, setGameHistory, userGameplayActionBlocked]);
+    }, [t, setPartyTransition, userGameplayActionBlocked]);
 
     const handlePeerDisconnected = useCallback((peerId: string) => {
         if (gameStateRef.current?.networkRole !== 'host' || connectionsRef.current.has(peerId)) return;
@@ -1338,13 +1390,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     handlePeerDisconnectedRef.current = handlePeerDisconnected;
 
     const passTurnToPlayer = useCallback((targetPlayerIndex: number) => {
-        setGameState(prevState => {
-            if (!prevState || !gameSettings) return prevState;
-            if (targetPlayerIndex === prevState.activePlayerIndex) return prevState;
+        setPartyTransition((prevState, currentTurnNumber) => {
+            if (!prevState || !gameSettings) return null;
+            if (targetPlayerIndex === prevState.activePlayerIndex) return null;
 
             if (prevState.networkRole !== 'none' && prevState.networkRole !== 'host') {
                 console.warn("Non-host trying to pass turn in network game");
-                return prevState;
+                return null;
             }
 
             if (!Array.isArray(prevState.players) || !Number.isSafeInteger(targetPlayerIndex) ||
@@ -1352,14 +1404,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 !Number.isSafeInteger(prevState.activePlayerIndex) || prevState.activePlayerIndex < 0 ||
                 prevState.activePlayerIndex >= prevState.players.length || !prevState.players[targetPlayerIndex]) {
                 console.error(`Invalid targetPlayerIndex: ${targetPlayerIndex}`);
-                return prevState;
+                return null;
             }
 
             const playerIds = new Set();
             for (const player of prevState.players) {
                 if (!player || !player.playerId || playerIds.has(player.playerId)) {
                     console.error(`Missing or duplicate playerId detected before turn pass: ${player?.playerId}`);
-                    return prevState;
+                    return null;
                 }
                 playerIds.add(player.playerId);
             }
@@ -1370,7 +1422,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const outgoingPlayerSnapshot = nextGameState.players[currentActivePlayerIndex];
             if (!outgoingPlayerSnapshot) {
                 console.error(`No player found at current active index: ${currentActivePlayerIndex}`);
-                return prevState;
+                return null;
             }
 
             // After a network restore the host displays its own character, not
@@ -1382,7 +1434,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (isNetworkHost && (!nextGameState.myPeerId || ownIndex < 0 || !displayed ||
                 (displayed.playerId !== nextGameState.myPeerId && displayed.playerId !== outgoingPlayerSnapshot.playerId))) {
                 console.error('Cannot pass network turn with an ambiguous host/active character.');
-                return prevState;
+                return null;
             }
             if (isNetworkHost && displayed.playerId === nextGameState.myPeerId) nextGameState.players[ownIndex] = displayed;
             const outgoingPlayerCharacterState = isNetworkHost && displayed.playerId !== outgoingPlayerSnapshot.playerId
@@ -1411,7 +1463,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             if (!incomingPlayerSnapshot) {
                 console.error(`No player found at target index: ${targetPlayerIndex}`);
-                return prevState;
+                return null;
             }
 
             let newActivePlayerCharacter: PlayerCharacter;
@@ -1470,7 +1522,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 });
             }
 
-            let nextTurnNumber = turnNumber || 0;
+            let nextTurnNumber = currentTurnNumber || 0;
             if (targetPlayerIndex < currentActivePlayerIndex) {
                 nextTurnNumber++;
             }
@@ -1491,30 +1543,18 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             for (const player of nextGameState.players) {
                 if (finalPlayerIds.has(player.playerId)) {
                     console.error(`Duplicate playerId detected after turn pass: ${player.playerId}. Aborting turn pass.`);
-                    return prevState;
+                    return null;
                 }
                 finalPlayerIds.add(player.playerId);
             }
 
-            console.log(`🎯 PASS TURN DEBUG: Turn passed successfully`);
-            console.log(`  - From Player Index: ${currentActivePlayerIndex} (${prevState.players[currentActivePlayerIndex]?.name})`);
-            console.log(`  - To Player Index: ${targetPlayerIndex} (${newActivePlayerCharacter.name})`);
-            console.log(`  - New Active Player ID: ${newActivePlayerCharacter.playerId}`);
-            console.log(`  - Network Role: ${nextGameState.networkRole}`);
-            console.log(`  - Turn Number: ${nextTurnNumber}`);
-            console.log(`  - Final Players Array:`, nextGameState.players.map(p => ({ name: p.name, id: p.playerId })));
-
-            setTurnNumber(nextTurnNumber);
-
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('turn_passed_to', { name: newActivePlayerCharacter.name }),
+            return {
+                gameState: nextGameState,
+                turnNumber: nextTurnNumber,
+                message: { sender: 'system', content: t('turn_passed_to', { name: newActivePlayerCharacter.name }) },
             };
-            setGameHistory(prev => [...prev, systemMessage]);
-
-            return nextGameState;
         });
-    }, [gameSettings, t, turnNumber, setGameState, setTurnNumber, setGameHistory]);
+    }, [gameSettings, t, setPartyTransition]);
 
     const cleanupNetwork = useCallback(() => {
         console.log("Performing full network cleanup on game load...");
