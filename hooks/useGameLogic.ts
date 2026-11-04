@@ -158,7 +158,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const pendingHostSyncNoticesRef = useRef<ChatMessage[]>([]);
     const [hostSyncNoticeEpoch, setHostSyncNoticeEpoch] = useState(0);
     const presentationJournalRef = useRef(new PresentationJournal());
-    const hostRestorePendingRef = useRef<(PendingPresentationLog & { release: () => void; baseline?: SaveFile | null; rollbackSettings?: GameSettings; rollbackContext?: GameContext }) | null>(null);
+    const hostRestorePendingRef = useRef<(PendingPresentationLog & { release: () => void; baseline?: SaveFile | null; rollbackSettings?: GameSettings; rollbackContext?: GameContext; historyScheduled?: boolean; allowedHistories?: WeakSet<ChatMessage[]> }) | null>(null);
     const pendingNewPeersRef = useRef(new Map<string, DataConnection>());
     const pendingRemovedPeersRef = useRef(new Set<string>());
     const pendingPeerCharactersRef = useRef(new Map<string, { player: PlayerCharacter; connection: DataConnection }>());
@@ -202,7 +202,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         (current as any)[key] === (expected as any)[key]);
                 const state = sameGameplay ? { ...before.gameState, imageCache: current!.imageCache, cinematics: current!.cinematics } : current;
                 const stagedHistory = staged.gameHistory;
-                const hasStagedPrefix = previous.gameHistory.length >= stagedHistory.length &&
+                const hasStagedPrefix = restore.historyScheduled === true && before.gameHistory !== stagedHistory &&
+                    (previous.gameHistory === stagedHistory || restore.allowedHistories?.has(previous.gameHistory) === true) &&
+                    previous.gameHistory.length >= stagedHistory.length &&
                     stagedHistory.every((entry, index) => previous.gameHistory[index] === entry);
                 const history = hasStagedPrefix ? [...before.gameHistory, ...previous.gameHistory.slice(stagedHistory.length)] : previous.gameHistory;
                 const turn = previous.turnNumber === staged.gameContext.currentTurnNumber ? before.gameContext.currentTurnNumber : previous.turnNumber;
@@ -370,8 +372,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, []);
     const gameHistoryRef = useRef(gameHistory);
     const setGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
+        // Capture the marker at enqueue time. React can rebase this updater
+        // after reset has already cleared the live pending ref.
+        const restore = hostRestorePendingRef.current;
         _setGameHistory(previous => {
             const next = typeof action === 'function' ? action(previous) : action;
+            if (restore?.snapshot && (previous === restore.snapshot.gameHistory || restore.allowedHistories?.has(previous)) &&
+                next.length >= previous.length && previous.every((entry, index) => next[index] === entry)) {
+                (restore.allowedHistories ??= new WeakSet()).add(next);
+            }
             gameHistoryRef.current = next;
             return next;
         });
@@ -418,9 +427,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setCombatLog(previous => applied(typeof action === 'function' ? action(previous) : action));
     }, [beginSharedContextEdit]);
     const setPresentationGameLog = useCallback((action: React.SetStateAction<string[]>) => {
+        const restore = hostRestorePendingRef.current;
         setGameLog(previous => {
             const next = typeof action === 'function' ? action(previous) : action;
-            recordPresentationLog(hostRestorePendingRef.current, previous, next);
+            recordPresentationLog(restore, previous, next);
             recordPresentationLog(pendingClientSyncRef.current, previous, next);
             const pending = contextEditRef.current.gameLog;
             if (pending.revision !== 0 && pending.applied === pending.revision && previous === pending.expected) {
@@ -862,7 +872,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (hostRestoreNeeded && !hostBaseline) throw new Error('Host restore baseline unavailable');
         const hostRestore = hostRestoreNeeded
             ? { snapshot: null as SaveFile | null, baseline: hostBaseline,
-                rollbackSettings: undefined as GameSettings | undefined, rollbackContext: data.gameContext,
+                rollbackSettings: undefined as GameSettings | undefined, rollbackContext: data.gameContext, historyScheduled: false,
                 release: hostTurnAuthorityRef.current!.beginMutation() }
             : null;
         if (hostRestore) hostRestorePendingRef.current = hostRestore;
@@ -1365,6 +1375,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setWorldState(data.gameContext.worldState);
         setGameSettings(loadedSettings);
         setSuperInstructions(data.gameContext.superInstructions || '');
+        if (hostRestore) hostRestore.historyScheduled = true;
         setGameHistory(data.gameHistory as ChatMessage[]);
         setGameLog(finalGameLog);
         setCombatLog(restoredCombatLog);
