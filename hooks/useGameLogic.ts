@@ -218,6 +218,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             });
             setCombatLog(previous => previous === staged.combatLog ? before.combatLog : previous);
             setLastJsonResponse(previous => previous === staged.lastJsonResponse ? before.lastJsonResponse : previous);
+            setSceneImagePrompt(previous => previous === staged.sceneImagePrompt ? before.sceneImagePrompt : previous);
             if (gameContextRef.current === restore.snapshot.gameContext || gameContextRef.current === restore.rollbackContext)
                 gameContextRef.current = before.gameContext;
         }
