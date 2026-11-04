@@ -84,6 +84,8 @@ export default function App(): React.ReactNode {
         equipItem,
         unequipItem,
         clientEditIntents,
+        clientTurnIntents,
+        discardClientTurnIntent,
         clientEditStorageError,
         retryClientEditStorage,
         discardClientEditIntent,
@@ -891,11 +893,11 @@ export default function App(): React.ReactNode {
         }
     }, [isRegenerating, sendMessage, askQuestion]);
 
-    const clientEditPanel = (clientEditStorageError || clientEditIntents.length > 0) && (
+    const clientEditPanel = (clientEditStorageError || clientEditIntents.length > 0 || clientTurnIntents.length > 0) && (
         <aside className="fixed right-4 top-4 z-[1200] max-h-[70vh] w-[min(28rem,calc(100vw-2rem))] overflow-auto rounded-lg border border-amber-600 bg-gray-900 p-4 text-sm text-gray-100 shadow-xl" aria-live="polite">
             <h2 className="font-bold text-amber-300">{t('client_edit_intents_title')}</h2>
             {clientEditStorageError && <div className="mt-2"><p>{clientEditStorageError}</p><button className="mt-2 rounded bg-gray-700 px-3 py-1" onClick={retryClientEditStorage}>{t('client_edit_retry_storage')}</button></div>}
-            {!clientEditStorageError && clientEditIntents.length > 0 && <button className="mt-2 rounded bg-gray-700 px-3 py-1" onClick={retryClientEditStorage}>{t('client_edit_refresh_queue')}</button>}
+            {!clientEditStorageError && (clientEditIntents.length > 0 || clientTurnIntents.length > 0) && <button className="mt-2 rounded bg-gray-700 px-3 py-1" onClick={retryClientEditStorage}>{t('client_edit_refresh_queue')}</button>}
             {clientEditIntents.map(intent => <div key={intent.command.commandId} className="mt-3 border-t border-gray-700 pt-2">
                 <p>{t(`client_edit_status_${intent.status}`)} · {intent.command.command.type} · {intent.command.command.itemId}</p>
                 <p className="break-all text-xs text-gray-400">{intent.hostPeerId} · {intent.command.commandId}</p>
@@ -905,6 +907,12 @@ export default function App(): React.ReactNode {
                     {intent.status !== 'draft' && <button className="rounded bg-cyan-800 px-3 py-1" onClick={() => reconcileClientEditIntent(intent.command.commandId)}>{t('client_edit_reconcile')}</button>}
                     <button className="rounded bg-gray-700 px-3 py-1" onClick={() => { if (window.confirm(t('client_edit_discard_confirm'))) discardClientEditIntent(intent.command.commandId); }}>{t('client_edit_discard')}</button>
                 </div>
+            </div>)}
+            {clientTurnIntents.map(intent => <div key={`turn-${intent.command.commandId}`} className="mt-3 border-t border-gray-700 pt-2">
+                <p>{t(`client_edit_status_${intent.status}`)} · {t('client_turn_intent')} · {intent.command.kind}</p>
+                <p className="break-all text-xs text-gray-400">{intent.hostPeerId} · {intent.command.commandId}</p>
+                <p className="mt-1 text-xs text-gray-300">{t('client_turn_intent_unknown_help')}</p>
+                <button className="mt-2 rounded bg-gray-700 px-3 py-1" onClick={() => { if (window.confirm(t('client_turn_discard_confirm'))) discardClientTurnIntent(intent.command.commandId); }}>{t('client_edit_discard')}</button>
             </div>)}
         </aside>
     );
