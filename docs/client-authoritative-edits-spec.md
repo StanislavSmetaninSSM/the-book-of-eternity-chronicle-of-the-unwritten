@@ -271,3 +271,10 @@ reset, а не объявляет частичный результат откл
 и отслеживаемое происхождение независимых добавлений; marker захватывается
 при постановке updater, чтобы пережить React rebase после очистки ref.
 Аналогично marker захватывается для независимых presentation-log записей.
+
+`scripts/react-host-turn-restore-reset.test.mjs` дополнительно передаёт
+настоящему production PeerJS handler сообщение `turn_result_from_player` с
+актуальным grant, проверяет `accepted`, затем выполняет срочный disconnect
+поверх отложенного React restore. Результат хода не сохраняется и не попадает
+в опубликованный snapshot. Транспорт искусственный; это не проверка доверия
+к содержимому legacy SaveFile и не закрывает P1.
