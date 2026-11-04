@@ -208,3 +208,11 @@ Host dispatch сохраняет собственные `gameSettings` и `super
 ошибки требует отдельного проверенного post-commit/reset barrier, а также UI
 восстановления. Coordinator не объявляет capability, не принимает сетевые
 команды и не заменяет старый клиентский turn path. Этап 6 не завершён.
+
+Подготовлен также `dispatchClientTurn`: под обязательной Web Lock проверяет
+host epoch и идентичность до и после IndexedDB, записывает `pending` до первой
+сетевой попытки и переводит исключение отправки в `unknown`. Текст и медиа в
+intent не записываются; успешная отправка не означает commit. Это ещё не
+production dispatch: вызов должен обеспечить capability negotiation,
+ограничение времени отправки, обработку status/receipt и React commit на
+клиенте. При ошибке IndexedDB существующее намерение не удаляется вслепую.
