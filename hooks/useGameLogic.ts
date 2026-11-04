@@ -188,6 +188,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         // before reset. Roll back its exact staged values in the ordered
         // queues; never overwrite later, independent changes.
         const restore = hostRestorePendingRef.current;
+        // Context is assigned before the later migration/React setters. An
+        // exception there may leave no staged snapshot, but the old context
+        // still has to be restored on session reset.
+        if (restore?.baseline && gameContextRef.current === restore.rollbackContext)
+            gameContextRef.current = restore.baseline.gameContext;
         if (restore?.baseline && restore.snapshot) {
             const before = restore.baseline, staged = restore.snapshot;
             setCore(previous => {
@@ -1340,28 +1345,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             console.log("🌐 NETWORK SYNC: Preserving network connections");
         }
 
-        // The commit barrier must expect the same sanitized snapshot that React receives.
+        // Install rollback evidence before the first live React setter. If a
+        // later setter throws, reset must still cancel the partial restore.
         loadedGameState = sanitizeGameState(loadedGameState)!;
-        setGameStateInternal(loadedGameState);
-        setWorldState(data.gameContext.worldState);
-        setGameSettings(loadedSettings);
-        setSuperInstructions(data.gameContext.superInstructions || '');
-        setGameHistory(data.gameHistory as ChatMessage[]);
-        setGameLog(finalGameLog);
         const restoredCombatLog = data.combatLog ?? [];
-        setCombatLog(restoredCombatLog);
-        setLastJsonResponse(data.lastJsonResponse);
-        setSceneImagePrompt(data.sceneImagePrompt);
         const restoredWorldMap = data.gameContext.worldMap ?? {};
         const restoredVisitedLocations = data.gameContext.visitedLocations ?? [];
-        setWorldMap(restoredWorldMap);
-        setVisitedLocations(restoredVisitedLocations);
-        setTurnNumber(data.gameContext.currentTurnNumber);
-
-        setIsLoading(false);
-        setError(null);
-        // Return exactly what was restored; React state updates may not have
-        // rendered when the multiplayer handler needs to broadcast it.
         const restored = { ...data, gameState: loadedGameState, gameLog: finalGameLog, combatLog: restoredCombatLog,
             // The live context ref is synchronized by effects and must not
             // mutate the commit barrier's expected values before comparison.
@@ -1371,8 +1360,22 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (hostRestore) {
             hostRestore.rollbackSettings = loadedSettings;
             hostRestore.snapshot = restored;
-            setHostRestoreEpoch(epoch => epoch + 1);
         }
+        setGameStateInternal(loadedGameState);
+        setWorldState(data.gameContext.worldState);
+        setGameSettings(loadedSettings);
+        setSuperInstructions(data.gameContext.superInstructions || '');
+        setGameHistory(data.gameHistory as ChatMessage[]);
+        setGameLog(finalGameLog);
+        setCombatLog(restoredCombatLog);
+        setLastJsonResponse(data.lastJsonResponse);
+        setSceneImagePrompt(data.sceneImagePrompt);
+        setWorldMap(restoredWorldMap);
+        setVisitedLocations(restoredVisitedLocations);
+        setTurnNumber(data.gameContext.currentTurnNumber);
+        setIsLoading(false);
+        setError(null);
+        if (hostRestore) setHostRestoreEpoch(epoch => epoch + 1);
         return restored;
 
     }, [clearPendingContextEdits, setLanguage, t, setGameState, setWorldState, setGameSettings, setSuperInstructions, setGameHistory, setGameLog, setCombatLog, setLastJsonResponse, setSceneImagePrompt, setWorldMap, setVisitedLocations, setTurnNumber, setIsLoading, setError, language]);
