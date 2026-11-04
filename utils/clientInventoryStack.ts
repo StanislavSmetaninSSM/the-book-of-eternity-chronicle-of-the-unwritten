@@ -69,7 +69,7 @@ export function applyAuthoritativeSplit(state: GameState, request: Split, settin
 type Merge = { playerId: string; sourceId: string; targetId: string };
 // Canonicalize only strictly JSON-compatible data. Undefined/non-finite values
 // must not disappear during comparison and accidentally make stacks equal.
-function canonical(value: unknown, ancestors = new Set<object>()): string {
+export function canonical(value: unknown, ancestors = new Set<object>()): string {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
     if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
     if (!value || typeof value !== 'object' || ancestors.has(value)) throw new Error('Non-JSON metadata');
