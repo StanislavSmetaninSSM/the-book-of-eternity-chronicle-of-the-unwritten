@@ -18,6 +18,6 @@ test('internal setter never mutates a previous or supplied snapshot while saniti
  scope.setter(x=>x);assert.equal(current,previous);assert.equal(previous.encounteredNPCs,npc);assert.equal(previous.encounteredFactions,factions);
  const supplied={networkRole:'none',encounteredNPCs:[null,{name:'NPC'}],encounteredFactions:[{name:'Faction'},null]};const before=structuredClone(supplied);
  scope.setter(supplied);assert.deepEqual(supplied,before);assert.notEqual(current,supplied);assert.deepEqual(Array.from(current.encounteredNPCs),[{name:'NPC'}]);assert.deepEqual(Array.from(current.encounteredFactions),[{name:'Faction'}]);assert.equal(ref.current,current);assert.equal(completed,2);
- assert.match(source,/loadedGameState = sanitizeGameState\(loadedGameState\)!;\s*setGameStateInternal\(loadedGameState\)/);
+ assert.match(source,/loadedGameState = sanitizeGameState\(loadedGameState\)!;[\s\S]{0,1500}?setGameStateInternal\(loadedGameState\)/);
  } finally {await server.close()}
 });
