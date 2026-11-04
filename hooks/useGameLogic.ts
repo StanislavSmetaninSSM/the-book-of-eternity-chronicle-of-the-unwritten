@@ -1,4 +1,5 @@
-import { HostEditLedger, CLIENT_EDIT_CAPABILITY, type ClientEditCommand } from '../utils/clientEditProtocol';
+import { ClientEditIntentAlreadyExists, createClientEditIntent, listClientEditIntents, transitionClientEditIntent, deleteClientEditIntent, type ClientEditIntent, type ClientEditIntentStatus } from '../utils/clientEditIntentStore';
+import { HostEditLedger, CLIENT_EDIT_CAPABILITY, canConfirmEdit, type ClientEditCommand } from '../utils/clientEditProtocol';
 import { applyAuthoritativeEquipment } from '../utils/clientEquipment';
 import { captureTurnSubmissionIdentity, sameTurnSubmissionIdentity } from '../utils/turnSubmissionIdentity';
 import { reconcileHostEditedCharacter } from '../utils/hostEditedCharacter';
@@ -135,6 +136,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const pendingClientSyncRef = useRef<PendingClientSync | null>(null);
     const [clientSyncEpoch, setClientSyncEpoch] = useState(0);
     const scheduleClientSyncCommit = useCallback(() => setClientSyncEpoch(epoch => epoch + 1), []);
+    const [clientEditIntents, setClientEditIntents] = useState<ClientEditIntent[]>([]);
+    const clientEditIntentsRef = useRef<ClientEditIntent[]>([]);
+    const clientEditStorageReadyRef = useRef(false);
+    const clientEditBusyRef = useRef(false);
+    const [clientEditStorageError, setClientEditStorageError] = useState<string | null>(null);
+    const clientEditCapabilityRef = useRef<{ sessionId: string; enabled: boolean } | null>(null);
+    const clientEditTasksRef = useRef<Promise<void>>(Promise.resolve());
     const pendingNetworkTurnRef = useRef<string | null>(null);
     const pendingSyncRequestRef = useRef<string | null>(null);
     const queuedHostSyncRequestsRef = useRef(new Set<string>());
@@ -445,6 +453,87 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const { t } = useLocalization();
     mutationMessageRef.current = { delivery: t('game_edit_blocked_delivery'), host: t('host_sync_not_ready'), client: t('client_edit_host_only') };
     const gameContextRef = useRef<GameContext | null>(null);
+
+    const publishClientIntents = useCallback((intents: ClientEditIntent[]) => {
+        clientEditIntentsRef.current = intents;
+        setClientEditIntents(intents);
+    }, []);
+    const queueClientIntentTask = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
+        const next = clientEditTasksRef.current.then(task);
+        clientEditTasksRef.current = next.then(() => undefined, () => undefined);
+        return next;
+    }, []);
+    const intentStorageFailure = useCallback(() => {
+        clientEditStorageReadyRef.current = false;
+        setClientEditStorageError(t('client_edit_storage_failed'));
+        setError(t('client_edit_storage_failed'));
+    }, [t]);
+    const intentStorageFailureRef = useRef(intentStorageFailure);
+    intentStorageFailureRef.current = intentStorageFailure;
+    const reloadClientIntents = useCallback(async () => {
+        const intents = await listClientEditIntents();
+        publishClientIntents(intents);
+        return intents;
+    }, [publishClientIntents]);
+    useEffect(() => {
+        let cancelled = false;
+        void queueClientIntentTask(async () => {
+            let intents = await listClientEditIntents();
+            // A reload cannot prove whether an in-flight send reached the host.
+            for (const intent of intents) {
+                if (intent.status === 'pending') await transitionClientEditIntent(intent, 'unknown');
+                else if (intent.status === 'committed') await deleteClientEditIntent(intent, false);
+            }
+            intents = await listClientEditIntents();
+            if (!cancelled) { publishClientIntents(intents); clientEditStorageReadyRef.current = true; setClientEditStorageError(null); }
+        }).catch(() => { if (!cancelled) intentStorageFailureRef.current(); });
+        return () => { cancelled = true; };
+    }, [queueClientIntentTask, publishClientIntents]);
+
+    const resolveClientIntent = useCallback((commandId: string, sessionId: string, status: Extract<ClientEditIntentStatus, 'unknown' | 'conflict' | 'rejected' | 'committed'>, reason?: string) => {
+        void queueClientIntentTask(async () => {
+            let intent = clientEditIntentsRef.current.find(i => i.command.commandId === commandId && i.command.sessionId === sessionId);
+            if (!intent) return;
+            const updated = await transitionClientEditIntent(intent, status, reason);
+            if (updated) intent = updated;
+            else {
+                const list = await reloadClientIntents();
+                intent = list.find(i => i.command.commandId === commandId && i.command.sessionId === sessionId);
+                if (!intent) return;
+                // A concurrent unknown transition must not hide a later
+                // authoritative receipt. Never retry delivery itself.
+                if (status === 'committed' && intent.status === 'unknown') intent = (await transitionClientEditIntent(intent, 'committed')) || intent;
+            }
+            if (status === 'committed' && intent.status === 'committed') await deleteClientEditIntent(intent, false);
+            await reloadClientIntents();
+        }).catch(intentStorageFailure);
+    }, [queueClientIntentTask, reloadClientIntents, intentStorageFailure]);
+    const hasBlockingClientIntent = useCallback(() => {
+        const state = gameStateRef.current;
+        return state?.networkRole === 'player' && (!clientEditStorageReadyRef.current || clientEditBusyRef.current ||
+            clientEditIntentsRef.current.some(intent => intent.hostPeerId === state.hostPeerId && intent.status !== 'committed'));
+    }, []);
+    const handleClientEditResult = useCallback((message: NetworkMessage) => {
+        const p = message.payload;
+        if (!p || p.version !== 1 || typeof p.sessionId !== 'string' || typeof p.commandId !== 'string') return;
+        const intent = clientEditIntentsRef.current.find(i => i.command.commandId === p.commandId && i.command.sessionId === p.sessionId);
+        if (!intent || intent.hostPeerId !== gameStateRef.current?.hostPeerId || intent.command.playerId !== gameStateRef.current?.myPeerId) return;
+        if (p.status === 'busy' || p.status === 'stale') resolveClientIntent(p.commandId, p.sessionId, 'conflict', p.status);
+        else if (p.status === 'invalid' || p.status === 'unauthorized' || p.status === 'collision' || p.status === 'capacity' || p.status === 'rejected') resolveClientIntent(p.commandId, p.sessionId, 'rejected', typeof p.reason === 'string' && /^[a-z_]{1,64}$/.test(p.reason) ? p.reason : p.status);
+        else if (p.status === 'unknown' || p.status === 'expired') resolveClientIntent(p.commandId, p.sessionId, 'unknown', p.status);
+        // Neither pending nor a committed ACK proves that the corresponding
+        // snapshot has rendered. Only the commit effect can confirm it.
+    }, [resolveClientIntent]);
+    const handleClientEditResultRef = useRef(handleClientEditResult);
+    handleClientEditResultRef.current = handleClientEditResult;
+    const markDisconnectedClientIntents = useCallback(() => {
+        for (const intent of clientEditIntentsRef.current) {
+            if (intent.status === 'pending') resolveClientIntent(intent.command.commandId, intent.command.sessionId, 'unknown');
+        }
+        clientEditCapabilityRef.current = null;
+    }, [resolveClientIntent]);
+    const markDisconnectedClientIntentsRef = useRef(markDisconnectedClientIntents);
+    markDisconnectedClientIntentsRef.current = markDisconnectedClientIntents;
 
     // Unlike separate history/turn setters, this callback is pure inside the
     // React queue. A hold is acquired before scheduling and released only
@@ -1829,6 +1918,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 sendMessageRef,
                 gameStateRef,
                 onClientEdit: (connection, message) => onClientEditRef.current(connection, message),
+                onClientEditResult: message => handleClientEditResultRef.current(message),
+                onClientEditDisconnect: () => markDisconnectedClientIntentsRef.current(),
                 onChatMessage: (message: NetworkChatMessage) => {
                     setNetworkChatHistory(prev => [...prev, message]);
                 }
@@ -1840,6 +1931,92 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         gameSettings, superInstructions, language, t, restoreFromSaveData, setGameState, setGameHistory, setUserGameLog, setUserCombatLog, setPresentationGameLog, setUserWorldMap, setUserWorldState, setUserVisitedLocations, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, setSuperInstructions, setGameSettings, setLanguage, setAutosaveTimestamp, setDbSaveSlots, setMusicPrompt, setIsMusicLoading, setIsMusicPlayerVisible,
         setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, beginLocalLoad, broadcastFullSync, queueHostSyncNotice
     ]);
+
+    // Client equipment is an explicit, durable intent. It never calls the
+    // local inventory manager or mutates the client character optimistically.
+    const submitClientEquipment = useCallback(async (item: Item, slot?: string) => {
+        const state = gameStateRef.current, stamp = clientTurnStampRef.current, connection = hostConnectionRef.current;
+        if (state?.networkRole !== 'player') {
+            if (slot === undefined) allManagers.unequipItem(item); else allManagers.equipItem(item, slot);
+            return;
+        }
+        if (hasBlockingClientIntent()) { setError(t('client_edit_pending_turn')); return; }
+        if (isLoading || activeTurnRef.current || isTurnSubmitPendingRef.current || pendingClientSyncRef.current || pendingSyncRequestRef.current ||
+            !stamp || !connection?.open || !state.hostPeerId || !state.myPeerId || !item?.existedId) { setError(t('client_edit_unavailable')); return; }
+        if (!clientEditCapabilityRef.current?.enabled || clientEditCapabilityRef.current.sessionId !== stamp.sessionId) { setError(t('client_edit_capability_missing')); return; }
+        if (gameContextRef.current?.gameSettings.cooperativeGameType !== 'FullParty') { setError(t('client_edit_unavailable')); return; }
+        const identity = captureTurnSubmissionIdentity(state, stamp, connection);
+        const command: ClientEditCommand = { version: 1, sessionId: stamp.sessionId, commandId: crypto.randomUUID(), playerId: state.myPeerId,
+            base: { ...stamp }, command: slot === undefined ? { type: 'unequip', itemId: item.existedId } : { type: 'equip', itemId: item.existedId, slot } };
+        clientEditBusyRef.current = true;
+        let sentIntent: ClientEditIntent | null = null;
+        try {
+            sentIntent = await queueClientIntentTask(async () => {
+                const draft = await createClientEditIntent({ hostPeerId: state.hostPeerId!, command });
+                await reloadClientIntents();
+                if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
+                    setError(t('client_edit_session_changed')); return null;
+                }
+                const pending = await transitionClientEditIntent(draft, 'pending');
+                if (!pending) throw new Error('Intent changed in another tab');
+                await reloadClientIntents();
+                if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
+                    await transitionClientEditIntent(pending, 'conflict'); await reloadClientIntents();
+                    setError(t('client_edit_session_changed')); return null;
+                }
+                return pending;
+            });
+            if (!sentIntent) return;
+            if (!sameTurnSubmissionIdentity(identity, captureTurnSubmissionIdentity(gameStateRef.current, clientTurnStampRef.current, hostConnectionRef.current))) {
+                resolveClientIntent(command.commandId, command.sessionId, 'conflict', 'stale');
+                setError(t('client_edit_session_changed'));
+                return;
+            }
+            // The pending record exists before the first send; an error or
+            // timeout cannot establish that the peer did not receive it.
+            await sendOnOpenConnection(connection, { type: 'client_edit_command', payload: command });
+            const pendingIntent = sentIntent;
+            window.setTimeout(() => {
+                const current = clientEditIntentsRef.current.find(i => i.command.commandId === pendingIntent.command.commandId);
+                if (current?.status === 'pending') { resolveClientIntent(current.command.commandId, current.command.sessionId, 'unknown'); setError(t('client_edit_unknown')); }
+            }, 10000);
+        } catch (error) {
+            if (sentIntent) { resolveClientIntent(command.commandId, command.sessionId, 'unknown'); setError(t('client_edit_unknown')); }
+            else if (error instanceof ClientEditIntentAlreadyExists) {
+                try { await reloadClientIntents(); setError(t('client_edit_pending_turn')); } catch { intentStorageFailure(); }
+            } else intentStorageFailure();
+        } finally {
+            clientEditBusyRef.current = false;
+        }
+    }, [allManagers, hasBlockingClientIntent, isLoading, t, queueClientIntentTask, reloadClientIntents, resolveClientIntent, intentStorageFailure]);
+    const equipItemForClient = useCallback((item: Item, slot: string) => { void submitClientEquipment(item, slot); }, [submitClientEquipment]);
+    const unequipItemForClient = useCallback((item: Item) => { void submitClientEquipment(item); }, [submitClientEquipment]);
+    const retryClientEditStorage = useCallback(() => {
+        void queueClientIntentTask(async () => { await reloadClientIntents(); clientEditStorageReadyRef.current = true; setClientEditStorageError(null); }).catch(intentStorageFailure);
+    }, [queueClientIntentTask, reloadClientIntents, intentStorageFailure]);
+    const discardClientEditIntent = useCallback((commandId: string) => {
+        void queueClientIntentTask(async () => {
+            const intent = clientEditIntentsRef.current.find(i => i.command.commandId === commandId);
+            if (!intent) return;
+            // Invalidate the old grant before dropping uncertainty; a host sync
+            // request revokes it even if the old command is still in transit.
+            if (intent.status !== 'draft' && gameStateRef.current?.networkRole === 'player') {
+                clientTurnStampRef.current = null;
+                if (hostConnectionRef.current?.open) allManagers.requestSyncFromHost();
+            }
+            if (!await deleteClientEditIntent(intent, true)) throw new Error('Intent changed in another tab');
+            await reloadClientIntents();
+        }).catch(intentStorageFailure);
+    }, [queueClientIntentTask, reloadClientIntents, allManagers, intentStorageFailure]);
+    const reconcileClientEditIntent = useCallback((commandId: string) => {
+        const intent = clientEditIntentsRef.current.find(i => i.command.commandId === commandId), state = gameStateRef.current, conn = hostConnectionRef.current;
+        if (!intent || state?.networkRole !== 'player' || !conn?.open || state.hostPeerId !== intent.hostPeerId ||
+            state.myPeerId !== intent.command.playerId || observedHostStampRef.current?.sessionId !== intent.command.sessionId) {
+            setError(t('client_edit_unknown')); return;
+        }
+        void sendOnOpenConnection(conn, { type: 'client_edit_status', payload: { version: 1, sessionId: intent.command.sessionId, commandId } }).catch(() => setError(t('client_edit_unknown')));
+        allManagers.requestSyncFromHost();
+    }, [allManagers, t]);
 
     // The manager exposes a low-level recovery primitive for its own turn
     // machinery. Do not expose it from the hook without checking the live
@@ -2356,6 +2533,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return;
         }
         clientTurnStampRef.current = stamp;
+        clientEditCapabilityRef.current = { sessionId: stamp.sessionId, enabled: pending.editCapability === true };
+        for (const intent of clientEditIntentsRef.current) {
+            if ((intent.status === 'pending' || intent.status === 'unknown') && intent.hostPeerId === gameState.hostPeerId &&
+                intent.command.playerId === gameState.myPeerId && pending.editReceipts?.some(receipt => canConfirmEdit(
+                    { sessionId: intent.command.sessionId, commandId: intent.command.commandId, baseRevision: intent.command.base.revision }, receipt, pending.stamp, stamp))) {
+                resolveClientIntent(intent.command.commandId, intent.command.sessionId, 'committed');
+            }
+        }
         pendingClientSyncRef.current = null;
         pendingNetworkTurnRef.current = null;
         setError(prev => prev === t('network_sync_stalled') ? null : prev);
@@ -2940,6 +3125,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current) return false;
         if (!gameStateRef.current || !gameContextRef.current) return false;
         if (gameStateRef.current.networkRole === 'spectator') { setError(t('spectator_cannot_submit_turn')); return false; }
+        if (hasBlockingClientIntent()) { setError(t('client_edit_pending_turn')); return false; }
         if (hostRestorePendingRef.current) { setError(t('host_sync_not_ready')); return false; }
         if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return false; }
         if (gameStateRef.current.networkRole === 'player' && (!clientTurnStampRef.current || !hostConnectionRef.current?.open)) {
@@ -2949,7 +3135,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         isTurnSubmitPendingRef.current = true;
         return true;
-    }, [isLoading, t]);
+    }, [isLoading, t, hasBlockingClientIntent]);
 
     const sendMessageWithStashClear = useCallback(async (message: string, image?: { data: string; mimeType: string; } | null, clearCollective = false) => {
         if (!beginTurnSubmission()) return;
@@ -3528,6 +3714,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         isLoading,
         error,
         ...allManagers,
+        equipItem: equipItemForClient,
+        unequipItem: unequipItemForClient,
+        clientEditIntents,
+        clientEditStorageError,
+        retryClientEditStorage,
+        discardClientEditIntent,
+        reconcileClientEditIntent,
         resumeInterruptedTurn: resumeInterruptedTurnSafely,
         sendMessage: sendMessageWithStashClear,
         askQuestion: askQuestionWithRecovery,

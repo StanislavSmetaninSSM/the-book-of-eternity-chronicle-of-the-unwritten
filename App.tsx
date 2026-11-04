@@ -83,6 +83,11 @@ export default function App(): React.ReactNode {
         combatLog,
         equipItem,
         unequipItem,
+        clientEditIntents,
+        clientEditStorageError,
+        retryClientEditStorage,
+        discardClientEditIntent,
+        reconcileClientEditIntent,
         dropItem,
         moveItem,
         splitItemStack,
@@ -886,9 +891,26 @@ export default function App(): React.ReactNode {
         }
     }, [isRegenerating, sendMessage, askQuestion]);
 
+    const clientEditPanel = (clientEditStorageError || clientEditIntents.length > 0) && (
+        <aside className="fixed right-4 top-4 z-[1200] max-h-[70vh] w-[min(28rem,calc(100vw-2rem))] overflow-auto rounded-lg border border-amber-600 bg-gray-900 p-4 text-sm text-gray-100 shadow-xl" aria-live="polite">
+            <h2 className="font-bold text-amber-300">{t('client_edit_intents_title')}</h2>
+            {clientEditStorageError && <div className="mt-2"><p>{clientEditStorageError}</p><button className="mt-2 rounded bg-gray-700 px-3 py-1" onClick={retryClientEditStorage}>{t('client_edit_retry_storage')}</button></div>}
+            {clientEditIntents.map(intent => <div key={intent.command.commandId} className="mt-3 border-t border-gray-700 pt-2">
+                <p>{t(`client_edit_status_${intent.status}`)} · {intent.command.command.type} · {intent.command.command.itemId}</p>
+                <p className="break-all text-xs text-gray-400">{intent.hostPeerId} · {intent.command.commandId}</p>
+                {intent.reason && <p className="text-xs text-amber-200">{t('client_edit_reason')}: {intent.reason}</p>}
+                <div className="mt-2 flex flex-wrap gap-2">
+                    {intent.status !== 'draft' && <button className="rounded bg-cyan-800 px-3 py-1" onClick={() => reconcileClientEditIntent(intent.command.commandId)}>{t('client_edit_reconcile')}</button>}
+                    <button className="rounded bg-gray-700 px-3 py-1" onClick={() => { if (window.confirm(t('client_edit_discard_confirm'))) discardClientEditIntent(intent.command.commandId); }}>{t('client_edit_discard')}</button>
+                </div>
+            </div>)}
+        </aside>
+    );
+
     if (!hasStarted) {
         return <>
             <ArenaGmRelayPanel />
+            {clientEditPanel}
             <StartScreen
                 onStartLocal={handleStartGame}
                 onStartHost={handleStartHost}
@@ -912,6 +934,7 @@ export default function App(): React.ReactNode {
         return (
             <>
             <ArenaGmRelayPanel />
+            {clientEditPanel}
             <PlayerCreationModal
                 isOpen={isCreatingPlayer}
                 onClose={() => { /* Disconnect logic could go here */ }}
@@ -929,6 +952,7 @@ export default function App(): React.ReactNode {
         return (
         <>
             <ArenaGmRelayPanel />
+            {clientEditPanel}
             {gameState && imageWarmupPrompts.length > 0 && (
                 <div className="hidden" aria-hidden="true">
                     {imageWarmupPrompts.map(prompt => (

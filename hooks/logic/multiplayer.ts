@@ -1,3 +1,4 @@
+import { hasClientEditCapability } from '../../utils/clientEditProtocol';
 
 import React from 'react';
 import { GameState, SaveFile, NetworkMessage, NetworkRole, PeerInfo, PlayerCharacter, GameSettings, ChatMessage, CollectiveActionState, SimultaneousActionState, NetworkChatMessage } from '../../types';
@@ -48,12 +49,14 @@ interface MultiplayerManagerProps {
     sendMessageRef: React.MutableRefObject<(message: string, image?: { data: string; mimeType: string; } | null) => void>;
     gameStateRef: React.RefObject<GameState | null>;
     onClientEdit?: (conn: DataConnection, message: NetworkMessage) => void;
+    onClientEditResult?: (message: NetworkMessage) => void;
+    onClientEditDisconnect?: () => void;
     onChatMessage: (message: NetworkChatMessage) => void;
     queueHostSyncNotice: (name: string) => void;
 }
 
 
-export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; allowedGameLogs?: WeakSet<string[]>; }
+export interface PendingClientSync { stamp: TurnSyncStamp; snapshot: SaveFile; presentationReplayRequested?: boolean; allowedGameLogs?: WeakSet<string[]>; editCapability?: boolean; editReceipts?: unknown[]; }
 
 type GameContextWorldState = SaveFile['gameContext']['worldState'] | null;
 
@@ -116,7 +119,8 @@ export function stageHostFullSync(message: NetworkMessage, identity: { role: Net
     try {
         const snapshot = props.restoreFromSaveData(message.payload.saveFile, true, identity);
         const stamp = message.payload.protocol as TurnSyncStamp;
-        props.pendingClientSyncRef.current = { stamp, snapshot };
+        props.pendingClientSyncRef.current = { stamp, snapshot, editCapability: hasClientEditCapability(message.payload?.editCapability),
+            editReceipts: Array.isArray(message.payload?.editReceipts) && message.payload.editReceipts.length <= 256 ? message.payload.editReceipts : [] };
         props.observedHostStampRef.current = stamp;
         if (props.pendingSyncRequestRef?.current && message.payload.syncRequestId === props.pendingSyncRequestRef.current) {
             props.pendingSyncRequestRef.current = null;
@@ -242,6 +246,8 @@ export const createMultiplayerManager = (
         gameStateRef,
         onChatMessage,
         onClientEdit,
+        onClientEditResult,
+        onClientEditDisconnect,
         queueHostSyncNotice
     }: MultiplayerManagerProps
 ) => {
@@ -443,6 +449,11 @@ export const createMultiplayerManager = (
                         break;
                     }
 
+                    case 'client_edit_result': {
+                        onClientEditResult?.(message);
+                        break;
+                    }
+
                     case 'turn_result_ack': {
                         const { turnId, status } = message.payload || {};
                         if (typeof turnId !== 'string' || pendingNetworkTurnRef.current !== turnId) break;
@@ -470,6 +481,7 @@ export const createMultiplayerManager = (
             (conn as any).on('close', () => {
                 if (hostConnectionRef.current !== conn) return;
                 hostConnectionRef.current = null;
+                onClientEditDisconnect?.();
                 console.log('Connection to host lost.');
                 setError(t('connection_lost'));
                 setIsLoading(activeTurnRef.current !== null);
