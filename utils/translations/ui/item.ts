@@ -1,5 +1,6 @@
 export const item = {
   en: {
+    "stash_destroy_stale": "The stash changed. Review the item and try again.",
     "stash_destroy_confirmation": "Permanently discard {name} from the shared stash? This cannot be undone.",
     // Item Details
     "Item: {name}": "Item: {name}",
@@ -185,6 +186,7 @@ export const item = {
     "CraftingMaterial": "CraftingMaterial",
   },
   ru: {
+    "stash_destroy_stale": "Тайник изменился. Проверьте предмет и повторите действие.",
     "stash_destroy_confirmation": "Безвозвратно выбросить {name} из общего тайника? Это действие нельзя отменить.",
     // Item Details
     "Item: {name}": "Предмет: {name}",

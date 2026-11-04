@@ -42,6 +42,7 @@ const qualityColorMap: Record<string, string> = {
 const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, onDrop, imageCache, onImageGenerated, gameSettings, confirmDrop = false }) => {
     const { t } = useLocalization();
     const [pendingDrop, setPendingDrop] = useState<Item | null>(null);
+    const [staleDrop, setStaleDrop] = useState(false);
     const [quantities, setQuantities] = useState<Record<string, string>>({});
 
     const handleQuantityChange = (itemId: string, value: string, max: number) => {
@@ -69,6 +70,7 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                 </div>
             </div>
 
+            {staleDrop && <p role="alert" className="text-sm text-yellow-300">{t('stash_destroy_stale')}</p>}
             <div className="space-y-3">
                 {stash.map(item => {
                     const itemQuantityToTake = parseInt(quantities[item.existedId!] ?? '1', 10) || 1;
@@ -115,7 +117,7 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                                     {t('Take')}
                                 </button>
                                 <button
-                                    onClick={() => confirmDrop ? setPendingDrop(item) : onDrop(item)}
+                                    onClick={() => { setStaleDrop(false); if (confirmDrop) setPendingDrop(item); else onDrop(item); }}
                                     className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold text-red-300 bg-red-600/20 rounded-md hover:bg-red-600/40 transition-colors"
                                 >
                                     <TrashIcon className="w-4 h-4" />
@@ -129,6 +131,7 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
             <ConfirmationModal isOpen={!!pendingDrop} onClose={() => setPendingDrop(null)} onConfirm={() => {
                 // A new snapshot invalidates the item the user confirmed.
                 if (pendingDrop && stash.includes(pendingDrop)) onDrop(pendingDrop);
+                else setStaleDrop(true);
                 setPendingDrop(null);
             }} title={t('Drop')}>
                 <p>{t('stash_destroy_confirmation', { name: pendingDrop?.name || '' })}</p>
