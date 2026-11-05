@@ -232,7 +232,7 @@ export default function App(): React.ReactNode {
         addPrompt(sceneImagePrompt);
         addPrompt(gameState.playerCharacter?.image_prompt);
         addPrompt(gameState.currentLocationData?.image_prompt);
-        (gameState.players || []).forEach(player => {
+        withLiveActivePlayer(gameState.players, gameState.playerCharacter).forEach(player => {
             addPrompt(player.image_prompt);
             (player.inventory || []).forEach(item => addPrompt(item.image_prompt));
         });

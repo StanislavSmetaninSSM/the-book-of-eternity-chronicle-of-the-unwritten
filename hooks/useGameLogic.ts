@@ -20,6 +20,7 @@ import { createMusicManager } from './logic/music';
 import { processAndApplyResponse } from '../utils/responseProcessor';
 import { restorePlayerStats } from '../utils/restorePlayer';
 import { cloneGameStateForEdit } from '../utils/gameStateClone';
+import { withLiveActivePlayer } from '../utils/partyView';
 import { recalculateAllWeights } from '../utils/inventoryManager';
 import { recalculateDerivedStats, buildNextContext, createInitialContext, calculateDate, calculateTotalMinutes, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
 import {
@@ -43,6 +44,7 @@ import { deepStripModerationSymbols } from '../utils/textUtils';
 import { gameData } from '../utils/localizationGameData';
 import { translate } from '../utils/localization';
 import { cancelInterruptedArenaGmRequest, requestArenaGmImage } from '../utils/arenaGmRelay';
+import { notifyError } from '../utils/notifications';
 
 
 
@@ -79,6 +81,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // in one React update. Independent setters are still exposed to the rest of
     // the lifecycle, but share one ordered state queue.
     const [core, setCore] = useState<{ gameState: GameState | null; gameHistory: ChatMessage[]; turnNumber: number | null; partyRevision: number }>({ gameState: null, gameHistory: [], turnNumber: null, partyRevision: 0 });
+    // Mirrors the committed core so a transition can be evaluated eagerly to learn
+    // whether it would actually change anything.
+    const coreRef = useRef(core);
+    coreRef.current = core;
     const { gameState, gameHistory, turnNumber } = core;
     const _setGameState = useCallback((action: React.SetStateAction<GameState | null>) => setCore(previous => {
         const next = typeof action === 'function' ? action(previous.gameState) : action;
@@ -307,17 +313,25 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // Unlike separate history/turn setters, this callback is pure inside the
     // React queue. A hold is acquired before scheduling and released only
     // after the matching composite update has committed.
-    // Returns whether the transition was accepted. Callers that own user input
-    // must not discard it when the transition is refused.
+    // Returns whether the transition produced a result that is now queued for commit.
+    // Callers that own user input must not discard it when the transition is refused.
+    // The transition is evaluated eagerly against the committed core so a no-op (an
+    // invalid target, a stale index) reports `false` instead of claiming success.
     const setPartyTransition = useCallback((transition: (state: GameState | null, turn: number | null) => { gameState: GameState; turnNumber: number | null; message: ChatMessage } | null): boolean => {
         if (pendingPartyTransitionRef.current) { setError(mutationMessageRef.current.delivery); return false; }
+        const base = coreRef.current;
+        const outcome = transition(base.gameState, base.turnNumber);
+        if (!outcome) return false;
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
         if (revision === null) { setError(mutationMessageRef.current.delivery); return false; }
         stateMutationRevisionRef.current = revision;
         historyMutationRevisionRef.current = revision;
         pendingPartyTransitionRef.current = { revision };
         setCore(previous => {
-            const result = transition(previous.gameState, previous.turnNumber);
+            // Reuse the eager result unless the committed core moved underneath us.
+            const result = previous.gameState === base.gameState && previous.turnNumber === base.turnNumber
+                ? outcome
+                : transition(previous.gameState, previous.turnNumber);
             if (!result) return { ...previous, partyRevision: revision };
             const state = sanitizeGameState(result.gameState);
             return { ...previous, gameState: state, gameHistory: [...previous.gameHistory, result.message], turnNumber: result.turnNumber, partyRevision: revision };
@@ -442,7 +456,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (gameContextRef.current) {
             if (gameState) {
                 gameContextRef.current.playerCharacter = gameState.playerCharacter;
-                gameContextRef.current.players = gameState.players;
+                // The roster slot of the active character lags behind playerCharacter
+                // between turns; the GM prompt treats `players` as the party snapshot.
+                gameContextRef.current.players = withLiveActivePlayer(gameState.players, gameState.playerCharacter);
                 gameContextRef.current.encounteredNPCs = gameState.encounteredNPCs;
                 gameContextRef.current.encounteredFactions = gameState.encounteredFactions;
                 gameContextRef.current.activeQuests = gameState.activeQuests;
@@ -2281,7 +2297,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                                 if (!prev) return null;
                                 const existing = (prev.cinematics || []).find(c => c.id === cinematic.id);
                                 if (existing) {
-                                    alert('A cinematic with this ID already exists.');
+                                    notifyError('A cinematic with this ID already exists.');
                                     return prev;
                                 }
                                 const cinematics = [...(prev.cinematics || []), cinematic];

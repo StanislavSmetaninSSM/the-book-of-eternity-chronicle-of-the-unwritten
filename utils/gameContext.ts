@@ -1,5 +1,6 @@
 // @ts-ignore -- shared JS helpers
 import { coordinateKey, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
+import { withLiveActivePlayer } from './partyView';
 import { GameState, GameResponse, PlayerCharacter, Characteristics, Location, Faction, Language, LootTemplate, UnlockedMemory, Recipe, Item, WorldStateFlag, SkillMastery, GameSettings, WorldState, NPC, Effect, WorldEvent, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Project, CompletedProject, AdjacencyMapEntry, Calendar, CompleteThreatActivity, Month, NPCInventoryAdd, DayInfo, GameContext, ChatMessage } from '../types';
 import { gameData } from './localizationGameData';
 import { generateLootTemplates } from './lootGenerator';
@@ -943,7 +944,7 @@ export function buildNextContext(
         gameSettings: currentContext.gameSettings,
         worldState: newWorldState,
         worldStateFlags: newState.worldStateFlags,
-        players: newState.players,
+        players: withLiveActivePlayer(newState.players, newState.playerCharacter),
         playerCharacter: newState.players[newActivePlayerIndex],
         currentLocation: newState.currentLocationData,
         visitedLocations: newVisitedLocations,

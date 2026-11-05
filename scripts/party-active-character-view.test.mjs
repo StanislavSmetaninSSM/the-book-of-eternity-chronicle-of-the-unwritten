@@ -27,7 +27,13 @@ test('live active player replaces only the matching roster slot',async()=>{
   assert.deepEqual(withLiveActivePlayer(undefined,live),[]);
   const app=await readFile(new URL('../App.tsx',import.meta.url),'utf8');
   const sidePanel=await readFile(new URL('../components/SidePanel.tsx',import.meta.url),'utf8');
-  assert.equal((app.match(/withLiveActivePlayer\(gameState\.players, gameState\.playerCharacter\)/g)||[]).length,2);
+  // Two party panels plus the image-prompt collector that decides which cached
+  // images may survive a save.
+  assert.equal((app.match(/withLiveActivePlayer\(gameState\.players, gameState\.playerCharacter\)/g)||[]).length,3);
+  const hook=await readFile(new URL('../hooks/useGameLogic.ts',import.meta.url),'utf8');
+  assert.match(hook,/gameContextRef\.current\.players = withLiveActivePlayer\(gameState\.players, gameState\.playerCharacter\)/);
+  const contextBuilder=await readFile(new URL('../utils/gameContext.ts',import.meta.url),'utf8');
+  assert.match(contextBuilder,/players: withLiveActivePlayer\(newState\.players, newState\.playerCharacter\)/);
   assert.match(app,/activePlayerName = gameSettings\?\.cooperativeGameType !== 'None' \? gameState\?\.playerCharacter\?\.name/);
   assert.match(sidePanel,/players=\{withLiveActivePlayer\(gameState\.players, gameState\.playerCharacter\)\}/);
  }finally{await vite.close()}
@@ -65,6 +71,12 @@ test('edits made between turns reach the party view through the live character',
   assert.equal(shown[0].name,'Renamed');
   assert.equal(shown[0].currentHealth,5);
   assert.equal(shown[1].name,'Second');
+  // The GM prompt and saved context treat `players` as the party snapshot, so the
+  // active slot must carry the same live character the GM already receives.
+  const save=api.packageSaveData(api.gameState,false);
+  assert.equal(save.gameContext.players[0].name,'Renamed');
+  assert.equal(save.gameContext.players[0].currentHealth,5);
+  assert.equal(save.gameContext.playerCharacter.name,'Renamed');
  }finally{
   if(root)await act(async()=>root.unmount());
   globalThis.window=old.window;globalThis.document=old.document;
