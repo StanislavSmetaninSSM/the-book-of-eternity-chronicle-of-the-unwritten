@@ -23,18 +23,27 @@ export function localizeLegacyState(state: GameState, context: GameContext): { s
     }
     if (players.length) {
         const ids = players.map(p => p?.playerId).filter(Boolean);
-        if (new Set(ids).size !== ids.length || players.some(p => !p)) {
+        // An empty object carries no identity and no stats: loading it would add
+        // a character that cannot be played.
+        if (new Set(ids).size !== ids.length || players.some(p => !p || Object.keys(p).length === 0)) {
             throw new Error('Cannot safely load this save: party identities are ambiguous. The original save was not changed.');
         }
-        const matches = playerCharacter?.playerId ? players.flatMap((p, i) => p.playerId === playerCharacter.playerId ? [i] : [])
-            : playerCharacter ? players.flatMap((p, i) => JSON.stringify(p) === JSON.stringify(playerCharacter) ? [i] : []) : [];
         const validIndex = Number.isSafeInteger(index) && index >= 0 && index < players.length;
         const network = legacy.networkRole && legacy.networkRole !== 'none';
+        // Some older snapshots kept the roster but lost the separate displayed
+        // character. Recover it from the roster instead of refusing the save.
+        if (!playerCharacter) {
+            if (validIndex) playerCharacter = players[index];
+            else if (players.length === 1) { playerCharacter = players[0]; index = 0; }
+            else throw new Error('Cannot safely load this save: the active character cannot be identified. The original save was not changed.');
+        }
+        const matches = playerCharacter.playerId ? players.flatMap((p, i) => p.playerId === playerCharacter.playerId ? [i] : [])
+            : players.flatMap((p, i) => JSON.stringify(p) === JSON.stringify(playerCharacter) ? [i] : []);
         if (!validIndex || (!network && matches.length === 1 && matches[0] !== index)) {
             if (matches.length !== 1) throw new Error('Cannot safely load this save: the active character cannot be identified. The original save was not changed.');
             index = matches[0];
         }
-        if (!playerCharacter || (matches.length === 0 && players[index] !== playerCharacter)) {
+        if (matches.length === 0 && players[index] !== playerCharacter) {
             throw new Error('Cannot safely load this save: the displayed character does not match the party. The original save was not changed.');
         }
         if (matches.length === 1) players[matches[0]] = playerCharacter;

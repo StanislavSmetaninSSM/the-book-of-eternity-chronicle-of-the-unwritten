@@ -53,5 +53,15 @@ test('malformed party indices resolve only unambiguous identity without overwrit
   assert.deepEqual(restoredEmptyRoster.gameState.players.map(p=>p.playerId),['b']);
   assert.equal(restoredEmptyRoster.gameState.activePlayerIndex,0);
   assert.deepEqual(emptyRoster.gameState.players,[]);
+  // A roster that lost the separate displayed character is healed from the index.
+  const healed=localizeLegacySave({gameState:{players:[a,b],activePlayerIndex:1},gameContext:{}});
+  assert.equal(healed.gameState.playerCharacter.playerId,'b');
+  assert.equal(healed.gameState.activePlayerIndex,1);
+  const healedSingle=localizeLegacySave({gameState:{players:[a],activePlayerIndex:7},gameContext:{}});
+  assert.equal(healedSingle.gameState.playerCharacter.playerId,'a');
+  assert.equal(healedSingle.gameState.activePlayerIndex,0);
+  assert.throws(()=>localizeLegacySave({gameState:{players:[a,b],activePlayerIndex:-1},gameContext:{}}),/active character cannot be identified/);
+  // An empty roster entry would load as a character without identity or stats.
+  assert.throws(()=>localizeLegacySave({gameState:{players:[a,{}],playerCharacter:a,activePlayerIndex:0},gameContext:{}}),/ambiguous/);
  } finally {await server.close()}
 });
