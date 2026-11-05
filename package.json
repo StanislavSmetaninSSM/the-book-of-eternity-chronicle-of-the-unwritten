@@ -11,7 +11,9 @@
     "relay:watch": "node scripts/arena-gm-mailbox-watcher.mjs",
     "test:relay": "node --test scripts/arena-gm-relay.integration.test.mjs",
     "test": "node --test scripts/*.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "e2e:fixtures": "node scripts/make-e2e-fixtures.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.10.0",
@@ -22,6 +24,7 @@
     "react-dom": "^19.0.0-rc.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

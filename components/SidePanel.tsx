@@ -488,6 +488,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
             return (
                 <button
                 key={tab.name}
+                data-testid={`side-tab-${tab.name}`}
                 onClick={() => onSetSidePanelView(tab.name)}
                 className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors relative ${
                     isStashTab
