@@ -19,7 +19,7 @@ test('legacy host, player and spectator saves become local without losing party,
       assert.equal(migrated.gameState.collectiveActionState, undefined);
       assert.deepEqual(migrated.gameState.legacyNetworkActions, [pending]);
       assert.deepEqual(migrated.gameState.players, characters);
-      assert.equal(migrated.gameState.activePlayerIndex, 1);
+      assert.equal(migrated.gameState.activePlayerIndex, role && role !== 'none' ? 1 : 0);
       assert.equal(migrated.gameState.playerCharacter.playerId, role && role !== 'none' ? 'peer-2' : 'peer-1');
       assert.equal(migrated.gameContext.playerCharacter, migrated.gameState.playerCharacter);
       assert.deepEqual(migrated.gameHistory, original.gameHistory);
@@ -28,4 +28,23 @@ test('legacy host, player and spectator saves become local without losing party,
       assert.deepEqual(localizeLegacySave(migrated).gameState.legacyNetworkActions, [pending]);
     }
   } finally { await server.close(); }
+});
+
+test('malformed party indices resolve only unambiguous identity without overwriting characters', async () => {
+ const server = await createServer({configFile:false,server:{middlewareMode:true},appType:'custom',logLevel:'error'});
+ try {
+  const {localizeLegacySave}=await server.ssrLoadModule('/utils/localizeLegacySave.ts');
+  const a={playerId:'a'}, b={playerId:'b'};
+  for (const role of ['host','none',undefined]) {
+   const save={gameState:{networkRole:role,players:[a,b],playerCharacter:b,activePlayerIndex:-1},gameContext:{}};
+   const result=localizeLegacySave(save);
+   assert.deepEqual(result.gameState.players.map(p=>p.playerId),['a','b']);
+   assert.equal(result.gameState.activePlayerIndex,1);
+   assert.equal(save.gameState.activePlayerIndex,-1);
+  }
+  assert.throws(()=>localizeLegacySave({gameState:{players:[a,b],playerCharacter:{playerId:'missing'},activePlayerIndex:-1},gameContext:{}}),/Cannot safely load/);
+  assert.throws(()=>localizeLegacySave({gameState:{players:[a,a],playerCharacter:a,activePlayerIndex:0},gameContext:{}}),/ambiguous/);
+  const fallback=localizeLegacySave({gameState:{playerCharacter:b,activePlayerIndex:-1},gameContext:{players:[a,b],playerCharacter:b}});
+  assert.deepEqual(fallback.gameState.players.map(p=>p.playerId),['a','b']);
+ } finally {await server.close()}
 });

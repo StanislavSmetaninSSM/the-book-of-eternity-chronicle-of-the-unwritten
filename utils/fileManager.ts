@@ -420,6 +420,7 @@ export async function loadStartScreenDraft(): Promise<StartScreenDraft> {
 export interface PlayerActionDraft {
   content: string;
   isQuestionMode: boolean;
+  image?: { dataUrl: string; mimeType: string } | null;
 }
 
 export async function loadPlayerActionDraft(playerId: string): Promise<PlayerActionDraft | null> {
@@ -431,7 +432,7 @@ export async function loadPlayerActionDraft(playerId: string): Promise<PlayerAct
       request.onsuccess = () => {
         const data = request.result?.data;
         resolve(data && typeof data.content === 'string'
-          ? { content: data.content, isQuestionMode: Boolean(data.isQuestionMode) }
+          ? { content: data.content, isQuestionMode: Boolean(data.isQuestionMode), image: data.image && typeof data.image.dataUrl === 'string' && typeof data.image.mimeType === 'string' ? data.image : null }
           : null);
       };
       request.onerror = () => reject(request.error);
@@ -447,7 +448,7 @@ export async function savePlayerActionDraft(playerId: string, draft: PlayerActio
   const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
   const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
   const id = `player_action_draft:${playerId}`;
-  if (draft?.content.trim()) {
+  if (draft && (draft.content.trim() || draft.image)) {
     store.put({ id, updatedAt: new Date().toISOString(), data: draft });
   } else {
     store.delete(id);

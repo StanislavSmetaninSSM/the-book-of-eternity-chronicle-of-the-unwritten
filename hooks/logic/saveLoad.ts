@@ -238,8 +238,8 @@ export const createSaveLoadManager = (
         if (!canCommit) return false;
         const data = await loadGameFromFile(t);
         if (!data || !canCommit()) return false;
-        restoreFromSaveData(data);
-        return true;
+        try { restoreFromSaveData(data); return true; }
+        catch (e) { alert(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`); return false; }
     };
 
     const loadAutosave = async (): Promise<boolean> => {
@@ -248,8 +248,8 @@ export const createSaveLoadManager = (
         const data = await loadFromDB();
         if (!data) { alert(t("No autosave data found.")); return false; }
         if (!canCommit()) return false;
-        restoreFromSaveData(data);
-        return true;
+        try { restoreFromSaveData(data); return true; }
+        catch (e) { alert(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`); return false; }
     };
 
     const refreshDbSaveSlots = async () => {
@@ -290,7 +290,7 @@ export const createSaveLoadManager = (
             return true;
         } catch (e) {
             console.error("Load from slot failed", e);
-            alert(t('Failed to load game.'));
+            alert(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`);
             return false;
         }
     };

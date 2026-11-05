@@ -28,8 +28,8 @@ import LoadingSpinner from './LoadingSpinner';
 import { loadPlayerActionDraft, savePlayerActionDraft } from '../utils/fileManager';
 
 interface InputBarProps {
-  onSendMessage: (message: string, image?: { data: string; mimeType: string; } | null) => void;
-  onAskQuestion: (question: string, image?: { data: string; mimeType: string; } | null) => void;
+  onSendMessage: (message: string, image?: { data: string; mimeType: string; } | null) => Promise<boolean>;
+  onAskQuestion: (question: string, image?: { data: string; mimeType: string; } | null) => Promise<boolean>;
   onCancelRequest: () => void;
   onClearHalfHistory: () => void;
   isLoading: boolean;
@@ -147,6 +147,10 @@ const MarkdownToolbar: React.FC<{
 
 export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, gameSettings, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
   const [content, setContent] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const draftKeyRef = useRef<string | null>(null);
+  const currentDraftRef = useRef<{ content: string; image: { dataUrl: string; mimeType: string } | null; question: boolean } | null>(null);
   const [isActionDraftReady, setIsActionDraftReady] = useState(false);
   const [loadedActionDraftKey, setLoadedActionDraftKey] = useState<string | null>(null);
   const [isQuestionMode, setIsQuestionMode] = useState(false);
@@ -163,20 +167,16 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
     actionDraftWarningShownRef.current = true;
   };
   const playerActionDraftKey = playerCharacter?.playerId || gameState?.playerCharacter?.playerId || null;
-  const updateContent = (nextContent: string) => {
-    setContent(nextContent);
-    if (playerActionDraftKey && isActionDraftReady && loadedActionDraftKey === playerActionDraftKey) {
-      void savePlayerActionDraft(playerActionDraftKey, nextContent.trim()
-        ? { content: nextContent, isQuestionMode }
-        : null).catch(reportActionDraftError);
-    }
-  };
+  draftKeyRef.current = playerActionDraftKey;
+  currentDraftRef.current = { content, image: selectedImage, question: isQuestionMode };
+  const updateContent = (nextContent: string) => setContent(nextContent);
 
   useEffect(() => {
     let cancelled = false;
     setIsActionDraftReady(false);
     setLoadedActionDraftKey(null);
     setContent('');
+    setSelectedImage(null);
     setIsQuestionMode(false);
     if (!playerActionDraftKey) {
       setIsActionDraftReady(true);
@@ -187,6 +187,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       if (draft) {
         setContent(draft.content);
         setIsQuestionMode(draft.isQuestionMode);
+        setSelectedImage(draft.image || null);
       }
       setLoadedActionDraftKey(playerActionDraftKey);
     }).finally(() => {
@@ -197,39 +198,42 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
 
   useEffect(() => {
     if (!playerActionDraftKey || !isActionDraftReady || loadedActionDraftKey !== playerActionDraftKey) return;
-    void savePlayerActionDraft(playerActionDraftKey, content.trim()
-      ? { content, isQuestionMode }
+    void savePlayerActionDraft(playerActionDraftKey, content.trim() || selectedImage
+      ? { content, isQuestionMode, image: selectedImage }
       : null).catch(reportActionDraftError);
-  }, [isQuestionMode, isActionDraftReady, loadedActionDraftKey, playerActionDraftKey]);
+  }, [content, selectedImage, isQuestionMode, isActionDraftReady, loadedActionDraftKey, playerActionDraftKey]);
 
   const lastPlayerMessage = useMemo(() =>
     history.slice().reverse().find(m => m.sender === 'player'),
   [history]);
 
-  const isDisabled = isLoading;
+  const isDisabled = isLoading || isSubmitting || !isActionDraftReady;
   const isMyTurn = true;
   const placeholderText = isLoading ? t("Waiting for game synchronization...") : isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?");
 
-  const doSubmit = useCallback(() => {
-    if (isDisabled || (content.trim() === '' && !selectedImage)) return;
-    if (playerActionDraftKey) {
-      void savePlayerActionDraft(playerActionDraftKey, null).catch(reportActionDraftError);
-    }
-
+  const doSubmit = useCallback(async () => {
+    if (isDisabled || submittingRef.current || (content.trim() === '' && !selectedImage)) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    const submittedKey = playerActionDraftKey;
     const imagePayload = selectedImage ? { data: selectedImage.dataUrl.split(',')[1], mimeType: selectedImage.mimeType } : null;
-
-    if (isQuestionMode) {
-        onAskQuestion(content, imagePayload);
+    try {
+      const accepted = await (isQuestionMode ? onAskQuestion(content, imagePayload) : onSendMessage(content, imagePayload));
+      if (accepted && draftKeyRef.current === submittedKey && currentDraftRef.current?.content === content &&
+          currentDraftRef.current?.image === selectedImage && currentDraftRef.current?.question === isQuestionMode) {
+        if (submittedKey) void savePlayerActionDraft(submittedKey, null).catch(reportActionDraftError);
+        setContent('');
+        setSelectedImage(null);
         setIsQuestionMode(false);
-    } else {
-        onSendMessage(content, imagePayload);
+        setActiveView('write');
+        setTimeout(() => textareaRef.current?.focus(), 0);
+      }
+    } catch (error) {
+      console.error('Submission was not accepted:', error);
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
-
-    setContent('');
-    setSelectedImage(null);
-    setActiveView('write');
-    setTimeout(() => textareaRef.current?.focus(), 0);
-
   }, [isDisabled, isQuestionMode, onAskQuestion, onSendMessage, content, selectedImage, playerActionDraftKey]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -240,7 +244,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
   };
 
   const handleRepeat = () => {
-    if (lastPlayerMessage && !isLoading) {
+    if (lastPlayerMessage && !isDisabled) {
       const isLastMessageAQuestion = lastPlayerMessage.content.startsWith('[Question]');
 
       if (isLastMessageAQuestion) {
@@ -291,7 +295,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); doSubmit(); }} className="mt-auto space-y-2 pointer-events-auto">
-      {suggestedActions && suggestedActions.length > 0 && !isLoading && isMyTurn && (
+      {suggestedActions && suggestedActions.length > 0 && !isDisabled && isMyTurn && (
         <div className="pb-2">
           <div className="flex justify-center items-center mb-2">
             <button
@@ -341,6 +345,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
             <img src={selectedImage.dataUrl} alt="Selected preview" className="w-full h-full object-cover rounded" />
             <button
                 type="button"
+                disabled={isDisabled}
                 onClick={() => setSelectedImage(null)}
                 className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-0.5"
                 title={t('Remove Image')}

@@ -907,7 +907,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 shareCharacteristics: gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false,
                 templatePlayer: creationData.templatePlayer
             });
-        setGameState(prev => prev ? { ...prev, players: [...prev.players, newPlayer] } : prev);
+        setGameState(prev => {
+            if (!prev) return prev;
+            const players = [...prev.players];
+            if (Number.isSafeInteger(prev.activePlayerIndex) && prev.activePlayerIndex >= 0 && prev.activePlayerIndex < players.length) {
+                players[prev.activePlayerIndex] = prev.playerCharacter;
+            }
+            return { ...prev, players: [...players, newPlayer] };
+        });
         setGameHistory(prev => [...prev, { sender: 'system', content: t('player_joined', { name: newPlayer.name }) }]);
     }, [gameSettings, t, setGameState, setGameHistory, userGameplayActionBlocked]);
 
@@ -926,7 +933,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const targets = prevState.players.filter(p => p?.playerId === playerIdToRemove);
             if (targets.length !== 1) return null;
             const playerToRemove = targets[0];
-            const newPlayers = prevState.players.filter(p => p.playerId !== playerIdToRemove);
+            const synchronizedPlayers = [...prevState.players];
+            synchronizedPlayers[prevState.activePlayerIndex] = prevState.playerCharacter;
+            const newPlayers = synchronizedPlayers.filter(p => p.playerId !== playerIdToRemove);
             let newActivePlayerIndex = prevState.activePlayerIndex;
             const removedPlayerIndex = prevState.players.findIndex(p => p.playerId === playerIdToRemove);
 
@@ -1164,8 +1173,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 : 'Interrupted-turn recovery requires a local checkpoint and an idle game.');
             return;
         }
-        const localized = localizeLegacyState(recovery.baseState, recovery.context);
-        return allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
+        try {
+            const localized = localizeLegacyState(recovery.baseState, recovery.context);
+            return allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
+        } catch (error) { setError(formatError(error)); return; }
     }, [allManagers, language, setError]);
 
     const resumeInterruptedGameTurn = useCallback(async () => {
@@ -1191,13 +1202,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 : 'Automatic interrupted-turn recovery is only supported for local games. For network games, restore the latest save manually.');
             return false;
         }
+        let localized: ReturnType<typeof localizeLegacyState>;
+        try { localized = localizeLegacyState(recovery.baseState, recovery.context); }
+        catch (error) { setError(formatError(error)); return false; }
         await cancelInterruptedArenaGmRequest();
         // Cancellation and checkpoint reads can both yield to a connection,
         // restore, turn, or local edit. Do not clear the recovery on refusal.
         if (blocked()) return reject();
         setInterruptedTurnRecovery(null);
         setError(null);
-        const localized = localizeLegacyState(recovery.baseState, recovery.context);
         void allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
         return true;
     }, [allManagers, interruptedTurnRecovery, language, setError]);
@@ -2021,9 +2034,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const cinemaFrames = playingCinematic?.frames || null;
     const closeCinemaPlayer = stopPlayingCinematic;
 
-    const runLocalSubmission = useCallback(async (kind: 'action' | 'question', text: string, image?: { data: string; mimeType: string } | null) => {
-        if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current || !gameStateRef.current || !gameContextRef.current) return;
-        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
+    const runLocalSubmission = useCallback(async (kind: 'action' | 'question', text: string, image?: { data: string; mimeType: string } | null): Promise<boolean> => {
+        if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current || !gameStateRef.current || !gameContextRef.current) return false;
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return false; }
         isTurnSubmitPendingRef.current = true;
         const startingRevision = syncRevisionRef.current;
         const startingGameplayRevision = gameplayMutationRevisionRef.current;
@@ -2031,12 +2044,22 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             await savePreActionCrashRecovery();
             if (syncRevisionRef.current !== startingRevision ||
                 gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
-                setError(t('turn_game_state_changed')); return;
+                setError(t('turn_game_state_changed')); isTurnSubmitPendingRef.current = false; return false;
             }
-            if (kind === 'action' && text.trim().toLowerCase() === '[system action] pass turn') return passTurnManually();
-            return kind === 'action' ? await allManagers.sendMessage(text, image) : await allManagers.askQuestion(text, image);
-        } finally { isTurnSubmitPendingRef.current = false; }
-    }, [isLoading, t, savePreActionCrashRecovery, passTurnManually, allManagers]);
+            // Acceptance is distinct from completion: once dispatched, failures may
+            // occur after a committed turn and must not cause automatic retries.
+            const task = kind === 'action' && text.trim().toLowerCase() === '[system action] pass turn'
+                ? Promise.resolve(passTurnManually())
+                : kind === 'action' ? allManagers.sendMessage(text, image) : allManagers.askQuestion(text, image);
+            void Promise.resolve(task).catch(error => { console.error('Submission failed', error); setError(formatError(error)); })
+                .finally(() => { isTurnSubmitPendingRef.current = false; });
+            return true;
+        } catch (error) {
+            isTurnSubmitPendingRef.current = false;
+            setError(formatError(error));
+            return false;
+        }
+    }, [isLoading, t, savePreActionCrashRecovery, passTurnManually, allManagers, setError]);
     const sendMessageWithStashClear = useCallback((message: string, image?: { data: string; mimeType: string } | null) => runLocalSubmission('action', message, image), [runLocalSubmission]);
     const askQuestionWithRecovery = useCallback((question: string, image?: { data: string; mimeType: string } | null) => runLocalSubmission('question', question, image), [runLocalSubmission]);
 

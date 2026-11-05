@@ -49,6 +49,17 @@ test('old network saves load via production slots into a usable local party with
       assert.equal(api.gameState.playerCharacter.name,'First');
       await act(async()=>{await new Promise(r=>setTimeout(r,50))});
     }
+    // Malformed legacy active index: the displayed second character must not overwrite the first.
+    const c=createInitialContext({universe:'fantasy',playerName:'A',race:'Human',charClass:'Warrior',initialPrompt:'Start',startingYear:1000,startingMonth:'January',startingDay:1,startTime:'08:00',weather:'Clear'},'en');
+    const first={...c.playerCharacter,playerId:'mal-a',name:'A'}, second={...first,playerId:'mal-b',name:'B'};
+    c.players=[first,second];c.playerCharacter=second;
+    const state={...api.gameState,players:[first,second],playerCharacter:second,activePlayerIndex:-1,networkRole:'host'};
+    await saveToDBSlot(3,{gameContext:c,gameState:state,gameHistory:[],gameLog:[],combatLog:[],lastJsonResponse:null,sceneImagePrompt:null,timestamp:new Date().toISOString()});
+    await act(async()=>assert.equal(await api.loadGameFromSlot(3),true));
+    assert.deepEqual(api.gameState.players.map(p=>p.playerId),['mal-a','mal-b']);assert.equal(api.gameState.activePlayerIndex,1);
+    await saveToDBSlot(4,api.packageSaveData(api.gameState,false));
+    await act(async()=>assert.equal(await api.loadGameFromSlot(4),true));
+    assert.deepEqual(api.gameState.players.map(p=>p.playerId),['mal-a','mal-b']);
   } finally {
     if(root)await act(async()=>root.unmount());
     globalThis.window=old.window;globalThis.document=old.document;Object.defineProperty(globalThis,'navigator',{value:old.navigator,configurable:true});globalThis.localStorage=old.localStorage;globalThis.IS_REACT_ACT_ENVIRONMENT=old.act;dom.window.close();await vite.close();
