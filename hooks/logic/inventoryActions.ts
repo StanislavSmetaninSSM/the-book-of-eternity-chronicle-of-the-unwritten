@@ -17,6 +17,7 @@ import {
     mergeItemStacksForNpc as mergeItemForNpcUtil
 } from '../../utils/inventoryManager';
 import { recalculateDerivedStats } from '../../utils/gameContext';
+import { cloneGameStateForEdit } from '../../utils/gameStateClone';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
@@ -232,7 +233,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
 
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             let pc = newState.playerCharacter as PlayerCharacter;
             
             let inventory = pc.inventory as Item[];
@@ -306,7 +307,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
 
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === npcId);
             if (npcIndex === -1) return prevState;
 
@@ -429,7 +430,7 @@ export const createInventoryActions = (
     const forgetHealedWound = (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => {
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => w.woundId !== woundId);
@@ -452,7 +453,7 @@ export const createInventoryActions = (
     const forgetActiveWound = (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => {
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             
             let woundToRemove: Wound | undefined;
 
@@ -495,7 +496,7 @@ export const createInventoryActions = (
     const clearAllHealedWounds = (characterType: 'player' | 'npc', characterId: string | null) => {
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => !w.healingState || w.healingState.currentState !== 'Healed');
