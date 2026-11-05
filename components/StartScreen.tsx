@@ -7,7 +7,7 @@ import ConfirmationModal from './ConfirmationModal';
 import { useLocalization } from '../context/LocalizationContext';
 import { gameData } from '../utils/localizationGameData';
 import AboutContent from './AboutContent';
-import { DBSaveSlotInfo, NetworkRole, Calendar, Month, DayInfo } from '../types';
+import { DBSaveSlotInfo, Calendar, Month, DayInfo } from '../types';
 import { cultivationSystemDescEn, cultivationSystemDescRu } from '../utils/translations/presetRules/fantasy/cultivation';
 import { magicSystemDescEn, magicSystemDescRu } from '../utils/translations/presetRules/fantasy/magic';
 import { priesthoodSystemDescEn, priesthoodSystemDescRu } from '../utils/translations/presetRules/fantasy/priesthood';
@@ -33,8 +33,6 @@ const cooperativeModeButtonBaseClass = 'min-w-0 min-h-[5rem] px-2 py-3 rounded-m
 
 interface StartScreenProps {
     onStartLocal: (creationData: any) => void;
-    onStartHost: (creationData: any) => void;
-    onJoinGame: (hostId: string, role: NetworkRole, playerName: string) => void;
     onLoadGame: () => Promise<void>;
     onLoadAutosave: () => Promise<boolean>;
     autosaveTimestamp: string | null;
@@ -54,7 +52,6 @@ const initialFormData = {
     customEraName: '',
     customSettingName: '',
     playerName: '',
-    multiplayerNickname: '',
     characterDescription: '',
     initialPrompt: '',
     worldInformation: '',
@@ -220,13 +217,12 @@ const CreationForm: React.FC<CreationFormProps> = ({
 }) => {
     const { t } = useLocalization();
     const { universe, race, charClass, cooperativeGameType, multiplePersonalitiesSettings, hardMode, impossibleMode, startingMonth, startingDay } = formData;
-    const isHostMode = submitButtonText === t('Create Game (Host)');
-    const isSubmitDisabled = (submitButtonText === t('Begin Your Adventure') || submitButtonText === t('Create Game (Host)')) && formData.universe === 'custom' && !formData.selectedEra;
+    const isSubmitDisabled = submitButtonText === t('Begin Your Adventure') && formData.universe === 'custom' && !formData.selectedEra;
 
     const FULL_WEATHER_OPTIONS = useMemo(() => Object.keys(weatherTranslations.en), []);
 
     const raceOptions = useMemo(() => Object.keys(currentWorld.races), [currentWorld]);
-    
+
     const availableClassesForRace = useMemo(() => {
         const selectedRaceData = (currentWorld as any).races[race];
         return selectedRaceData?.availableClasses || null;
@@ -239,7 +235,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
         }
         return allClasses;
     }, [currentWorld.classes, availableClassesForRace]);
-    
+
     const selectedRaceInfo = currentWorld.races[race];
     const selectedClassInfo = currentWorld.classes[charClass];
     const nonMagicDisabled = formData.universe === 'history';
@@ -284,7 +280,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
             : (totalDays % calendar.daysInWeek + calendar.daysInWeek) % calendar.daysInWeek;
 
         const dayOfWeek = calendar.dayNames[dayOfWeekIndex] || null;
-        
+
         let dayOfWeekName = '';
         let dayOfWeekDescription = '';
         if (dayOfWeek) {
@@ -372,7 +368,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                     </div>
                 </div>
             )}
-          
+
             <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50 space-y-4">
                 <h4 className="font-semibold text-gray-300 mb-3">{t("Calendar")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -412,22 +408,22 @@ const CreationForm: React.FC<CreationFormProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                     <label htmlFor="startTime" className="block text-sm font-medium text-gray-300 mb-2">{t("Starting Time")}</label>
-                    <input 
-                        id="startTime" 
-                        name="startTime" 
-                        type="time" 
-                        onChange={handleInputChange} 
-                        value={formData.startTime} 
-                        className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" 
+                    <input
+                        id="startTime"
+                        name="startTime"
+                        type="time"
+                        onChange={handleInputChange}
+                        value={formData.startTime}
+                        className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition"
                     />
                 </div>
                 <div>
                     <label htmlFor="weather" className="block text-sm font-medium text-gray-300 mb-2">{t("Starting Weather")}</label>
-                    <select 
-                        id="weather" 
-                        name="weather" 
-                        onChange={handleInputChange} 
-                        value={formData.weather} 
+                    <select
+                        id="weather"
+                        name="weather"
+                        onChange={handleInputChange}
+                        value={formData.weather}
                         className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition"
                     >
                         <option value="Random">{t("Random")}</option>
@@ -436,8 +432,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 </div>
             </div>
 
-            {!isHostMode && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label htmlFor="playerName" className="block text-sm font-medium text-gray-300 mb-2">{t("Character Name")}</label>
                         <input id="playerName" name="playerName" type="text" onChange={handleInputChange} value={formData.playerName} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" required />
@@ -446,9 +441,8 @@ const CreationForm: React.FC<CreationFormProps> = ({
                         <label htmlFor="age" className="block text-sm font-medium text-gray-300 mb-2">{t("Age")}</label>
                         <input id="age" name="age" type="number" onChange={handleInputChange} value={formData.age} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" required min="1" />
                     </div>
-                </div>
-            )}
-          
+            </div>
+
             <div>
                 <label htmlFor="currencyName" className="block text-sm font-medium text-gray-300 mb-2">{t("Currency Name")}</label>
                 <select
@@ -485,7 +479,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                     {selectedClassInfo && <p className="text-xs text-cyan-300/80 mt-2">{t(selectedClassInfo.description as any)}</p>}
                 </div>
             </div>
-          
+
             <div>
                 <label htmlFor="characterDescription" className="block text-sm font-medium text-gray-300 mb-2">{t("Character Description")}</label>
                 <textarea id="characterDescription" name="characterDescription" onChange={handleInputChange} value={formData.characterDescription} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t("e.g., A grizzled warrior with a scarred face...")} rows={3} required />
@@ -520,7 +514,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                     rows={4}
                 />
             </div>
-            
+
             <fieldset className="space-y-4">
                 <h3 className="text-xl font-bold text-cyan-400 mb-2 narrative-text">{t("Game Rules")}</h3>
                 <div className="p-4 bg-gray-900/30 rounded-lg border border-cyan-500/20 space-y-4">
@@ -573,7 +567,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                                 )}
                             </div>
                         )}
-        
+
                         {formData.universe === 'sci_fi' && (
                             <div className="space-y-3 animate-fade-in-down">
                                 <ToggleSwitch label={t('Activate Psionic Power System')} description="" name="usePsionicSystemSciFi" checked={formData.usePsionicSystemSciFi} onChange={handleCheckboxChange} />
@@ -585,7 +579,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                                 )}
                             </div>
                         )}
-                        
+
                         {formData.universe === 'post_apocalypse' && (
                             <div className="space-y-3 animate-fade-in-down">
                                 <ToggleSwitch label={t('Activate Hunger System')} description="" name="useHungerSystem" checked={formData.useHungerSystem} onChange={handleCheckboxChange} />
@@ -618,7 +612,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                                 )}
                             </div>
                         )}
-        
+
                         {formData.universe === 'urban_myth' && (
                             <div className="space-y-3 animate-fade-in-down">
                                 <ToggleSwitch label={t('Activate Urban Magic System')} description="" name="useUrbanMagicSystem" checked={formData.useUrbanMagicSystem} onChange={handleCheckboxChange} />
@@ -648,7 +642,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                                 )}
                             </div>
                         )}
-                        
+
                         {formData.universe === 'myths' && (
                             <div className="space-y-3 animate-fade-in-down">
                                 <ToggleSwitch label={t('Activate Old Magic of Albion System')} description="" name="useOldMagicSystem" checked={formData.useOldMagicSystem} onChange={handleCheckboxChange} />
@@ -670,11 +664,11 @@ const CreationForm: React.FC<CreationFormProps> = ({
                     </div>
                 </div>
             </fieldset>
-            
+
             <div className="p-4 bg-slate-900/30 rounded-lg border border-slate-700 space-y-4">
                 <h3 className="text-lg font-semibold text-cyan-400">{t('cooperative_mode')}</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <button type="button" onClick={() => handleCoopTypeChange('None')} disabled={submitButtonText.includes('Host')} className={`${cooperativeModeButtonBaseClass} ${cooperativeGameType === 'None' ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'} ${submitButtonText.includes('Host') ? 'opacity-50 cursor-not-allowed' : ''}`}>{t('single_player')}</button>
+                    <button type="button" onClick={() => handleCoopTypeChange('None')} className={`${cooperativeModeButtonBaseClass} ${cooperativeGameType === 'None' ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}>{t('single_player')}</button>
                     <button type="button" onClick={() => handleCoopTypeChange('MultiplePersonalities')} className={`${cooperativeModeButtonBaseClass} ${cooperativeGameType === 'MultiplePersonalities' ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}>{t('multiple_personalities')}</button>
                     <button type="button" onClick={() => handleCoopTypeChange('FullParty')} className={`${cooperativeModeButtonBaseClass} ${cooperativeGameType === 'FullParty' ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}>{t('full_party')}</button>
                 </div>
@@ -682,7 +676,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                     {cooperativeGameType === 'MultiplePersonalities' ? t('multiple_personalities_desc') :
                         cooperativeGameType === 'FullParty' ? t('full_party_desc') : ''}
                 </p>
-                
+
                 {cooperativeGameType === 'MultiplePersonalities' && (
                     <div className="p-3 bg-gray-800/30 rounded-md mt-4 space-y-3 animate-fade-in-down">
                         <h4 className="font-medium text-gray-300">{t("multiple_personalities_settings")}</h4>
@@ -751,7 +745,7 @@ const stripApiKeysFromDraft = (value: unknown): unknown => {
     return value;
 };
 
-export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onLoadGame, onLoadAutosave, autosaveTimestamp, crashRecoveryInfo, crashRecoveryMarker, onLoadCrashRecovery, interruptedTurnRecoveryMessage, onResumeInterruptedTurn, onDiscardInterruptedTurn, onLoadFromSlot, dbSaveSlots }: StartScreenProps) {
+export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, autosaveTimestamp, crashRecoveryInfo, crashRecoveryMarker, onLoadCrashRecovery, interruptedTurnRecoveryMessage, onResumeInterruptedTurn, onDiscardInterruptedTurn, onLoadFromSlot, dbSaveSlots }: StartScreenProps) {
     const [formData, setFormDataState] = useState(initialFormData);
     const [customGameData, setCustomGameDataState] = useState(() => JSON.parse(JSON.stringify(gameData)));
     const formDataRef = useRef(formData);
@@ -791,16 +785,11 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
     const [isNonMagicConfirmOpen, setIsNonMagicConfirmOpen] = useState(false);
     const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
     const { language, setLanguage, t } = useLocalization();
-    const [activeTab, setActiveTab] = useState<'local' | 'network'>('local');
-    const [networkTab, setNetworkTab] = useState<'host' | 'join'>('host');
-    const [joinRole, setJoinRole] = useState<NetworkRole>('player');
-    const [hostId, setHostId] = useState('');
     const [isCreatingUniverse, setIsCreatingUniverse] = useState(false);
     const [newUniverseName, setNewUniverseName] = useState('');
     const [newUniverseDescription, setNewUniverseDescription] = useState('');
     const [isConfigLoading, setIsConfigLoading] = useState(false);
     const [isRecoveryActionPending, setIsRecoveryActionPending] = useState(false);
-    const [joinPlayerName, setJoinPlayerName] = useState('');
 
     const handleResumeInterruptedTurn = async () => {
         if (isRecoveryActionPending) return;
@@ -848,20 +837,6 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
     }, [preparedConfigurationFile]);
 
     useEffect(() => {
-        if (activeTab === 'network' && networkTab === 'host') {
-            setFormData(prev => ({
-                ...prev,
-                cooperativeGameType: prev.cooperativeGameType === 'None' ? 'MultiplePersonalities' : prev.cooperativeGameType
-            }));
-        } else if (activeTab === 'local') {
-            setFormData(prev => ({
-                ...prev,
-                cooperativeGameType: 'None'
-            }));
-        }
-    }, [activeTab, networkTab]);
-  
-    useEffect(() => {
         setFormData(prev => {
             const newDescriptions: Partial<typeof prev> = {};
             if (prev.cultivationSystemDescription === cultivationSystemDescEn || prev.cultivationSystemDescription === cultivationSystemDescRu) newDescriptions.cultivationSystemDescription = language === 'ru' ? cultivationSystemDescRu : cultivationSystemDescEn;
@@ -881,7 +856,6 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
         });
     }, [language]);
 
-    const isHostMode = activeTab === 'network' && networkTab === 'host';
 
     const handleLanguageToggle = () => {
         const newLang = language === 'ru' ? 'en' : 'ru';
@@ -940,10 +914,10 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                     }
                 }
             };
-        
+
             const defaultCalendar = gameData.fantasy.calendar;
             addDefaultCalendarRecursively(newGameData, defaultCalendar);
-        
+
             setCustomGameData(newGameData);
             const loadedFormData = { ...loadedData.formData } as typeof initialFormData & Record<string, unknown>;
             [
@@ -963,7 +937,7 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
         let world;
 
         if (universe === 'custom') {
-            world = (gameDataSource.custom && (gameDataSource.custom as any)[selectedEra]) 
+            world = (gameDataSource.custom && (gameDataSource.custom as any)[selectedEra])
                 || { name: selectedEra || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] };
         } else if (universe === 'history') {
             world = gameDataSource.history[selectedEra as keyof typeof gameDataSource.history];
@@ -980,14 +954,14 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
 
         return world;
     }, [formData.universe, formData.selectedEra, customGameData, t]);
-  
+
     useEffect(() => {
         if (isConfigLoading) return;
-    
+
         const newWorld = currentWorld;
         // Don't reset calendar values here; only validate options.
         // Calendar resets should only happen on explicit manual universe change.
-    
+
         setFormData(prev => {
             const newRaceOptions = Object.keys(newWorld.races || {});
             const newClassOptions = Object.keys(newWorld.classes || {});
@@ -998,14 +972,14 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
             if (newCurrencyOptions.length === 0) {
                 newCurrencyOptions.push('Gold'); // Absolute fallback
             }
-        
+
             const isCurrentRaceValid = newRaceOptions.includes(prev.race);
             const isCurrentClassValid = newClassOptions.includes(prev.charClass);
             const isCurrentCurrencyValid = newCurrencyOptions.includes(prev.currencyName) || prev.currencyName === 'CUSTOM';
-        
+
             const firstRace = newRaceOptions[0] || 'Human';
             const firstClass = newClassOptions[0] || 'Warrior';
-        
+
             return {
                 ...prev,
                 race: isCurrentRaceValid ? prev.race : firstRace,
@@ -1020,11 +994,11 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-    
+
         if (name === 'universe' || name === 'selectedEra') {
             let newUniverse = formData.universe;
             let newEra = formData.selectedEra;
-    
+
             if (name === 'universe') {
                 newUniverse = value;
                 // This is the fix: when the universe changes, we need to pick a default era for that new universe
@@ -1038,11 +1012,11 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
             } else { // name === 'selectedEra'
                 newEra = value;
             }
-    
+
             const getNewWorldData = (universe: string, era: string) => {
                 const gameDataSource = customGameData || gameData;
                 if (universe === 'custom') {
-                    return ((gameDataSource.custom as any) && (gameDataSource.custom as any)[era]) 
+                    return ((gameDataSource.custom as any) && (gameDataSource.custom as any)[era])
                         || { name: era || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] };
                 }
                 if (universe === 'history') {
@@ -1053,9 +1027,9 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                 }
                 return (gameDataSource as any)[universe];
             };
-    
+
             const newWorld = getNewWorldData(newUniverse, newEra);
-            
+
             if (!newWorld) {
                 console.error(`Could not find world data for universe ${newUniverse} and era ${newEra}.`);
                 setFormData(prev => ({
@@ -1065,10 +1039,10 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                 }));
                 return;
             }
-    
+
             const newRaceOptions = Object.keys(newWorld.races || {});
             const firstRace = newRaceOptions[0] || 'Human';
-            
+
             const selectedRaceData = (newWorld.races || {})[firstRace];
             const availableClasses = selectedRaceData?.availableClasses || null;
             const allClasses = Object.keys(newWorld.classes || {});
@@ -1076,10 +1050,10 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                 ? allClasses.filter((c: string) => availableClasses.includes(c))
                 : allClasses;
             const firstClass = newClassOptions[0] || 'Warrior';
-            
+
             const newCurrencyOptions = newWorld.currencyOptions || [];
             const newCurrencyName = newWorld.currencyName || newCurrencyOptions[0] || 'Gold';
-            
+
             // Extract default calendar from the new world
             const calendar = newWorld.calendar || gameData.fantasy.calendar;
 
@@ -1098,7 +1072,7 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                 startingDay: calendar.startingDayOfMonth,
                 startTime: calendar.startingTimeOfDay,
             }));
-    
+
         } else if (name === 'startingMonth') {
             setFormData(prev => ({ ...prev, [name]: value, startingDay: 1 }));
         } else {
@@ -1140,13 +1114,13 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
     const handleDifficultyChange = (difficulty: 'normal' | 'hard' | 'impossible') => {
         setFormData(prev => ({ ...prev, hardMode: difficulty !== 'normal', impossibleMode: difficulty === 'impossible' }));
     };
-  
+
     const handleCoopTypeChange = (type: 'None' | 'MultiplePersonalities' | 'FullParty') => {
         setFormData(prev => ({ ...prev, cooperativeGameType: type }));
     };
 
     const prepareCreationData = () => {
-        if (!isHostMode && (!formData.playerName || !formData.characterDescription || !formData.initialPrompt)) {
+        if (!formData.playerName || !formData.characterDescription || !formData.initialPrompt) {
             alert(t("Please fill in all required fields."));
             return null;
         }
@@ -1158,7 +1132,7 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
         ].forEach(key => delete finalData[key]);
         return finalData;
     };
-  
+
     const handleLocalSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const creationData = prepareCreationData();
@@ -1166,33 +1140,6 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
             onStartLocal(creationData);
             void clearStartScreenDraft().catch(reportDraftSaveError);
         }
-    };
-
-    const handleHostSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        const creationData = prepareCreationData();
-        if (creationData) {
-            const hostData = {
-                ...creationData,
-                playerName: t('Host'),
-                multiplayerNickname: t('Host')
-            };
-            onStartHost(hostData);
-            void clearStartScreenDraft().catch(reportDraftSaveError);
-        }
-    };
-  
-    const handleJoinSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!hostId.trim()) {
-            alert(t("Please enter a Host ID."));
-            return;
-        }
-        if (joinRole === 'player' && !joinPlayerName.trim()) {
-            alert(t("Please enter your nickname."));
-            return;
-        }
-        onJoinGame(hostId, joinRole, joinPlayerName);
     };
 
     const handleCreateUniverse = () => {
@@ -1218,9 +1165,9 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
         };
         setCustomGameData(newCustomData);
 
-        setFormData(prev => ({ 
-            ...prev, 
-            universe: 'custom', 
+        setFormData(prev => ({
+            ...prev,
+            universe: 'custom',
             selectedEra: key,
             // Explicitly set defaults for the new universe
             startingYear: gameData.fantasy.calendar.startingYear,
@@ -1266,26 +1213,10 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                         </div>
                     </section>
                 )}
-        
-                <div className="flex justify-center mb-6 border-b border-gray-700">
-                    <button
-                        onClick={() => setActiveTab('local')}
-                        className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === 'local' ? 'border-cyan-400 text-white' : 'border-transparent text-gray-400 hover:text-white hover:border-gray-500'}`}
-                    >
-                        {t('Local Game')}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('network')}
-                        className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === 'network' ? 'border-cyan-400 text-white' : 'border-transparent text-gray-400 hover:text-white hover:border-gray-500'}`}
-                    >
-                        {t('Network Game')}
-                    </button>
-                </div>
-        
+
                 <div className="max-h-[65vh] overflow-y-auto pr-4 -mr-4">
-                    {activeTab === 'local' && (
                         <div className="animate-fade-in-down">
-                            <CreationForm 
+                            <CreationForm
                                 formData={formData}
                                 handleInputChange={handleInputChange}
                                 handleCheckboxChange={handleCheckboxChange}
@@ -1303,59 +1234,6 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                                 setFormData={setFormData}
                             />
                         </div>
-                    )}
-
-                    {activeTab === 'network' && (
-                        <div className="animate-fade-in-down">
-                            <div className="flex justify-center mb-4">
-                                <div className="bg-gray-900/50 p-1 rounded-lg flex gap-1">
-                                    <button onClick={() => setNetworkTab('host')} className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${networkTab === 'host' ? 'bg-cyan-600 text-white shadow' : 'text-gray-300 hover:bg-gray-700/50'}`}>{t('Host Game')}</button>
-                                    <button onClick={() => setNetworkTab('join')} className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${networkTab === 'join' ? 'bg-cyan-600 text-white shadow' : 'text-gray-300 hover:bg-gray-700/50'}`}>{t('Join Game')}</button>
-                                </div>
-                            </div>
-                            {networkTab === 'host' && (
-                                <CreationForm 
-                                    formData={formData}
-                                    handleInputChange={handleInputChange}
-                                    handleCheckboxChange={handleCheckboxChange}
-                                            handleAdultModeClick={handleAdultModeClick}
-                                    handleNonMagicModeClick={handleNonMagicModeClick}
-                                    handleDifficultyChange={handleDifficultyChange}
-                                        handleCoopTypeChange={handleCoopTypeChange}
-                                    handleMultiplePersonalitiesSettingChange={handleMultiplePersonalitiesSettingChange}
-                                        onSubmit={handleHostSubmit}
-                                    onLoadGame={onLoadGame}
-                                    submitButtonText={t('Create Game (Host)')}
-                                    currentWorld={currentWorld}
-                                    customGameData={customGameData}
-                                    setIsCreatingUniverse={setIsCreatingUniverse}
-                                    setFormData={setFormData}
-                                />
-                            )}
-                            {networkTab === 'join' && (
-                                <form onSubmit={handleJoinSubmit} className="space-y-4 pt-4">
-                                    <div>
-                                        <label htmlFor="hostId" className="block text-sm font-medium text-gray-300 mb-2">{t("Host ID")}</label>
-                                        <input id="hostId" name="hostId" type="text" onChange={(e) => setHostId(e.target.value)} value={hostId} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t("Enter Host ID...")} required />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="joinPlayerName" className="block text-sm font-medium text-gray-300 mb-2">{t("Your Nickname")}</label>
-                                        <input id="joinPlayerName" name="joinPlayerName" type="text" onChange={(e) => setJoinPlayerName(e.target.value)} value={joinPlayerName} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition" placeholder={t("Enter your nickname for this session...")} required={joinRole === 'player'} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-300 mb-2">{t("Your Role")}</label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <button type="button" onClick={() => setJoinRole('player')} className={`p-3 rounded-md text-center transition-all border ${joinRole === 'player' ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}>{t('Player')}</button>
-                                            <button type="button" onClick={() => setJoinRole('spectator')} className={`p-3 rounded-md text-center transition-all border ${joinRole === 'spectator' ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}>{t('Spectator')}</button>
-                                        </div>
-                                    </div>
-                                    <div className="pt-4">
-                                        <button type="submit" className="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-md hover:bg-green-500 transition-all text-lg">{t('Join')}</button>
-                                    </div>
-                                </form>
-                            )}
-                        </div>
-                    )}
                 </div>
 
                 {crashRecoveryMarker && crashRecoveryInfo && (
@@ -1387,8 +1265,8 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                 )}
 
                 <div className="mt-4 text-center">
-                    <button 
-                        type="button" 
+                    <button
+                        type="button"
                         onClick={onLoadAutosave}
                         disabled={!autosaveTimestamp}
                         className="text-cyan-400/80 hover:text-cyan-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
@@ -1424,9 +1302,9 @@ export default function StartScreen({ onStartLocal, onStartHost, onJoinGame, onL
                             </div>
                         )}
                     </Modal>
-                    <button 
-                        type="button" 
-                        onClick={() => setIsCustomizerOpen(true)} 
+                    <button
+                        type="button"
+                        onClick={() => setIsCustomizerOpen(true)}
                         className="w-full bg-gray-700/60 text-cyan-300 font-semibold py-2 px-4 rounded-md hover:bg-gray-700 hover:text-cyan-200 transition-colors flex items-center justify-center gap-2"
                     >
                         <PaintBrushIcon className="w-5 h-5"/>

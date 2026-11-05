@@ -7,7 +7,7 @@
 import React, { useState, useMemo } from 'react';
 import CharacterSheet from './CharacterSheet';
 import QuestLog from './QuestLog';
-import { GameState, Location, WorldState, GameSettings, PlayerCharacter, Faction, PlotOutline, Item, DBSaveSlotInfo, WorldStateFlag, Wound, CustomState, UnlockedMemory, NPC, WorldEvent, Quest, PeerInfo, NetworkRole, CompletedActivity, LocationStorage, Project, Cinematic, NetworkChatMessage, ImageCacheEntry } from '../types';
+import { GameState, Location, WorldState, GameSettings, PlayerCharacter, Faction, PlotOutline, Item, DBSaveSlotInfo, WorldStateFlag, Wound, CustomState, UnlockedMemory, NPC, WorldEvent, Quest, CompletedActivity, LocationStorage, Project, Cinematic, ImageCacheEntry } from '../types';
 import { UserCircleIcon, BookOpenIcon, CodeBracketIcon, DocumentTextIcon, UsersIcon, ShieldExclamationIcon, Cog6ToothIcon, MapIcon, MapPinIcon, QuestionMarkCircleIcon, UserGroupIcon, GlobeAltIcon, ArchiveBoxXMarkIcon, BeakerIcon, TrashIcon, WifiIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ArrowsPointingOutIcon, ClockIcon, FilmIcon, PhotoIcon } from '@heroicons/react/24/outline';
 import { ChevronDoubleRightIcon, ChevronDoubleLeftIcon, UserIcon as UserIconSolid } from '@heroicons/react/24/solid';
 import JsonDebugView from './JsonDebugView';
@@ -122,6 +122,7 @@ interface SidePanelProps {
   allNpcs?: NPC[];
   allFactions?: Faction[];
   allLocations?: Location[];
+  onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
   removePlayer: (playerId: string) => void;
   passTurnManually: () => void;
   passTurnToPlayer: (playerIndex: number) => void;
@@ -129,15 +130,6 @@ interface SidePanelProps {
   deletePassiveSkill: (skillName: string) => void;
   deleteActiveEffect: (characterType: 'player' | 'npc', characterId: string | null, effectId: string) => void;
   deleteFactionBonus: (factionId: string, bonusIdentifier: string) => void;
-  assignCharacterToPeer: (characterId: string, newPeerId: string | null) => void;
-  peers?: PeerInfo[];
-  networkRole?: NetworkRole;
-  onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
-  forceSyncAll: () => void;
-  startHostingFromLocalGame: () => void;
-  disconnect: () => void;
-  isMyTurn: boolean;
-  requestSyncFromHost: () => void;
   clearAllCompletedFactionProjects: (factionId: string) => void;
   clearAllCompletedNpcActivities: (npcId: string) => void;
   onDeleteCurrentActivity: (npcId: string) => void;
@@ -164,13 +156,11 @@ interface SidePanelProps {
   regenerateCinemaFrame: (cinematicId: string, frameIndex: number, newPrompt: string) => Promise<boolean>;
   generateCinematicAudio: (cinematicId: string, voice: string) => Promise<void>;
   npcsInScene: NPC[];
-  networkChatHistory: NetworkChatMessage[];
-  sendNetworkChatMessage: (content: string) => void;
   deleteImageFromCache: (prompt: string) => void;
   clearImageCache: () => void;
 }
 
-type Tab = 'Character' | 'Quests' | 'Factions' | 'SceneNPCs' | 'NPCs' | 'Locations' | 'Map' | 'Combat' | 'Log' | 'Guide' | 'Debug' | 'System' | 'Stash' | 'World' | 'Characters' | 'Network' | 'Crafting' | 'CinemaHall' | 'ImageCache';
+type Tab = 'Character' | 'Quests' | 'Factions' | 'SceneNPCs' | 'NPCs' | 'Locations' | 'Map' | 'Combat' | 'Log' | 'Guide' | 'Debug' | 'System' | 'Stash' | 'World' | 'Characters' | 'Crafting' | 'CinemaHall' | 'ImageCache';
 
 const TABS: { name: Tab; icon: React.FC<React.SVGProps<SVGSVGElement>> }[] = [
     { name: 'Character', icon: UserCircleIcon },
@@ -191,7 +181,6 @@ const TABS: { name: Tab; icon: React.FC<React.SVGProps<SVGSVGElement>> }[] = [
     { name: 'Guide', icon: QuestionMarkCircleIcon },
     { name: 'Debug', icon: CodeBracketIcon },
     { name: 'System', icon: Cog6ToothIcon },
-    { name: 'Network', icon: WifiIcon },
 ];
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
@@ -303,27 +292,27 @@ const FactionLog: React.FC<{
 
 
 export default function SidePanel(props: SidePanelProps): React.ReactNode {
-  const { 
-    gameState, 
-    worldState, 
+  const {
+    gameState,
+    worldState,
     worldStateFlags,
-    onOpenInventory, 
+    onOpenInventory,
     onOpenNpcInventory,
     lastJsonResponse,
-    lastRequestJsonForDebug, 
-    gameLog, 
+    lastRequestJsonForDebug,
+    gameLog,
     combatLog,
-    onDeleteLogs, 
-    onSaveGame, 
-    onLoadGame, 
-    onLoadAutosave, 
-    autosaveTimestamp, 
-    visitedLocations, 
+    onDeleteLogs,
+    onSaveGame,
+    onLoadGame,
+    onLoadAutosave,
+    autosaveTimestamp,
+    visitedLocations,
     onOpenDetailModal,
     onOpenJournalModal,
     onOpenImageModal,
     onShowMessageModal,
-    onSpendAttributePoint, 
+    onSpendAttributePoint,
     onToggleSidebar,
     onExpandMap,
     onExpandCombat,
@@ -402,15 +391,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
     deletePassiveSkill,
     deleteActiveEffect,
     deleteFactionBonus,
-    assignCharacterToPeer,
-    peers,
-    networkRole,
     onViewCharacterSheet,
-    forceSyncAll,
-    startHostingFromLocalGame,
-    disconnect,
-    isMyTurn,
-    requestSyncFromHost,
     clearAllCompletedFactionProjects,
     clearAllCompletedNpcActivities,
     onDeleteCurrentActivity,
@@ -437,8 +418,6 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
     regenerateCinemaFrame,
     generateCinematicAudio,
     npcsInScene,
-    networkChatHistory,
-    sendNetworkChatMessage,
     deleteImageFromCache,
     clearImageCache,
   } = props;
@@ -452,7 +431,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
 
   const temporaryStash = gameState?.temporaryStash || [];
   const showStash = temporaryStash.length > 0;
-  
+
   React.useEffect(() => {
     if (showStash) {
         onSetSidePanelView('Stash');
@@ -544,7 +523,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
   const renderContent = () => {
     const currentTabInfo = TABS.find(t => t.name === sidePanelView);
     const Icon = currentTabInfo?.icon || UserCircleIcon;
-    const isSystemOrNetwork = sidePanelView === 'System' || sidePanelView === 'Network';
+    const isSystem = sidePanelView === 'System';
     return (
       <>
         <div className="flex flex-col h-full">
@@ -584,25 +563,25 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
                 onDeleteActiveEffect={deleteActiveEffect}
               />}
               {sidePanelView === 'Quests' && gameState && <QuestLog activeQuests={gameState.activeQuests} completedQuests={gameState.completedQuests} onOpenModal={onOpenDetailModal} lastUpdatedQuestId={lastUpdatedQuestId} allowHistoryManipulation={gameSettings?.allowHistoryManipulation ?? false} forgetQuest={forgetQuest} />}
-              {sidePanelView === 'Characters' && gameState && gameSettings && <PlayersPanel playerCharacter={gameState.playerCharacter} players={gameState.players} gameSettings={gameSettings} onAddPlayer={addPlayer} removePlayer={removePlayer} passTurnToPlayer={passTurnToPlayer} allowHistoryManipulation={gameSettings.allowHistoryManipulation} assignCharacterToPeer={assignCharacterToPeer} peers={peers || []} networkRole={networkRole || 'none'} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} updatePlayerPortrait={updatePlayerPortrait} />}
-              {sidePanelView === 'World' && <WorldPanel 
-                worldState={worldState} 
-                worldStateFlags={gameState?.worldStateFlags || null} 
-                worldEventsLog={gameState?.worldEventsLog || null} 
-                turnNumber={turnNumber} 
-                allowHistoryManipulation={gameSettings?.allowHistoryManipulation ?? false} 
-                onDeleteFlag={deleteWorldStateFlag} 
-                editWorldState={editWorldState} 
-                onEditWeather={editWeather} 
-                onEditFlagData={editWorldStateFlagData} 
-                biome={biome} 
-                allNpcs={allNpcs || []} 
-                allFactions={allFactions || []} 
-                allLocations={allLocations || []} 
-                onOpenDetailModal={onOpenDetailModal} 
-                onDeleteEvent={deleteWorldEvent} 
-                deleteWorldEventsByTurnRange={deleteWorldEventsByTurnRange} 
-                onShowMessageModal={onShowMessageModal} 
+              {sidePanelView === 'Characters' && gameState && gameSettings && <PlayersPanel playerCharacter={gameState.playerCharacter} players={gameState.players} gameSettings={gameSettings} onAddPlayer={addPlayer} removePlayer={removePlayer} passTurnToPlayer={passTurnToPlayer} allowHistoryManipulation={gameSettings.allowHistoryManipulation} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} updatePlayerPortrait={updatePlayerPortrait} />}
+              {sidePanelView === 'World' && <WorldPanel
+                worldState={worldState}
+                worldStateFlags={gameState?.worldStateFlags || null}
+                worldEventsLog={gameState?.worldEventsLog || null}
+                turnNumber={turnNumber}
+                allowHistoryManipulation={gameSettings?.allowHistoryManipulation ?? false}
+                onDeleteFlag={deleteWorldStateFlag}
+                editWorldState={editWorldState}
+                onEditWeather={editWeather}
+                onEditFlagData={editWorldStateFlagData}
+                biome={biome}
+                allNpcs={allNpcs || []}
+                allFactions={allFactions || []}
+                allLocations={allLocations || []}
+                onOpenDetailModal={onOpenDetailModal}
+                onDeleteEvent={deleteWorldEvent}
+                deleteWorldEventsByTurnRange={deleteWorldEventsByTurnRange}
+                onShowMessageModal={onShowMessageModal}
                 gameSettings={gameSettings}
                 imageCache={imageCache}
                 onImageGenerated={onImageGenerated}
@@ -616,27 +595,27 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
               {sidePanelView === 'Combat' && gameState && <CombatTracker enemies={gameState.enemiesData} allies={gameState.alliesData} combatLog={combatLog} allNpcs={gameState.encounteredNPCs} playerCharacter={gameState.playerCharacter} setAutoCombatSkill={setAutoCombatSkill} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} onSendMessage={onSendMessage} isLoading={isLoading} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} onExpand={onExpandCombat} editNpcData={editNpcData} />}
               {sidePanelView === 'Stash' && showStash && gameState && <StashView stash={temporaryStash} onTake={moveFromStashToInventory} onDrop={dropItemFromStash} playerCharacter={gameState.playerCharacter} imageCache={imageCache} onImageGenerated={onImageGenerated} gameSettings={gameSettings} />}
               {sidePanelView === 'Crafting' && gameState && <CraftingScreen playerCharacter={gameState.playerCharacter} craftItem={craftItem} />}
-              {sidePanelView === 'ImageCache' && gameState && <ImageCacheGallery 
-                imageCache={gameState.imageCache} 
-                onImageGenerated={onImageGenerated} 
-                onOpenImageModal={onOpenImageModal} 
+              {sidePanelView === 'ImageCache' && gameState && <ImageCacheGallery
+                imageCache={gameState.imageCache}
+                onImageGenerated={onImageGenerated}
+                onOpenImageModal={onOpenImageModal}
                 deleteImageFromCache={deleteImageFromCache}
                 clearImageCache={clearImageCache}
-                gameSettings={gameSettings} 
+                gameSettings={gameSettings}
                 isLoading={isLoading}
                 onExpand={onExpandImageCache}
               />}
-              {sidePanelView === 'CinemaHall' && <CinemaHall 
-                cinematics={gameState?.cinematics || []} 
-                onGenerateTrailer={generateFilmTrailer} 
-                isGenerating={isGeneratingCinema} 
-                progress={cinemaGenerationProgress} 
-                onPlay={playCinematic} 
-                onExport={exportCinematic} 
-                onDelete={deleteCinematic} 
-                onImport={importCinematic} 
-                onContinue={continueFilmTrailer} 
-                extendingCinematicId={extendingCinematicId} 
+              {sidePanelView === 'CinemaHall' && <CinemaHall
+                cinematics={gameState?.cinematics || []}
+                onGenerateTrailer={generateFilmTrailer}
+                isGenerating={isGeneratingCinema}
+                progress={cinemaGenerationProgress}
+                onPlay={playCinematic}
+                onExport={exportCinematic}
+                onDelete={deleteCinematic}
+                onImport={importCinematic}
+                onContinue={continueFilmTrailer}
+                extendingCinematicId={extendingCinematicId}
                 onCancel={cancelCinemaGeneration}
                 updateCinematic={updateCinematic}
                 regenerateCinemaFrame={regenerateCinemaFrame}
@@ -647,7 +626,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
               {sidePanelView === 'Guide' && <HelpGuide />}
               {sidePanelView === 'Log' && <GameLogView gameLog={gameLog} onDeleteLogs={onDeleteLogs} />}
               {sidePanelView === 'Debug' && <JsonDebugView jsonString={lastJsonResponse} requestJsonString={lastRequestJsonForDebug} plotOutline={gameState?.plotOutline || null} currentStep={currentStep} currentModel={currentModel} turnTime={turnTime} />}
-              {isSystemOrNetwork && <GameMenuView onSave={onSaveGame} onLoad={onLoadGame} onLoadAutosave={onLoadAutosave} autosaveTimestamp={autosaveTimestamp} isGameActive={!!gameState} gameSettings={gameSettings} updateGameSettings={updateGameSettings} superInstructions={superInstructions} updateSuperInstructions={updateSuperInstructions} isLoading={isLoading} onSaveToSlot={saveGameToSlot} onLoadFromSlot={loadGameFromSlot} onDeleteSlot={deleteGameSlot} dbSaveSlots={dbSaveSlots} refreshDbSaveSlots={refreshDbSaveSlots} clearNpcJournalsNow={clearNpcJournalsNow} gameState={gameState} activeTab={sidePanelView as 'System' | 'Network'} forceSyncAll={forceSyncAll} startHostingFromLocalGame={startHostingFromLocalGame} disconnect={disconnect} isMyTurn={isMyTurn} requestSyncFromHost={requestSyncFromHost} networkChatHistory={networkChatHistory} sendNetworkChatMessage={sendNetworkChatMessage} />}
+              {isSystem && <GameMenuView onSave={onSaveGame} onLoad={onLoadGame} onLoadAutosave={onLoadAutosave} autosaveTimestamp={autosaveTimestamp} isGameActive={!!gameState} gameSettings={gameSettings} updateGameSettings={updateGameSettings} superInstructions={superInstructions} updateSuperInstructions={updateSuperInstructions} isLoading={isLoading} onSaveToSlot={saveGameToSlot} onLoadFromSlot={loadGameFromSlot} onDeleteSlot={deleteGameSlot} dbSaveSlots={dbSaveSlots} refreshDbSaveSlots={refreshDbSaveSlots} clearNpcJournalsNow={clearNpcJournalsNow} gameState={gameState} />}
             </div>
         </div>
         {isPlayerSheetFullScreen && gameState && (

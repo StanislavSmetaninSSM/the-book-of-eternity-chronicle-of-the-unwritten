@@ -5,6 +5,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import { ArchiveBoxXMarkIcon, ExclamationTriangleIcon, TrashIcon, ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import ImageRenderer from './ImageRenderer';
 import MarkdownRenderer from './MarkdownRenderer';
+import ConfirmationModal from './ConfirmationModal';
 
 interface StashViewProps {
   stash: Item[];
@@ -14,6 +15,7 @@ interface StashViewProps {
   imageCache: Record<string, ImageCacheEntry>;
   onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
   gameSettings: GameSettings | null;
+  confirmDrop?: boolean;
 }
 
 const qualityColorMap: Record<string, string> = {
@@ -37,8 +39,10 @@ const qualityColorMap: Record<string, string> = {
     'Уникальный': 'border-yellow-600/80',
 };
 
-const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, onDrop, imageCache, onImageGenerated, gameSettings }) => {
+const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, onDrop, imageCache, onImageGenerated, gameSettings, confirmDrop = false }) => {
     const { t } = useLocalization();
+    const [pendingDrop, setPendingDrop] = useState<Item | null>(null);
+    const [staleDrop, setStaleDrop] = useState(false);
     const [quantities, setQuantities] = useState<Record<string, string>>({});
 
     const handleQuantityChange = (itemId: string, value: string, max: number) => {
@@ -66,11 +70,13 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                 </div>
             </div>
 
+            {staleDrop && <p role="alert" className="text-sm text-yellow-300">{t('stash_destroy_stale')}</p>}
             <div className="space-y-3">
                 {stash.map(item => {
                     const itemQuantityToTake = parseInt(quantities[item.existedId!] ?? '1', 10) || 1;
                     const itemTakeWeight = item.weight * itemQuantityToTake;
                     const canTake = playerCharacter.totalWeight + itemTakeWeight <= playerCharacter.maxWeight + playerCharacter.criticalExcessWeight;
+                    const requiresWholeStack = (item.isContainer || item.isSentient) && itemQuantityToTake < item.count;
                     const imagePrompt = item.custom_image_prompt || item.image_prompt || `game asset, inventory icon, ${item.quality} ${item.name}, fantasy art, plain background`;
 
                     return (
@@ -103,15 +109,15 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                                 )}
                                 <button
                                     onClick={() => onTake(item, itemQuantityToTake)}
-                                    disabled={!canTake}
+                                    disabled={!canTake || requiresWholeStack}
                                     className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold text-green-300 bg-green-600/20 rounded-md hover:bg-green-600/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600/20"
-                                    title={!canTake ? t("You still cannot carry this item. Drop something else first.") : t('Take')}
+                                    title={!canTake ? t("You still cannot carry this item. Drop something else first.") : requiresWholeStack ? t("Take the whole container or sentient stack.") : t('Take')}
                                 >
                                     <ArrowDownOnSquareIcon className="w-4 h-4" />
                                     {t('Take')}
                                 </button>
                                 <button
-                                    onClick={() => onDrop(item)}
+                                    onClick={() => { setStaleDrop(false); if (confirmDrop) setPendingDrop(item); else onDrop(item); }}
                                     className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold text-red-300 bg-red-600/20 rounded-md hover:bg-red-600/40 transition-colors"
                                 >
                                     <TrashIcon className="w-4 h-4" />
@@ -122,6 +128,14 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                     );
                 })}
             </div>
+            <ConfirmationModal isOpen={!!pendingDrop} onClose={() => setPendingDrop(null)} onConfirm={() => {
+                // A new snapshot invalidates the item the user confirmed.
+                if (pendingDrop && stash.includes(pendingDrop)) onDrop(pendingDrop);
+                else setStaleDrop(true);
+                setPendingDrop(null);
+            }} title={t('Drop')}>
+                <p>{t('stash_destroy_confirmation', { name: pendingDrop?.name || '' })}</p>
+            </ConfirmationModal>
         </div>
     );
 };

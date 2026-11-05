@@ -1,12 +1,12 @@
 export const settings = {
   en: {
     // Cooperative Game Settings
-    "cooperative_mode": "Cooperative Mode",
+    "cooperative_mode": "Character Mode",
     "single_player": "Single Player",
     "multiple_personalities": "Multiple Personalities",
     "full_party": "Full Party",
-    "multiple_personalities_desc": "Multiple players control one body, but each has their own personality, reputation, and possibly inventory.",
-    "full_party_desc": "Classic co-op. Each player controls their own, separate character in the party.",
+    "multiple_personalities_desc": "One player controls multiple personalities sharing one body, each with their own reputation and possibly inventory.",
+    "full_party_desc": "One player controls several separate characters in the party.",
     "multiple_personalities_settings": "Settings for \"Multiple Personalities\" mode",
     "share_settings_desc": "Choose which aspects of the character will be shared among all personalities.",
     "shareCharacteristics": "Shared characteristics",
@@ -159,12 +159,12 @@ export const settings = {
   },
   ru: {
     // Cooperative Game Settings
-    "cooperative_mode": "Кооперативный режим",
+    "cooperative_mode": "Режим персонажей",
     "single_player": "Одиночная игра",
     "multiple_personalities": "Множественные личности",
     "full_party": "Полный отряд",
-    "multiple_personalities_desc": "Несколько игроков управляют одним телом, но у каждого своя личность, репутация и, возможно, инвентарь.",
-    "full_party_desc": "Классический кооператив. Каждый игрок управляет своим собственным, отдельным персонажем в отряде.",
+    "multiple_personalities_desc": "Один игрок управляет несколькими личностями в одном теле; у каждой своя репутация и, возможно, инвентарь.",
+    "full_party_desc": "Один игрок управляет несколькими отдельными персонажами в отряде.",
     "multiple_personalities_settings": "Настройки режима \"Множественные личности\"",
     "share_settings_desc": "Выберите, какие аспекты персонажа будут общими для всех личностей.",
     "shareCharacteristics": "Общие характеристики",

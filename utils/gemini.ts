@@ -1,3 +1,4 @@
+import { ensureThreatActivityIds } from './gameContext';
 
 import { GameContext, GameResponse } from '../types';
 // @ts-ignore
@@ -12,8 +13,12 @@ import { getCorrectionPrompt, getAdultPrompt } from '../prompts/systemPrompts.js
 import narrativeStyleGuide from '../prompts/narrativeStyleGuide.js';
 // @ts-ignore
 import worldLogicGuide from '../prompts/worldLogicGuide.js';
-import { deepMergeResponses } from "./responseProcessor";
-import { requestArenaGmStep } from './arenaGmRelay';
+import { mergeStageResponses } from "./responseProcessor";
+import { ArenaGmRelayRequestError, requestArenaGmStep } from './arenaGmRelay';
+import { withGameContext } from './relayPromptContext.js';
+import { shouldRunWorldProgression } from './worldProgression.js';
+import { NARRATIVE_FOCUS } from './narrativeFocus.js';
+import { getNarrativeRuleReference } from './arenaRuleReference.js';
 
 const MAX_REGENERATION_RETRIES = 10;
 
@@ -84,7 +89,7 @@ async function callGenerativeApiRaw(
 ): Promise<string> {
     const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
     const result = await requestArenaGmStep(
-        prompt,
+        withGameContext(prompt, context),
         context.currentStepFocus || 'StandaloneGeneration',
         'Arena GM',
         relayContext.isRegenerationAttempt ? 2 : 1,
@@ -99,29 +104,37 @@ export async function callGenerativeApi(
     prompt: string,
     context: GameContext,
     abortSignal: AbortSignal,
-    onStreamingChunk: (text: string) => void
+    onStreamingChunk: (text: string) => void,
+    ruleBundleId?: string
 ): Promise<{ data: any, signature?: string }> {
     const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
     const relayResult = await requestArenaGmStep(
-        prompt,
+        withGameContext(prompt, context),
         context.currentStepFocus || 'StandaloneGeneration',
         'Arena GM',
         relayContext.isRegenerationAttempt ? 2 : 1,
         abortSignal,
         context.gameSettings.adultMode ? getAdultPrompt() : undefined,
+        ruleBundleId,
     );
     onStreamingChunk(relayResult.text);
+    let data: any;
     try {
-        return { data: JSON.parse(cleanJsonString(relayResult.text)), signature: relayResult.thoughtSignature };
+        data = JSON.parse(cleanJsonString(relayResult.text));
     } catch (error: any) {
         throw new RegenerationRequiredError(error.message, `Invalid JSON returned by Arena GM for ${context.currentStepFocus || 'step'}.`, relayResult.text);
     }
+    if (ruleBundleId && data?._arenaRuleBundleUnavailable === true) {
+        throw new ArenaGmRelayRequestError(409, 'The GM could not access the verified rule bundle.');
+    }
+    return { data, signature: relayResult.thoughtSignature };
 }
 
 async function attemptCorrection(
     invalidJson: string,
     context: GameContext,
     error: Error,
+    abortSignal: AbortSignal,
 ): Promise<any> {
     const correctionContext = {
         ...context,
@@ -132,7 +145,7 @@ async function attemptCorrection(
     const correctionText = await callGenerativeApiRaw(
         getCorrectionPrompt(invalidJson, context, error),
         correctionContext,
-        new AbortController().signal,
+        abortSignal,
     );
     return JSON.parse(cleanJsonString(correctionText));
 }
@@ -183,6 +196,15 @@ export async function executeStepWithCorrection(
         additionalGuides += worldLogicGuide.getGuide();
     }
 
+    const isNarrative = stepName === 'Step6_NarrativeGeneration_TaskGuide' || stepName === 'StepSimpleFullResponse_TaskGuide';
+    // The pilot covers narrative, NPC detail, inventory, combat audit, world and faction progression.
+    // Simple turns, remaining mechanical stages and first-turn setup keep full inline guides.
+    const fullRules = mainPromptModule.getGameMasterGuideRules();
+    const useReference = stepName === 'Step6_NarrativeGeneration_TaskGuide' || stepName === 'Step4_NPC_TaskGuide' || (stepName === 'Step5_Inventory_TaskGuide' && context.currentTurnNumber > 1) || (stepName === 'Step3_Combat_TaskGuide' && context.currentTurnNumber > 1) || (stepName === 'Step_WorldProgression_TaskGuide' && context.currentTurnNumber > 1) || (stepName === 'Step_FactionProgression_TaskGuide' && context.currentTurnNumber > 1);
+    const reference = useReference
+        ? await getNarrativeRuleReference(fullRules, narrativeStyleGuide.getGuide(), abortSignal, worldLogicGuide.getGuide(), stepName)
+        : null;
+
     for (let attempt = 1; attempt <= MAX_REGENERATION_RETRIES; attempt++) {
         const stepContext = { 
             ...context, 
@@ -192,25 +214,31 @@ export async function executeStepWithCorrection(
             regenerationReason: lastError?.reason || '' 
         };
         const stepPrompt = promptFn();
-        const fullPrompt = stepPrompt + additionalGuides + mainPromptModule.getGameMasterGuideRules(stepContext);
+        const focus = isNarrative ? NARRATIVE_FOCUS : '';
+        const fullPrompt = stepPrompt + additionalGuides + fullRules + focus;
+        const referencedPrompt = reference ? stepPrompt + reference.prompt + focus : fullPrompt;
         const model = getModelForStep(stepName, context);
         onStepStart(stepName, model);
         
         try {
-            const { data: stepResponse, signature } = await callGenerativeApi(
-                fullPrompt, 
-                stepContext, 
-                abortSignal, 
-                onStreamingChunk,
-            );
-            
-            const newPartialResponse = deepMergeResponses(partiallyGeneratedResponse, stepResponse);
+            let result;
+            try {
+                result = await callGenerativeApi(referencedPrompt, stepContext, abortSignal, onStreamingChunk, reference?.id);
+            } catch (error) {
+                // The server verifies the bundle immediately before queueing; a
+                // lost/corrupt bundle falls back to the original complete prompt.
+                if (!reference || !(error instanceof ArenaGmRelayRequestError) || error.status !== 409) throw error;
+                result = await callGenerativeApi(fullPrompt, stepContext, abortSignal, onStreamingChunk);
+            }
+            const { data: stepResponse, signature } = result;
+
+            const newPartialResponse = mergeStageResponses(partiallyGeneratedResponse, stepResponse, context);
             onPartialResponse(newPartialResponse, stepName, model);
             return { response: newPartialResponse, signature };
 
         } catch (err: any) {
             lastError = err;
-            if (abortSignal.aborted) throw err;
+            if (abortSignal.aborted || err instanceof ArenaGmRelayRequestError) throw err;
             
             console.warn(`Step '${stepName}' failed on regeneration attempt ${attempt}. Reason: ${err.message}`);
 
@@ -226,6 +254,7 @@ export async function executeStepWithCorrection(
                             err.rawText, 
                             stepContext, 
                             err,
+                            abortSignal,
                         );
 
                         if (correctionResult.regenerationRequired) {
@@ -235,11 +264,12 @@ export async function executeStepWithCorrection(
                         }
                         
                         console.log("Correction attempt produced valid JSON.");
-                        correctedResponse = deepMergeResponses(partiallyGeneratedResponse, correctionResult);
+                        correctedResponse = mergeStageResponses(partiallyGeneratedResponse, correctionResult, context);
                         correctionSuccessful = true;
                         break;
 
                     } catch (correctionError: any) {
+                        if (abortSignal.aborted) throw correctionError;
                         console.warn(`Correction attempt ${correctionAttempt} failed. Error: ${correctionError.message}`);
                     }
                 }
@@ -273,6 +303,7 @@ export async function executeTurn(
     onStreamingChunk: (text: string) => void,
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
+    ensureThreatActivityIds(context.worldMap || {}, context.currentLocation);
     let partiallyGeneratedResponse: any = {};
     // Use the previous thought signature from context if available to start the chain
     let currentSignature = context.previousThoughtSignature;
@@ -298,23 +329,51 @@ export async function executeTurn(
     };
 
     await executeStep('Step0_AnalysisAndPlanning_TaskGuide', mainPromptSteps.getStep0);
-    
+
     if (partiallyGeneratedResponse._internal_flags_?.needsSelfCorrection) {
         await executeStep('Step0_5_Verification_TaskGuide', mainPromptSteps.getStep0_5);
     }
-    
-    const doNotUseWorldEvents = context.gameSettings.doNotUseWorldEvents ?? false;
-    
-    // Faction Progression (Conditional)
-    if (partiallyGeneratedResponse._internal_flags_?.needsFactionProgression === true && !doNotUseWorldEvents) {
-        await executeStep('Step_FactionProgression_TaskGuide', mainPromptSteps.getStepFactionProgression);
+
+    // Enforce first-turn setup after the auditor, which can also change flags.
+    if (context.currentTurnNumber === 1) {
+        const flags = partiallyGeneratedResponse._internal_flags_ ||= {};
+        flags.isSimpleTurn = false;
+        flags.needsInventoryProcessing = true;
+        if (!context.gameSettings.doNotUseWorldEvents) {
+            flags.needsWorldProgression = true;
+            flags.needsFactionProgression = true;
+        }
     }
 
-    // World Progression (Conditional)
-    if (partiallyGeneratedResponse._internal_flags_?.needsWorldProgression === true && !doNotUseWorldEvents) {
+    // Faction events can create NPC consequences after Step 0 has set its flags.
+    let factionEventChanged = false;
+    if (shouldRunWorldProgression(partiallyGeneratedResponse._internal_flags_?.needsFactionProgression, context.gameSettings)) {
+        const previousEvents = JSON.stringify(partiallyGeneratedResponse.worldEventsLog ?? []);
+        await executeStep('Step_FactionProgression_TaskGuide', mainPromptSteps.getStepFactionProgression);
+        factionEventChanged = previousEvents !== JSON.stringify(partiallyGeneratedResponse.worldEventsLog ?? []);
+    }
+
+    let worldProgressionRan = false;
+    if (shouldRunWorldProgression(partiallyGeneratedResponse._internal_flags_?.needsWorldProgression, context.gameSettings)) {
         await executeStep('Step_WorldProgression_TaskGuide', mainPromptSteps.getStepWorldProgression);
+        worldProgressionRan = true;
+    }
+    // Only Step 4 can report NPC activities, goals and quests. Hand it world
+    // simulation and faction-event results even when Step 0 marked a turn simple.
+    // Neither world/faction progression nor a reaction is invented by this gate.
+    const reportedNPCs = partiallyGeneratedResponse.NPCsData;
+    const hasReportedNPCs = Array.isArray(reportedNPCs) ? reportedNPCs.length > 0 : !!reportedNPCs && typeof reportedNPCs === 'object';
+    if ((worldProgressionRan || factionEventChanged) && (context.encounteredNPCs?.length || hasReportedNPCs)) {
+        const flags = partiallyGeneratedResponse._internal_flags_ ||= {};
+        flags.needsNPCProcessing = true;
+        flags.isSimpleTurn = false;
     }
     
+    // Inventory work (including transfers) belongs to Step 5. If the model
+    // reports contradictory flags, do not let the simple path skip that step.
+    if (partiallyGeneratedResponse._internal_flags_?.needsInventoryProcessing === true) {
+        partiallyGeneratedResponse._internal_flags_.isSimpleTurn = false;
+    }
     if (partiallyGeneratedResponse._internal_flags_?.isSimpleTurn) {
         await executeStep('StepSimpleFullResponse_TaskGuide', mainPromptSteps.getStepSimpleFullResponse);
         // Attach the final signature to the response object so it can be saved in state
@@ -329,6 +388,26 @@ export async function executeTurn(
     if (partiallyGeneratedResponse._internal_flags_?.isCombatActive === true) {
         await executeStep('Step3_Logs_CombatAnalysis_TaskGuide', mainPromptSteps.getStep3Logs);
         await executeStep('Step3_Combat_TaskGuide', mainPromptSteps.getStep3);
+        // Combat calculation logs may change equipped-item durability after
+        // Step 0 set its flags. The relevant item commands belong to Steps 4/5.
+        const hasEquipment = (actor: any) => actor?.equippedItems && Object.values(actor.equippedItems).some(Boolean);
+        const flags = partiallyGeneratedResponse._internal_flags_ ||= {};
+        if (hasEquipment(context.playerCharacter)) flags.needsInventoryProcessing = true;
+        const combatants = [
+            ...(context.enemiesDataForCurrentTurn || []), ...(context.alliesDataForCurrentTurn || []),
+            ...(Array.isArray(partiallyGeneratedResponse.enemiesData) ? partiallyGeneratedResponse.enemiesData : []),
+            ...(Array.isArray(partiallyGeneratedResponse.alliesData) ? partiallyGeneratedResponse.alliesData : []),
+        ];
+        const npcIds = new Set(combatants.map(combatant => combatant?.NPCId).filter(Boolean));
+        if (context.encounteredNPCs?.some(npc => npc.NPCId && npcIds.has(npc.NPCId) && hasEquipment(npc))) flags.needsNPCProcessing = true;
+        // When combat ends directly with empty rosters, only Step 4 may write
+        // NPCsData. Let it transfer explicitly calculated NPC health from the
+        // combat logs; do not infer a final result from pre-turn state.
+        const combatEnded = Array.isArray(partiallyGeneratedResponse.enemiesData) && partiallyGeneratedResponse.enemiesData.length === 0 &&
+            Array.isArray(partiallyGeneratedResponse.alliesData) && partiallyGeneratedResponse.alliesData.length === 0;
+        const hasNamedNpcs = context.encounteredNPCs?.some(npc => !!npc.NPCId) ||
+            (Array.isArray(partiallyGeneratedResponse.NPCsData) && partiallyGeneratedResponse.NPCsData.length > 0);
+        if (combatEnded && hasNamedNpcs) flags.needsNPCProcessing = true;
     }
 
     // Step 4: NPC (Conditional)

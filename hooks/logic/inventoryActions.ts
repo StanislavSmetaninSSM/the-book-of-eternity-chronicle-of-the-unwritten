@@ -39,6 +39,9 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
             let newState = action(prevState);
+            // A rejected helper can return the original state. Recalculating
+            // into it would mutate the already rendered snapshot in place.
+            if (newState === prevState) return prevState;
             
             newState.playerCharacter = recalculateAllWeights(newState.playerCharacter);
             newState.playerCharacter = recalculateDerivedStats(newState.playerCharacter);
@@ -116,6 +119,7 @@ export const createInventoryActions = (
             if (!prevState) return null;
             
             const potentialNewState = equipItemUtil(itemToEquip, slot, prevState);
+            if (potentialNewState === prevState) return prevState;
             const newPc = potentialNewState.playerCharacter;
             const inventory = newPc.inventory;
 
@@ -164,6 +168,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
           if (!prevState) return null;
           let newGameState = dropItemUtil(itemToDrop, prevState);
+          if (newGameState === prevState) return prevState;
           let pc = recalculateAllWeights(newGameState.playerCharacter);
           pc = recalculateDerivedStats(pc);
           newGameState.playerCharacter = pc;
@@ -178,6 +183,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
           if (!prevState) return null;
           let newGameState = moveItemUtil(itemToMove, destinationContainerId, prevState);
+            if (newGameState === prevState) return prevState;
           let pc = recalculateAllWeights(newGameState.playerCharacter);
           pc = recalculateDerivedStats(pc);
           newGameState.playerCharacter = pc;
@@ -192,6 +198,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
             let newGameState = splitItemUtil(itemToSplit, splitAmount, prevState);
+            if (newGameState === prevState) return prevState;
             let pc = recalculateAllWeights(newGameState.playerCharacter);
             pc = recalculateDerivedStats(pc);
             newGameState.playerCharacter = pc;
@@ -206,6 +213,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
             let newGameState = mergeItemUtil(sourceItem, targetItem, prevState);
+            if (newGameState === prevState) return prevState;
             let pc = recalculateAllWeights(newGameState.playerCharacter);
             pc = recalculateDerivedStats(pc);
             newGameState.playerCharacter = pc;
@@ -369,48 +377,43 @@ export const createInventoryActions = (
     };
 
     const moveFromStashToInventory = (itemToMove: Item, quantity: number) => {
+        if (!Number.isSafeInteger(quantity) || quantity <= 0 || !itemToMove.existedId) return;
+        // Generate once per action, not per React updater invocation.
+        const splitId = generateId('item');
         setGameState(prevState => {
             if (!prevState || !prevState.temporaryStash) return prevState;
+            const matchingItems = prevState.temporaryStash.filter(i => i.existedId === itemToMove.existedId);
+            if (matchingItems.length !== 1) return prevState;
+            const item = matchingItems[0];
+            if (!Number.isSafeInteger(item.count) || item.count <= 0 ||
+                !Number.isFinite(item.weight) || item.weight < 0) return prevState;
+            const validQuantity = Math.min(quantity, item.count);
+            const partial = validQuantity < item.count;
+            if (partial && (item.isContainer || item.isSentient)) return prevState;
+            const inventory = prevState.playerCharacter.inventory;
+            // Never introduce an ambiguous ID, including when a legacy save is already inconsistent.
+            if (inventory.some(i => i.existedId === item.existedId || i.existedId === splitId) ||
+                prevState.temporaryStash.some(i => i.existedId === splitId)) return prevState;
 
-            const itemInStash = prevState.temporaryStash.find(i => i.existedId === itemToMove.existedId);
-            if (!itemInStash) return prevState;
-
-            const validQuantity = Math.max(0, Math.min(quantity, itemInStash.count));
-            if (validQuantity === 0) return prevState;
-
-            const weightOfItemsToTake = itemToMove.weight * validQuantity;
-            const prospectiveWeight = prevState.playerCharacter.totalWeight + weightOfItemsToTake;
+            const prospectiveWeight = prevState.playerCharacter.totalWeight + item.weight * validQuantity;
             if (prospectiveWeight > prevState.playerCharacter.maxWeight + prevState.playerCharacter.criticalExcessWeight) {
                 alert(t('You still cannot carry this item. Drop something else first.'));
                 return prevState;
             }
-            
-            const newStash = [...prevState.temporaryStash];
-            const stashItemIndex = newStash.findIndex(i => i.existedId === itemToMove.existedId);
-            
-            newStash[stashItemIndex].count -= validQuantity;
-            if (newStash[stashItemIndex].count <= 0) {
-                newStash.splice(stashItemIndex, 1);
-            }
 
-            let inventory = [...prevState.playerCharacter.inventory];
-            const existingStackIndex = inventory.findIndex(i => i.name === itemToMove.name && !i.equipmentSlot && i.resource === undefined);
-            
-            if (existingStackIndex > -1) {
-                inventory[existingStackIndex].count += validQuantity;
-            } else {
-                const newItemForInventory = { ...itemToMove, count: validQuantity };
-                inventory.push(newItemForInventory);
+            const newStash = partial
+                ? prevState.temporaryStash.map(i => i === item ? { ...i, count: i.count - validQuantity } : i)
+                : prevState.temporaryStash.filter(i => i !== item);
+            const movedItem = { ...item, count: validQuantity, existedId: partial ? splitId : item.existedId, contentsPath: null };
+            // A partially used unit remains in the source, as in splitItemStack.
+            if (partial && movedItem.resource !== undefined && movedItem.maximumResource !== undefined) {
+                movedItem.resource = movedItem.maximumResource;
             }
-            
-            let newPc = { ...prevState.playerCharacter, inventory: inventory };
-            newPc = recalculateAllWeights(newPc); 
+            // Preserve all metadata and identities rather than merging by name.
+            let newPc = { ...prevState.playerCharacter, inventory: [...inventory, movedItem] };
+            newPc = recalculateAllWeights(newPc);
             newPc = recalculateDerivedStats(newPc);
-
-            if (gameContextRef.current) {
-                gameContextRef.current.playerCharacter = newPc;
-            }
-
+            if (gameContextRef.current) gameContextRef.current.playerCharacter = newPc;
             return { ...prevState, temporaryStash: newStash, playerCharacter: newPc };
         });
     };
@@ -431,7 +434,7 @@ export const createInventoryActions = (
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => w.woundId !== woundId);
                 if (gameContextRef.current) {
-                    gameContextRef.current.playerCharacter.playerWounds = pc.playerWounds;
+                    gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerWounds: pc.playerWounds };
                 }
             } else if (characterType === 'npc' && characterId) {
                 const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === characterId);
@@ -497,7 +500,7 @@ export const createInventoryActions = (
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => !w.healingState || w.healingState.currentState !== 'Healed');
                  if (gameContextRef.current) {
-                    gameContextRef.current.playerCharacter.playerWounds = pc.playerWounds;
+                    gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerWounds: pc.playerWounds };
                 }
             } else if (characterType === 'npc' && characterId) {
                 const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === characterId);

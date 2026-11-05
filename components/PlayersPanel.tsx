@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { PlayerCharacter, GameSettings, PeerInfo, NetworkRole, NPC, ImageCacheEntry } from '../types';
+import { PlayerCharacter, GameSettings, NPC, ImageCacheEntry } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { UserIcon, PlusCircleIcon, DocumentDuplicateIcon, ArrowRightOnRectangleIcon, TrashIcon } from '@heroicons/react/24/outline';
 import PlayerCreationModal from './PlayerCreationModal';
@@ -16,15 +16,12 @@ interface PlayersPanelProps {
     removePlayer: (playerId: string) => void;
     passTurnToPlayer: (playerIndex: number) => void;
     allowHistoryManipulation: boolean;
-    assignCharacterToPeer: (characterId: string, newPeerId: string | null) => void;
-    peers: PeerInfo[];
-    networkRole: NetworkRole;
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
     updatePlayerPortrait?: (playerId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
 }
 
-const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, gameSettings, onAddPlayer, onViewCharacterSheet, removePlayer, passTurnToPlayer, allowHistoryManipulation, assignCharacterToPeer, peers, networkRole, imageCache, onImageGenerated, updatePlayerPortrait }) => {
+const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, gameSettings, onAddPlayer, onViewCharacterSheet, removePlayer, passTurnToPlayer, allowHistoryManipulation, imageCache, onImageGenerated, updatePlayerPortrait }) => {
     const { t } = useLocalization();
     const [isCreating, setIsCreating] = useState(false);
     const [templatePlayer, setTemplatePlayer] = useState<PlayerCharacter | null>(null);
@@ -124,25 +121,6 @@ const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, g
                                         {t("Create based on {name}", { name: player.name })}
                                     </button>
                                 </div>
-                                {networkRole === 'host' && (
-                                    <div className="mt-2 pt-2 border-t border-gray-700/50">
-                                        <label htmlFor={`assign-${player.name}-${index}`} className="text-xs text-gray-400">{t('Assign to Player')}</label>
-                                        <select
-                                            id={`assign-${player.name}-${index}`}
-                                            value={peers.some(p => p.id === player.playerId) ? player.playerId : 'unassigned'}
-                                            onChange={(e) => {
-                                                const newPeerId = e.target.value === 'unassigned' ? null : e.target.value;
-                                                assignCharacterToPeer(player.playerId, newPeerId);
-                                            }}
-                                            className="w-full mt-1 bg-gray-700/50 border border-gray-600 rounded-md py-1 px-2 text-xs text-gray-200"
-                                        >
-                                            <option value="unassigned">{t('Unassigned')}</option>
-                                            {peers.map(peer => (
-                                                <option key={peer.id} value={peer.id}>{peer.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
                             </div>
                         );
                     })}

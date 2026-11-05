@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ArrowDownTrayIcon, ArrowUpTrayIcon, ClockIcon, WrenchScrewdriverIcon, InformationCircleIcon, TrashIcon, CloudArrowDownIcon, ExclamationTriangleIcon, BookOpenIcon, UserGroupIcon, WifiIcon, CheckIcon, ClipboardDocumentIcon, ArrowPathIcon, PaintBrushIcon } from '@heroicons/react/24/outline';
-import { GameSettings, DBSaveSlotInfo, GameState, PeerInfo, NetworkRole, NetworkChatMessage } from '../types';
+import { GameSettings, DBSaveSlotInfo, GameState } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import ConfirmationModal from './ConfirmationModal';
 import AboutContent from './AboutContent';
@@ -36,14 +36,6 @@ interface GameMenuViewProps {
     refreshDbSaveSlots: () => Promise<void>;
     clearNpcJournalsNow: () => void;
     gameState: GameState | null;
-    activeTab: 'System' | 'Network';
-    forceSyncAll: () => void;
-    startHostingFromLocalGame: () => void;
-    disconnect: () => void;
-    isMyTurn: boolean;
-    requestSyncFromHost: () => void;
-    networkChatHistory: NetworkChatMessage[];
-    sendNetworkChatMessage: (content: string) => void;
 }
 
 const formatTimestamp = (timestamp: string | null, t: (key: string, replacements?: any) => string): string => {
@@ -104,72 +96,11 @@ const ToggleSwitch: React.FC<{
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
-const NetworkChatView: React.FC<{
-    chatHistory: NetworkChatMessage[];
-    onSendMessage: (content: string) => void;
-    myPeerId: string | null;
-    t: TFunction;
-}> = ({ chatHistory, onSendMessage, myPeerId, t }) => {
-    const [newMessage, setNewMessage] = useState('');
-    const chatEndRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [chatHistory]);
-
-    const handleSend = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (newMessage.trim()) {
-            onSendMessage(newMessage.trim());
-            setNewMessage('');
-        }
-    };
-
-    return (
-        <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50 flex flex-col flex-1 min-h-0">
-            <h4 className="font-semibold text-gray-300 mb-3 flex items-center gap-2 flex-shrink-0">
-                <UserGroupIcon className="w-5 h-5 text-cyan-400" />
-                {t("Player Chat")}
-            </h4>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2 mb-2">
-                {chatHistory.map((msg, index) => {
-                    const isMyMessage = msg.senderId === myPeerId;
-                    return (
-                        <div key={index} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'}`}>
-                            <div className={`text-xs mb-1 ${isMyMessage ? 'text-cyan-400' : 'text-gray-400'}`}>{msg.senderName}</div>
-                            <div className={`px-3 py-2 rounded-lg max-w-xs text-sm ${isMyMessage ? 'bg-cyan-600/70 text-white rounded-br-none' : 'bg-gray-700/50 text-gray-200 rounded-bl-none'}`}>
-                                <MarkdownRenderer content={msg.content} />
-                            </div>
-                        </div>
-                    );
-                })}
-                <div ref={chatEndRef} />
-            </div>
-            <form onSubmit={handleSend} className="flex gap-2 flex-shrink-0">
-                <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder={t('Type a message...')}
-                    className="flex-1 bg-gray-800/60 border border-gray-600 rounded-md py-2 px-3 text-sm text-gray-200 focus:ring-1 focus:ring-cyan-500 transition"
-                />
-                <button
-                    type="submit"
-                    disabled={!newMessage.trim()}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-cyan-600 rounded-md hover:bg-cyan-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
-                >
-                    {t('Send')}
-                </button>
-            </form>
-        </div>
-    );
-};
-
-export default function GameMenuView({ 
-    onSave, 
-    onLoad, 
-    onLoadAutosave, 
-    autosaveTimestamp, 
+export default function GameMenuView({
+    onSave,
+    onLoad,
+    onLoadAutosave,
+    autosaveTimestamp,
     isGameActive,
     gameSettings,
     updateGameSettings,
@@ -183,14 +114,6 @@ export default function GameMenuView({
     refreshDbSaveSlots,
     clearNpcJournalsNow,
     gameState,
-    activeTab,
-    forceSyncAll,
-    startHostingFromLocalGame,
-    disconnect,
-    isMyTurn,
-    requestSyncFromHost,
-    networkChatHistory,
-    sendNetworkChatMessage
 }: GameMenuViewProps): React.ReactNode {
     const [isAdultConfirmOpen, setIsAdultConfirmOpen] = useState(false);
     const [localSuperInstructions, setLocalSuperInstructions] = React.useState(superInstructions);
@@ -215,17 +138,17 @@ export default function GameMenuView({
     useEffect(() => {
         refreshDbSaveSlots();
     }, [refreshDbSaveSlots]);
-    
+
     const universeInfo = useMemo(() => {
         if (!gameSettings) return { universe: null, selectedEra: null };
-    
+
         const { baseInfo } = gameSettings.gameWorldInformation;
         if (!baseInfo) return { universe: null, selectedEra: null };
-    
+
         if (baseInfo.universe) {
             return { universe: baseInfo.universe, selectedEra: baseInfo.selectedEra };
         }
-    
+
         for (const uniKey of Object.keys(defaultGameData)) {
             const uniData = (defaultGameData as any)[uniKey];
             if (uniKey === 'history' || uniKey === 'myths') {
@@ -240,22 +163,22 @@ export default function GameMenuView({
                 }
             }
         }
-        
+
         const customEraKey = baseInfo.name?.toLowerCase().replace(/\s+/g, '_');
         return { universe: 'custom', selectedEra: customEraKey };
-    
+
     }, [gameSettings]);
 
     const handleUpdateGameData = (newGameData: any) => {
         if (!gameSettings || !universeInfo.universe) return;
         const { universe, selectedEra } = universeInfo;
-        
+
         let world;
         if (universe === 'history' && selectedEra) world = newGameData.history[selectedEra];
         else if (universe === 'myths' && selectedEra) world = newGameData.myths[selectedEra];
         else if (universe === 'custom' && selectedEra) world = newGameData.custom[selectedEra];
         else world = newGameData[universe];
-        
+
         if (world) {
             const finalWorldData = {
                 ...world,
@@ -279,7 +202,7 @@ export default function GameMenuView({
         const { universe, selectedEra } = universeInfo;
         const baseInfo = gameSettings.gameWorldInformation.baseInfo;
         const gameDataState = JSON.parse(JSON.stringify(defaultGameData));
-        
+
         if (universe === 'history' && selectedEra) {
             gameDataState.history[selectedEra as keyof typeof gameDataState.history] = baseInfo;
         } else if (universe === 'myths' && selectedEra) {
@@ -296,7 +219,7 @@ export default function GameMenuView({
     const handleSaveSuperInstructions = () => {
         updateSuperInstructions(localSuperInstructions);
     };
-    
+
     const handleSaveWorldInfo = () => {
         if (gameSettings) {
             updateGameSettings({
@@ -326,12 +249,12 @@ export default function GameMenuView({
             setIsOverwriteConfirmOpen(null);
         }
     };
-    
+
     const handleClearJournalsConfirm = () => {
         clearNpcJournalsNow();
         setIsClearJournalConfirmOpen(false);
     };
-    
+
     if (!gameSettings) {
         return (
              <div className="space-y-6">
@@ -348,7 +271,7 @@ export default function GameMenuView({
     }
 
     const { adultMode, allowHistoryManipulation, keepLatestNpcJournals, latestNpcJournalsCount, cooperativeGameType, multiplePersonalitiesSettings, autoPassTurnInCoop, showPartyStatusPanel, doNotUseWorldEvents, hardMode, impossibleMode } = gameSettings;
-    
+
     const handleDifficultyChange = (difficulty: 'normal' | 'hard' | 'impossible') => {
         updateGameSettings({
             hardMode: difficulty === 'hard' || difficulty === 'impossible',
@@ -373,110 +296,9 @@ export default function GameMenuView({
       updateGameSettings({ adultMode: true });
       setIsAdultConfirmOpen(false);
     };
-    
-    const NetworkStatusView: React.FC<{ gameState: GameState | null, forceSyncAll: () => void, gameSettings: GameSettings | null, startHostingFromLocalGame: () => void, disconnect: () => void, isMyTurn: boolean, requestSyncFromHost: () => void }> = ({ gameState, forceSyncAll, gameSettings, startHostingFromLocalGame, disconnect, isMyTurn, requestSyncFromHost }) => {
-        const { t } = useLocalization();
-        const [copied, setCopied] = useState(false);
-    
-        if (!gameState || gameState.networkRole === 'none') {
-            const canHost = gameSettings?.cooperativeGameType !== 'None';
-            return (
-                <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50 space-y-4 flex-shrink-0">
-                     <h4 className="font-semibold text-gray-300 mb-3 flex items-center gap-2">
-                        <WifiIcon className="w-5 h-5 text-cyan-400" />
-                        {t("Network Status")}
-                    </h4>
-                    <p className="text-sm text-gray-500 text-center py-4">{t("Not in a network game.")}</p>
-                    <button
-                        onClick={startHostingFromLocalGame}
-                        disabled={!canHost}
-                        title={!canHost ? t('hosting_disabled_coop_none') : t("start_hosting_button")}
-                        className="w-full mt-2 bg-green-600/80 text-white font-bold py-2 px-4 rounded-md hover:bg-green-600 transition-all text-sm disabled:bg-gray-600 disabled:cursor-not-allowed"
-                    >
-                        {t("start_hosting_button")}
-                    </button>
-                    {!canHost && (
-                        <p className="text-xs text-yellow-400 text-center mt-2">
-                            {t('hosting_disabled_coop_none')}
-                        </p>
-                    )}
-                </div>
-            );
-        }
-        
-        const handleCopy = () => {
-            if (gameState.myPeerId) {
-                navigator.clipboard.writeText(gameState.myPeerId);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-            }
-        };
-        
-        const isHost = gameState.networkRole === 'host';
-        const showSyncButton = isHost || isMyTurn;
-    
-        return (
-            <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50 space-y-4 flex-shrink-0">
-                 <h4 className="font-semibold text-gray-300 mb-3 flex items-center gap-2">
-                    <WifiIcon className="w-5 h-5 text-cyan-400" />
-                    {t("Network Status")}
-                </h4>
-                <div className="text-sm space-y-2">
-                    <p><span className="font-semibold text-gray-400">{t("Your Role")}:</span> <span className="font-bold text-cyan-300 capitalize">{t(gameState.networkRole)}</span></p>
-                    <p><span className="font-semibold text-gray-400">{t("Status")}:</span> {gameState.isConnectedToHost || gameState.networkRole === 'host' ? <span className="text-green-400">{t("Connected")}</span> : <span className="text-yellow-400">{t("Connecting...")}</span>}</p>
-                </div>
-                
-                {gameState.networkRole === 'host' && gameState.myPeerId && (
-                    <div className="space-y-3 pt-3 border-t border-gray-700/50">
-                        <h5 className="font-semibold text-gray-400 text-sm mb-1">{t("Your Host ID")}</h5>
-                        <div className="flex items-center gap-2">
-                            <code className="flex-1 bg-gray-800/60 p-2 rounded-md text-cyan-300 font-mono text-sm break-all">{gameState.myPeerId}</code>
-                            <button
-                                onClick={handleCopy}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${copied ? 'bg-green-600/30 text-green-300' : 'bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/40'}`}
-                            >
-                                {copied ? <CheckIcon className="w-4 h-4" /> : <ClipboardDocumentIcon className="w-4 h-4" />}
-                                {copied ? t('Copied!') : t('Copy')}
-                            </button>
-                        </div>
-                    </div>
-                )}
-    
-                {gameState.networkRole === 'host' && (
-                    <div>
-                        <h5 className="font-semibold text-gray-400 text-sm mb-2">{t("Connected Peers")} ({gameState.peers.length})</h5>
-                        <div className="bg-gray-800/50 p-2 rounded-md space-y-1 max-h-40 overflow-y-auto">
-                            {gameState.peers.length > 0 ? gameState.peers.map((peer: PeerInfo) => (
-                                <div key={peer.id} className="text-sm text-gray-300">{peer.name}</div>
-                            )) : <p className="text-xs text-gray-500">{t("No players have connected yet.")}</p>}
-                        </div>
-                    </div>
-                )}
-                
-                {showSyncButton && (
-                    <button
-                        onClick={isHost ? forceSyncAll : requestSyncFromHost}
-                        disabled={isHost && gameState.peers.length === 0}
-                        className="w-full mt-4 bg-blue-600/80 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-all text-sm disabled:bg-gray-600 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        <ArrowPathIcon className="w-5 h-5" />
-                        {isHost ? t("Sync All Players") : t("Request Sync")}
-                    </button>
-                )}
-    
-                <button
-                    className="w-full mt-2 bg-red-600/80 text-white font-bold py-2 px-4 rounded-md hover:bg-red-600 transition-all text-sm"
-                    onClick={disconnect}
-                >
-                    {t("Disconnect")}
-                </button>
-            </div>
-        );
-    };
 
     return (
-        <div className={`h-full ${activeTab === 'Network' ? 'flex flex-col gap-4' : ''}`}>
-            {activeTab === 'System' &&
+        <div className="h-full">
             <div className="space-y-8">
             <fieldset disabled={!isGameActive} className="space-y-4">
                 <h3 className="text-xl font-bold text-cyan-400 mb-2 narrative-text flex items-center gap-2">
@@ -618,7 +440,7 @@ export default function GameMenuView({
                     </button>
                 </div>
             </fieldset>
-            
+
             <fieldset disabled={!isGameActive || isLoading} className="space-y-4">
                 <h3 className="text-xl font-bold text-cyan-400 mb-2 narrative-text">{t("Game Rules")}</h3>
                 <div className="p-4 bg-gray-900/30 rounded-lg border border-cyan-500/20 space-y-4">
@@ -641,14 +463,14 @@ export default function GameMenuView({
                             <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-focus-within:ring-2 peer-focus-within:ring-yellow-500 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-600"></div>
                         </div>
                     </div>
-                    
+
                     <ToggleSwitch label={t("Allow History Manipulation")} description={t("allowHistoryManipulationDescription")} name="allowHistoryManipulation" checked={allowHistoryManipulation} onChange={(e) => updateGameSettings({ allowHistoryManipulation: e.target.checked })} />
                     <ToggleSwitch label={t('Disable World Events')} description={t('disable_world_events_desc')} name="doNotUseWorldEvents" checked={!!doNotUseWorldEvents} onChange={(e) => updateGameSettings({ doNotUseWorldEvents: e.target.checked })} />
-                    <ToggleSwitch 
-                        label={t("generate_world_event_images")} 
-                        description={t("generate_world_event_images_desc")} 
-                        name="generateWorldEventImages" 
-                        checked={gameSettings.generateWorldEventImages ?? true} 
+                    <ToggleSwitch
+                        label={t("generate_world_event_images")}
+                        description={t("generate_world_event_images_desc")}
+                        name="generateWorldEventImages"
+                        checked={gameSettings.generateWorldEventImages ?? true}
                         onChange={(e) => updateGameSettings({ generateWorldEventImages: e.target.checked })}
                     />
                     <div className="flex items-center justify-between p-3 bg-gray-900/30 rounded-lg">
@@ -668,7 +490,7 @@ export default function GameMenuView({
                     </div>
                 </div>
             </fieldset>
-            
+
             <fieldset disabled={!isGameActive || isLoading} className="space-y-4">
                 <h3 className="text-xl font-bold text-cyan-400 mb-2 narrative-text">{t("Cooperative Settings")}</h3>
                 <div className="p-4 bg-gray-900/30 rounded-lg border border-cyan-500/20 space-y-4">
@@ -693,7 +515,7 @@ export default function GameMenuView({
                             {cooperativeGameType === 'MultiplePersonalities' ? t('multiple_personalities_desc') :
                             cooperativeGameType === 'FullParty' ? t('full_party_desc') : ''}
                         </p>
-                        
+
                         {cooperativeGameType === 'MultiplePersonalities' && (
                             <div className="p-3 bg-gray-800/30 rounded-md mt-4 space-y-3 animate-fade-in-down">
                                 <h4 className="font-medium text-gray-300">{t("multiple_personalities_settings")}</h4>
@@ -749,20 +571,20 @@ export default function GameMenuView({
                     </div>
                 </div>
             </fieldset>
-            
+
             <fieldset disabled={!isGameActive || isLoading} className="space-y-4">
                 <h3 className="text-xl font-bold text-cyan-400 mb-2 narrative-text flex items-center gap-2">{t("Arena GM")}</h3>
                 <div className="p-4 bg-gray-900/30 rounded-lg border border-cyan-500/20 text-sm text-gray-300">
                     {t("The Arena agent handles all text and image generation. Model, provider, search, and generation-parameter controls are not used.")}
                 </div>
             </fieldset>
-            
+
             <fieldset disabled={!isGameActive || isLoading} className="space-y-4">
                  <h3 className="text-xl font-bold text-cyan-400 mb-2 narrative-text flex items-center gap-2"><BookOpenIcon className="w-6 h-6" /> {t('Narrative Overrides')}</h3>
                  <div className="p-4 bg-gray-900/30 rounded-lg border border-gray-700/50 space-y-4">
-                    <button 
-                        type="button" 
-                        onClick={() => setIsCustomizerOpen(true)} 
+                    <button
+                        type="button"
+                        onClick={() => setIsCustomizerOpen(true)}
                         className="w-full bg-gray-700/60 text-cyan-300 font-semibold py-2 px-4 rounded-md hover:bg-gray-700 hover:text-cyan-200 transition-colors flex items-center justify-center gap-2"
                     >
                         <PaintBrushIcon className="w-5 h-5"/>
@@ -786,27 +608,6 @@ export default function GameMenuView({
                 {t('About the Project')}
             </button>
         </div>
-            }
-            {activeTab === 'Network' &&
-                <>
-                <NetworkStatusView 
-                    gameState={gameState} 
-                    forceSyncAll={forceSyncAll} 
-                    gameSettings={gameSettings} 
-                    startHostingFromLocalGame={startHostingFromLocalGame} 
-                    disconnect={disconnect} 
-                    isMyTurn={isMyTurn}
-                    requestSyncFromHost={requestSyncFromHost}
-                />
-                <NetworkChatView
-                    chatHistory={networkChatHistory}
-                    onSendMessage={sendNetworkChatMessage}
-                    myPeerId={gameState?.myPeerId || null}
-                    t={t}
-                />
-                </>
-            }
-            
             <ConfirmationModal isOpen={isAdultConfirmOpen} onClose={() => setIsAdultConfirmOpen(false)} onConfirm={confirmAdultMode} title={t("Adult Mode (21+)")}>
                 <p>{t("adult_mode_warning_p1")}</p><p>{t("adult_mode_warning_p2")}</p><p>{t("adult_mode_warning_p3")}</p><p className="font-bold">{t("adult_mode_warning_p4")}</p>
             </ConfirmationModal>

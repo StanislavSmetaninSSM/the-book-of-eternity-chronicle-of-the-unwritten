@@ -1,5 +1,7 @@
 export const item = {
   en: {
+    "stash_destroy_stale": "The stash changed. Review the item and try again.",
+    "stash_destroy_confirmation": "Permanently discard {name} from the shared stash? This cannot be undone.",
     // Item Details
     "Item: {name}": "Item: {name}",
     "Volume": "Volume",
@@ -61,6 +63,7 @@ export const item = {
     "StashWarning": "Items in the stash are temporary. They will be **permanently lost** if you do not retrieve them before taking your next action. This represents items you have dropped on the ground in the current scene.",
     "Quantity to take": "Quantity to take",
     "You still cannot carry this item. Drop something else first.": "You still cannot carry this item. Drop something else first.",
+    "Take the whole container or sentient stack.": "Take the whole container or sentient stack.",
     "npc_overloaded_refusal": "The companion is carrying too much and cannot take this item.",
     "no_text_content_item": "This item has no readable text content.",
     "Are you sure you want to delete all text content for this item? This cannot be undone.": "Are you sure you want to delete all text content for this item? This cannot be undone.",
@@ -183,6 +186,8 @@ export const item = {
     "CraftingMaterial": "CraftingMaterial",
   },
   ru: {
+    "stash_destroy_stale": "Тайник изменился. Проверьте предмет и повторите действие.",
+    "stash_destroy_confirmation": "Безвозвратно выбросить {name} из общего тайника? Это действие нельзя отменить.",
     // Item Details
     "Item: {name}": "Предмет: {name}",
     "Volume": "Объем",
@@ -244,6 +249,7 @@ export const item = {
     "StashWarning": "Предметы в тайнике временные. Они будут **безвозвратно утеряны**, если вы не заберете их до своего следующего действия. Это предметы, которые вы бросили на землю в текущей сцене.",
     "Quantity to take": "Количество для взятия",
     "You still cannot carry this item. Drop something else first.": "Вы все еще не можете унести этот предмет. Сначала выбросьте что-нибудь другое.",
+    "Take the whole container or sentient stack.": "Заберите контейнер или стопку разумных предметов целиком.",
     "npc_overloaded_refusal": "Компаньон перегружен и не может взять этот предмет.",
     "no_text_content_item": "У этого предмета нет читаемого текстового содержимого.",
     "Are you sure you want to delete all text content for this item? This cannot be undone.": "Вы уверены, что хотите удалить всё текстовое содержимое этого предмета? Это действие необратимо.",

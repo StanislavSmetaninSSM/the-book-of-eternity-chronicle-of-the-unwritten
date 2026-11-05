@@ -1,10 +1,10 @@
 
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { 
-    PaperAirplaneIcon, 
-    ArrowPathIcon, 
-    QuestionMarkCircleIcon, 
+import {
+    PaperAirplaneIcon,
+    ArrowPathIcon,
+    QuestionMarkCircleIcon,
     XCircleIcon,
     ListBulletIcon,
     CodeBracketIcon,
@@ -28,8 +28,8 @@ import LoadingSpinner from './LoadingSpinner';
 import { loadPlayerActionDraft, savePlayerActionDraft } from '../utils/fileManager';
 
 interface InputBarProps {
-  onSendMessage: (message: string, image?: { data: string; mimeType: string; } | null) => void;
-  onAskQuestion: (question: string, image?: { data: string; mimeType: string; } | null) => void;
+  onSendMessage: (message: string, image?: { data: string; mimeType: string; } | null) => Promise<boolean>;
+  onAskQuestion: (question: string, image?: { data: string; mimeType: string; } | null) => Promise<boolean>;
   onCancelRequest: () => void;
   onClearHalfHistory: () => void;
   isLoading: boolean;
@@ -41,8 +41,6 @@ interface InputBarProps {
   onGetMusicSuggestion: () => void;
   isMusicLoading: boolean;
   isMusicPlayerVisible: boolean;
-  onRequestCollectiveAction: () => void;
-  onInitiateSimultaneousAction: () => void;
   onToggleStealth: () => void;
   isMusicPlayerDocked: boolean;
   undockMusicPlayer: () => void;
@@ -71,7 +69,7 @@ const MarkdownToolbar: React.FC<{
     onInsert: (text: string) => void;
 }> = ({ textareaRef, onInsert }) => {
     const { t } = useLocalization();
-    
+
     const applyFormat = (syntaxStart: string, syntaxEnd: string = syntaxStart) => {
         const textarea = textareaRef.current;
         if (!textarea) return;
@@ -79,7 +77,7 @@ const MarkdownToolbar: React.FC<{
         const start = textarea.selectionStart;
         const end = textarea.selectionEnd;
         const selectedText = textarea.value.substring(start, end);
-        
+
         let newText;
         let cursorOffset;
 
@@ -90,10 +88,10 @@ const MarkdownToolbar: React.FC<{
             newText = `${syntaxStart}${syntaxEnd}`;
             cursorOffset = start + syntaxStart.length;
         }
-        
+
         insertText(newText, start, end, cursorOffset);
     };
-    
+
     const applyLinePrefix = (prefix: string) => {
         const textarea = textareaRef.current;
         if (!textarea) return;
@@ -112,7 +110,7 @@ const MarkdownToolbar: React.FC<{
         const before = textarea.value.substring(0, selectionStart);
         const after = textarea.value.substring(selectionEnd);
         const newFullText = `${before}${textToInsert}${after}`;
-        
+
         onInsert(newFullText);
 
         setTimeout(() => {
@@ -147,15 +145,19 @@ const MarkdownToolbar: React.FC<{
     );
 }
 
-export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, gameSettings, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onRequestCollectiveAction, onInitiateSimultaneousAction, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
+export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, gameSettings, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
   const [content, setContent] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const draftKeyRef = useRef<string | null>(null);
+  const currentDraftRef = useRef<{ content: string; image: { dataUrl: string; mimeType: string } | null; question: boolean } | null>(null);
   const [isActionDraftReady, setIsActionDraftReady] = useState(false);
   const [loadedActionDraftKey, setLoadedActionDraftKey] = useState<string | null>(null);
   const [isQuestionMode, setIsQuestionMode] = useState(false);
   const [activeView, setActiveView] = useState<'write' | 'preview'>('write');
   const [isSuggestionsExpanded, setIsSuggestionsExpanded] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { t } = useLocalization();
+  const { t, language } = useLocalization();
   const [selectedImage, setSelectedImage] = useState<{ dataUrl: string; mimeType: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const actionDraftWarningShownRef = useRef(false);
@@ -165,20 +167,16 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
     actionDraftWarningShownRef.current = true;
   };
   const playerActionDraftKey = playerCharacter?.playerId || gameState?.playerCharacter?.playerId || null;
-  const updateContent = (nextContent: string) => {
-    setContent(nextContent);
-    if (playerActionDraftKey && isActionDraftReady && loadedActionDraftKey === playerActionDraftKey) {
-      void savePlayerActionDraft(playerActionDraftKey, nextContent.trim()
-        ? { content: nextContent, isQuestionMode }
-        : null).catch(reportActionDraftError);
-    }
-  };
+  draftKeyRef.current = playerActionDraftKey;
+  currentDraftRef.current = { content, image: selectedImage, question: isQuestionMode };
+  const updateContent = (nextContent: string) => setContent(nextContent);
 
   useEffect(() => {
     let cancelled = false;
     setIsActionDraftReady(false);
     setLoadedActionDraftKey(null);
     setContent('');
+    setSelectedImage(null);
     setIsQuestionMode(false);
     if (!playerActionDraftKey) {
       setIsActionDraftReady(true);
@@ -189,6 +187,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       if (draft) {
         setContent(draft.content);
         setIsQuestionMode(draft.isQuestionMode);
+        setSelectedImage(draft.image || null);
       }
       setLoadedActionDraftKey(playerActionDraftKey);
     }).finally(() => {
@@ -199,66 +198,42 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
 
   useEffect(() => {
     if (!playerActionDraftKey || !isActionDraftReady || loadedActionDraftKey !== playerActionDraftKey) return;
-    void savePlayerActionDraft(playerActionDraftKey, content.trim()
-      ? { content, isQuestionMode }
+    void savePlayerActionDraft(playerActionDraftKey, content.trim() || selectedImage
+      ? { content, isQuestionMode, image: selectedImage }
       : null).catch(reportActionDraftError);
-  }, [isQuestionMode, isActionDraftReady, loadedActionDraftKey, playerActionDraftKey]);
+  }, [content, selectedImage, isQuestionMode, isActionDraftReady, loadedActionDraftKey, playerActionDraftKey]);
 
-  const lastPlayerMessage = useMemo(() => 
+  const lastPlayerMessage = useMemo(() =>
     history.slice().reverse().find(m => m.sender === 'player'),
   [history]);
 
-  const { isDisabled, placeholderText, isMyTurn } = useMemo(() => {
-    if (isLoading) {
-        return { isDisabled: true, placeholderText: t("Waiting for game synchronization..."), isMyTurn: false };
-    }
-    if (!gameState || !gameSettings) {
-        return { isDisabled: isLoading, placeholderText: t("What do you do next?"), isMyTurn: true };
-    }
-    
-    // If not in a network game, it's always the local player's turn and enabled.
-    if (gameState.networkRole === 'none') {
-        return { isDisabled: false, placeholderText: isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?"), isMyTurn: true };
-    }
+  const isDisabled = isLoading || isSubmitting || !isActionDraftReady;
+  const isMyTurn = true;
+  const placeholderText = isLoading ? t("The Game Master is responding...") : isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?");
 
-    const myPlayerId = gameState.myPeerId;
-    const activePlayer = gameState.players[gameState.activePlayerIndex];
-    
-    // For multiplayer mode, if we haven't synced our ID yet.
-    if (!myPlayerId || !activePlayer) {
-        return { isDisabled: true, placeholderText: t("Waiting for game to sync..."), isMyTurn: false };
-    }
-    
-    const localIsMyTurn = activePlayer.playerId === myPlayerId;
-    const disabled = !localIsMyTurn;
-    
-    let placeholder = isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?");
-    if (!localIsMyTurn) {
-        placeholder = t("It's not your turn.");
-    }
-    return { isDisabled: disabled, placeholderText: placeholder, isMyTurn: localIsMyTurn };
-  }, [gameState, gameSettings, isLoading, isQuestionMode, t]);
-  
-  const doSubmit = useCallback(() => {
-    if (isDisabled || (content.trim() === '' && !selectedImage)) return;
-    if (playerActionDraftKey) {
-      void savePlayerActionDraft(playerActionDraftKey, null).catch(reportActionDraftError);
-    }
-    
+  const doSubmit = useCallback(async () => {
+    if (isDisabled || submittingRef.current || (content.trim() === '' && !selectedImage)) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    const submittedKey = playerActionDraftKey;
     const imagePayload = selectedImage ? { data: selectedImage.dataUrl.split(',')[1], mimeType: selectedImage.mimeType } : null;
-
-    if (isQuestionMode) {
-        onAskQuestion(content, imagePayload);
+    try {
+      const accepted = await (isQuestionMode ? onAskQuestion(content, imagePayload) : onSendMessage(content, imagePayload));
+      if (accepted && draftKeyRef.current === submittedKey && currentDraftRef.current?.content === content &&
+          currentDraftRef.current?.image === selectedImage && currentDraftRef.current?.question === isQuestionMode) {
+        if (submittedKey) void savePlayerActionDraft(submittedKey, null).catch(reportActionDraftError);
+        setContent('');
+        setSelectedImage(null);
         setIsQuestionMode(false);
-    } else {
-        onSendMessage(content, imagePayload);
+        setActiveView('write');
+        setTimeout(() => textareaRef.current?.focus(), 0);
+      }
+    } catch (error) {
+      console.error('Submission was not accepted:', error);
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
-    
-    setContent('');
-    setSelectedImage(null);
-    setActiveView('write');
-    setTimeout(() => textareaRef.current?.focus(), 0);
-
   }, [isDisabled, isQuestionMode, onAskQuestion, onSendMessage, content, selectedImage, playerActionDraftKey]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -269,9 +244,9 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
   };
 
   const handleRepeat = () => {
-    if (lastPlayerMessage && !isLoading) {
+    if (lastPlayerMessage && !isDisabled) {
       const isLastMessageAQuestion = lastPlayerMessage.content.startsWith('[Question]');
-      
+
       if (isLastMessageAQuestion) {
         const originalQuestion = lastPlayerMessage.content.substring('[Question] '.length);
         onAskQuestion(originalQuestion, null);
@@ -289,12 +264,21 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
     if (level >= 26) return 'bg-yellow-500';
     return 'bg-cyan-500';
   };
-  
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
           if (!file.type.startsWith('image/')) {
               alert(t("Please select an image file."));
+              return;
+          }
+          // Keep the encoded image plus the large rules prompt below the relay's 12 MiB limit.
+          if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'].includes(file.type)) {
+              alert(language === 'ru' ? 'Поддерживаются изображения PNG, JPEG, WebP, GIF и BMP.' : 'Supported images: PNG, JPEG, WebP, GIF and BMP.');
+              return;
+          }
+          if (file.size > 4 * 1024 * 1024) {
+              alert(language === 'ru' ? 'Размер изображения не должен превышать 4 МиБ.' : 'The image must be no larger than 4 MiB.');
               return;
           }
           const reader = new FileReader();
@@ -311,7 +295,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); doSubmit(); }} className="mt-auto space-y-2 pointer-events-auto">
-      {suggestedActions && suggestedActions.length > 0 && !isLoading && isMyTurn && (
+      {suggestedActions && suggestedActions.length > 0 && !isDisabled && isMyTurn && (
         <div className="pb-2">
           <div className="flex justify-center items-center mb-2">
             <button
@@ -361,6 +345,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
             <img src={selectedImage.dataUrl} alt="Selected preview" className="w-full h-full object-cover rounded" />
             <button
                 type="button"
+                disabled={isDisabled}
                 onClick={() => setSelectedImage(null)}
                 className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-0.5"
                 title={t('Remove Image')}
@@ -386,7 +371,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
             {t('Preview')}
           </button>
         </div>
-        
+
         {activeView === 'write' ? (
           <div>
             <MarkdownToolbar textareaRef={textareaRef} onInsert={updateContent} />
@@ -412,7 +397,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" className="hidden" />
             <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
@@ -490,32 +475,8 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
             >
                 <ArchiveBoxXMarkIcon className="h-5 w-5" />
             </button>
-            {gameSettings?.cooperativeGameType !== 'None' && isMyTurn && (
-                <>
-                <button
-                    type="button"
-                    onClick={onRequestCollectiveAction}
-                    disabled={isDisabled}
-                    aria-label={t("Request Collective Action")}
-                    className="p-2 rounded-md bg-gray-700/60 text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={t("Request Collective Action")}
-                >
-                    <UserGroupIcon className="h-5 w-5" />
-                </button>
-                <button
-                    type="button"
-                    onClick={onInitiateSimultaneousAction}
-                    disabled={isDisabled}
-                    aria-label={t("Simultaneous Combat Round")}
-                    className="p-2 rounded-md bg-gray-700/60 text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={t("Simultaneous Combat Round")}
-                >
-                    <SimultaneousIcon className="h-5 w-5" />
-                </button>
-                </>
-            )}
         </div>
-        
+
         <div className="flex items-center gap-2">
             <button
                 type="button"

@@ -51,7 +51,8 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
     const effects = isPlayer ? (character as PlayerCharacter).activePlayerEffects : (character as NPC).activeEffects || [];
     const wounds = isPlayer ? (character as PlayerCharacter).playerWounds : (character as NPC).wounds || [];
     const customStates = isPlayer ? (character as PlayerCharacter).playerCustomStates : (character as NPC).customStates || [];
-    const activeWounds = (wounds ?? []).filter(w => w.healingState && w.healingState.currentState !== 'Healed');
+    // Unknown legacy states must remain visible rather than implying the character is unwounded.
+    const activeWounds = (wounds ?? []).filter(w => w && w.healingState?.currentState !== 'Healed');
     const healedWounds = (wounds ?? []).filter(w => w.healingState && w.healingState.currentState === 'Healed');
     
     const handleClearAllHealedWounds = () => {
@@ -186,7 +187,7 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
                         ))) : <p className="text-sm text-gray-500 text-center p-2">{t('You are unwounded.')}</p>}
                     </div>
                 </div>
-                {isAdminEditable && healedWounds.length > 0 && (
+                {healedWounds.length > 0 && (
                     <div className="mt-4">
                         <div className="border-b border-cyan-500/20 mb-3">
                             <button onClick={() => setHealedWoundsCollapsed(prev => !prev)} className="w-full flex justify-between items-center text-left pb-1 group">
@@ -201,16 +202,20 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
                                         <button onClick={() => onOpenDetailModal(t("Wound: {name}", { name: wound.woundName }), {type: 'wound', ...wound})} className="w-full text-left">
                                             <span className="font-semibold text-green-400/80 hover:text-green-300 transition-colors">{wound.woundName}</span>
                                         </button>
-                                        <button onClick={(e) => { e.stopPropagation(); setConfirmForget(wound); }} className="absolute top-2 right-2 p-1 text-gray-400 rounded-full hover:bg-red-900/50 hover:text-red-300 transition-colors opacity-0 group-hover:opacity-100" title={t('Forget Wound')}>
-                                            <TrashIcon className="w-4 h-4" />
-                                        </button>
+                                        {isAdminEditable && (
+                                            <button onClick={(e) => { e.stopPropagation(); setConfirmForget(wound); }} className="absolute top-2 right-2 p-1 text-gray-400 rounded-full hover:bg-red-900/50 hover:text-red-300 transition-colors opacity-0 group-hover:opacity-100" title={t('Forget Wound')}>
+                                                <TrashIcon className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
-                                <div className="!mt-4">
-                                    <button onClick={() => setConfirmClear(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs bg-red-900/50 hover:bg-red-900/80 rounded-md text-red-300 font-semibold transition-colors">
-                                        <TrashIcon className="w-4 h-4" /> {t('Clear All Healed Wounds')}
-                                    </button>
-                                </div>
+                                {isAdminEditable && (
+                                    <div className="!mt-4">
+                                        <button onClick={() => setConfirmClear(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs bg-red-900/50 hover:bg-red-900/80 rounded-md text-red-300 font-semibold transition-colors">
+                                            <TrashIcon className="w-4 h-4" /> {t('Clear All Healed Wounds')}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

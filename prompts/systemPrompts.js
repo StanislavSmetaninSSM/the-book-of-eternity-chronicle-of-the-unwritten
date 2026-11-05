@@ -12,7 +12,7 @@ import * as mainPromptModule from './mainPromptModule.js';
  */
 export const getCorrectionPrompt = (invalidJson, gameContext, error) => {
     // We get the main guide rules which contain the full JSON schema description.
-    const schemaDescription = mainPromptModule.getGameMasterGuideRules(gameContext);
+    const schemaDescription = mainPromptModule.getGameMasterGuideRules();
 
     return `
 <SYSTEM_CORRECTION_PROTOCOL>

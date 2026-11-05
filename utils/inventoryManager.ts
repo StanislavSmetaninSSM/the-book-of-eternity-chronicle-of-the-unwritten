@@ -84,31 +84,22 @@ export const unequipItem = (itemToUnequip: Item, currentState: GameState): GameS
 };
 
 export const dropItem = (itemToDrop: Item, currentState: GameState): GameState => {
-    const newState = JSON.parse(JSON.stringify(currentState));
-    const pc = newState.playerCharacter as PlayerCharacter;
+    const id = itemToDrop.existedId;
+    if (!id) return currentState;
+    const matches = currentState.playerCharacter.inventory.filter(item => item.existedId === id);
+    // A stale UI object is only an identifier, not a source of item data. Never
+    // remove multiple records or overwrite an existing stash record with this ID.
+    if (matches.length !== 1 || currentState.temporaryStash?.some(item => item.existedId === id)) return currentState;
 
-    // 1. Unequip the item if it was equipped
+    const newState = JSON.parse(JSON.stringify(currentState)) as GameState;
+    const pc = newState.playerCharacter;
+    const item = pc.inventory.find(entry => entry.existedId === id)!;
     Object.keys(pc.equippedItems).forEach(slot => {
-        if (pc.equippedItems[slot] === itemToDrop.existedId) {
-            pc.equippedItems[slot] = null;
-        }
+        if (pc.equippedItems[slot] === id) pc.equippedItems[slot] = null;
     });
-
-    // 2. Remove the item from inventory
-    pc.inventory = pc.inventory.filter(i => i.existedId !== itemToDrop.existedId);
-
-    // 3. Add the item to the temporary stash
-    if (!newState.temporaryStash) {
-        newState.temporaryStash = [];
-    }
-    
-    // Ensure the item isn't already there before adding
-    if (!newState.temporaryStash.find(i => i.existedId === itemToDrop.existedId)) {
-        // Dropped items should not have a contentsPath. When taken back, they go to root inventory.
-        const itemForStash = { ...itemToDrop, contentsPath: null };
-        newState.temporaryStash.push(itemForStash);
-    }
-
+    pc.inventory = pc.inventory.filter(entry => entry.existedId !== id);
+    if (!newState.temporaryStash) newState.temporaryStash = [];
+    newState.temporaryStash.push({ ...item, contentsPath: null });
     return newState;
 };
 
@@ -324,6 +315,10 @@ export const transferItemBetweenCharacters = (
     quantity: number,
     currentState: GameState
 ): GameState => {
+    // A negative, fractional or non-finite amount can create items in the
+    // source or corrupt counts. Do not mutate either side on invalid input.
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 ||
+        !['player', 'npc'].includes(sourceType) || !['player', 'npc'].includes(targetType) || sourceType === targetType) return currentState;
     const newState = JSON.parse(JSON.stringify(currentState));
     const player = newState.playerCharacter as PlayerCharacter;
     const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === npcId);
@@ -347,14 +342,34 @@ export const transferItemBetweenCharacters = (
     if (sourceItemIndex === -1) return currentState;
 
     const sourceItem = sourceInventory[sourceItemIndex];
+    if (!Number.isSafeInteger(sourceItem.count) || sourceItem.count <= 0) return currentState;
     const validQuantity = Math.min(quantity, sourceItem.count);
 
     // Create the item being moved
     const movedItemStack = { ...sourceItem, count: validQuantity, existedId: generateId('item'), contentsPath: null };
+    // Like the existing split and GM transfer rules, the partially used unit
+    // stays in the source stack when only part of a stack is moved.
+    if (validQuantity < sourceItem.count && movedItemStack.resource !== undefined && movedItemStack.maximumResource !== undefined) {
+        movedItemStack.resource = movedItemStack.maximumResource;
+    }
     
     // Add to target
-    const existingTargetStackIndex = targetInventory.findIndex((i: Item) => i.name === movedItemStack.name && !i.equipmentSlot);
+    // Name alone does not identify an equivalent stack: merging distinct
+    // properties, resources, sentient items or containers would discard data.
+    // A conservative mismatch creates a separate stack instead.
+    const stackMetadata = (item: Item) => {
+        const { existedId: _id, count: _count, ...metadata } = item;
+        return JSON.stringify(metadata);
+    };
+    const existingTargetStackIndex = targetInventory.findIndex((item: Item) =>
+        !item.equipmentSlot && !movedItemStack.equipmentSlot && !item.isContainer && !movedItemStack.isContainer &&
+        !item.isSentient && !movedItemStack.isSentient &&
+        (item.resource === undefined || item.resource === item.maximumResource) &&
+        (movedItemStack.resource === undefined || movedItemStack.resource === movedItemStack.maximumResource) &&
+        stackMetadata(item) === stackMetadata(movedItemStack));
     if (existingTargetStackIndex > -1) {
+        const targetCount = targetInventory[existingTargetStackIndex].count;
+        if (!Number.isSafeInteger(targetCount) || targetCount < 0 || !Number.isSafeInteger(targetCount + validQuantity)) return currentState;
         targetInventory[existingTargetStackIndex].count += validQuantity;
     } else {
         targetInventory.push(movedItemStack);

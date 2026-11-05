@@ -1,3 +1,5 @@
+// @ts-ignore -- shared JS helpers
+import { resolveLinkTarget } from '../../utils/locationLinks.js';
 
 
 
@@ -14,6 +16,7 @@ export const createPlayerActionsManager = (
     {
         setGameState,
         setGameHistory,
+        setUserGameHistory = setGameHistory,
         setGameLog,
         setCombatLog,
         setVisitedLocations,
@@ -25,6 +28,7 @@ export const createPlayerActionsManager = (
     }: {
         setGameState: React.Dispatch<React.SetStateAction<GameState | null>>,
         setGameHistory: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+        setUserGameHistory?: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
         setGameLog: React.Dispatch<React.SetStateAction<string[]>>,
         setCombatLog: React.Dispatch<React.SetStateAction<string[]>>,
         setVisitedLocations: React.Dispatch<React.SetStateAction<Location[]>>,
@@ -64,7 +68,7 @@ export const createPlayerActionsManager = (
             if (!prevState) return null;
             const newPc = { ...prevState.playerCharacter, autoCombatSkill: skillName };
             if (gameContextRef.current) {
-                gameContextRef.current.playerCharacter.autoCombatSkill = skillName;
+                gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, autoCombatSkill: skillName };
             }
             return { ...prevState, playerCharacter: newPc };
         });
@@ -72,7 +76,7 @@ export const createPlayerActionsManager = (
 
     const editChatMessage = (indexToEdit: number, newContent: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
-        setGameHistory(prevHistory => {
+        setUserGameHistory(prevHistory => {
             const newHistory = [...prevHistory];
             if (newHistory[indexToEdit]) {
                 newHistory[indexToEdit] = { ...newHistory[indexToEdit], content: newContent };
@@ -112,7 +116,7 @@ export const createPlayerActionsManager = (
             if (!prevState) return null;
             const newInventory = prevState.playerCharacter.inventory.map(item => item.existedId === itemId ? { ...item, [field]: value } : item);
             const newPc = { ...prevState.playerCharacter, inventory: newInventory };
-            if (gameContextRef.current) gameContextRef.current.playerCharacter.inventory = newInventory;
+            if (gameContextRef.current) gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, inventory: newInventory };
             return { ...prevState, playerCharacter: newPc };
         });
     };
@@ -267,11 +271,11 @@ export const createPlayerActionsManager = (
     };
 
     const deleteMessage = (indexToDelete: number) => {
-        setGameHistory(prevHistory => deleteMessageUtil(indexToDelete, prevHistory));
+        setUserGameHistory(prevHistory => deleteMessageUtil(indexToDelete, prevHistory));
     };
 
     const clearHalfHistory = () => {
-        setGameHistory(prevHistory => clearHalfHistoryUtil(prevHistory));
+        setUserGameHistory(prevHistory => clearHalfHistoryUtil(prevHistory));
     };
 
     const deleteLogs = () => {
@@ -351,13 +355,19 @@ export const createPlayerActionsManager = (
         });
         setWorldMap(prev => {
             const newMap = { ...prev };
+            const originalLocations = Object.values(prev) as Location[];
             delete newMap[locationId];
             Object.keys(newMap).forEach(key => {
-                if (newMap[key].adjacencyMap) {
-                    newMap[key].adjacencyMap = newMap[key].adjacencyMap!.filter(link => {
-                        const targetLoc = (Object.values(newMap) as Location[]).find(l => l.coordinates?.x === link.targetCoordinates.x && l.coordinates?.y === link.targetCoordinates.y);
-                        return !(targetLoc && targetLoc.locationId === locationId);
+                const location = newMap[key];
+                if (location.adjacencyMap) {
+                    const adjacencyMap = location.adjacencyMap.filter(link => {
+                        if (link.targetLocationId) return link.targetLocationId !== locationId;
+                        const targetLoc = resolveLinkTarget(link, originalLocations);
+                        return targetLoc?.locationId !== locationId;
                     });
+                    if (adjacencyMap.length !== location.adjacencyMap.length) {
+                        newMap[key] = { ...location, adjacencyMap };
+                    }
                 }
             });
             if (gameContextRef.current) gameContextRef.current.worldMap = newMap;
@@ -401,7 +411,7 @@ export const createPlayerActionsManager = (
             
             if (gameContextRef.current) {
                 gameContextRef.current.playerCustomStates = newPlayerCustomStates;
-                gameContextRef.current.playerCharacter.playerCustomStates = newPlayerCustomStates;
+                gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerCustomStates: newPlayerCustomStates };
             }
             
             return newState;
@@ -684,74 +694,60 @@ export const createPlayerActionsManager = (
     };
     
     const placeAsStorage = (itemToPlace: Item) => {
-        if (!gameSettings?.allowHistoryManipulation) return;
+        if (!gameSettings?.allowHistoryManipulation || !itemToPlace.existedId) return;
+        // React may evaluate an updater more than once; its new identity must
+        // remain stable across evaluations of the same user action.
+        const storageId = generateId('storage');
         setGameState(prevState => {
-            if (!prevState) return null;
-
-            let newPc = { ...prevState.playerCharacter };
+            if (!prevState || !prevState.currentLocationData) return prevState;
+            const previousPc = prevState.playerCharacter;
+            const matches = previousPc.inventory.filter(item => item.existedId === itemToPlace.existedId);
+            if (matches.length !== 1 || prevState.currentLocationData.locationStorages?.some(storage => storage.storageId === storageId)) return prevState;
+            const item = matches[0];
+            const equippedItems = { ...previousPc.equippedItems };
             let wasEquipped = false;
-            Object.keys(newPc.equippedItems).forEach(slot => {
-                if (newPc.equippedItems[slot] === itemToPlace.existedId) {
-                    newPc.equippedItems[slot] = null;
+            Object.keys(equippedItems).forEach(slot => {
+                if (equippedItems[slot] === item.existedId) {
+                    equippedItems[slot] = null;
                     wasEquipped = true;
                 }
             });
-
-            const itemIndex = newPc.inventory.findIndex(i => i.existedId === itemToPlace.existedId);
-            if (itemIndex === -1) {
-                console.warn("Item to place as storage not found in inventory.");
-                return prevState;
-            }
-            newPc.inventory.splice(itemIndex, 1);
-            
-            const newLocation = { ...prevState.currentLocationData };
-            if (!newLocation.locationStorages) {
-                newLocation.locationStorages = [];
-            }
-
+            let newPc = { ...previousPc, equippedItems, inventory: previousPc.inventory.filter(entry => entry !== item) };
             const newStorage: LocationStorage = {
-                storageId: generateId('storage'),
-                name: itemToPlace.name,
-                description: itemToPlace.description,
-                image_prompt: itemToPlace.image_prompt,
-                capacity: itemToPlace.capacity,
-                volume: itemToPlace.volume,
-                owner: {
-                    ownerType: 'Player',
-                    ownerId: newPc.playerId,
-                    ownerName: newPc.name,
-                },
+                storageId,
+                name: item.name,
+                description: item.description,
+                image_prompt: item.image_prompt,
+                capacity: item.capacity,
+                volume: item.volume,
+                owner: { ownerType: 'Player', ownerId: newPc.playerId, ownerName: newPc.name },
                 authorizedUsers: [],
-                contents: [], // starts empty
+                contents: [],
                 hasFullAccess: true,
             };
-
-            newLocation.locationStorages.push(newStorage);
-            
+            const newLocation = { ...prevState.currentLocationData, locationStorages: [...(prevState.currentLocationData.locationStorages || []), newStorage] };
             newPc = recalculateAllWeights(newPc);
-            if (wasEquipped) {
-                newPc = recalculateDerivedStats(newPc);
-            }
-            
-            const newState = {
-                ...prevState,
-                playerCharacter: newPc,
-                currentLocationData: newLocation,
-            };
-
+            if (wasEquipped) newPc = recalculateDerivedStats(newPc);
             if (gameContextRef.current) {
                 gameContextRef.current.playerCharacter = newPc;
                 gameContextRef.current.currentLocation = newLocation;
             }
-
-            return newState;
+            return { ...prevState, playerCharacter: newPc, currentLocationData: newLocation };
         });
     };
 
     const moveToLocationStorage = (locationId: string, storageId: string, item: Item, quantity: number) => {
+        if (!item.existedId || !Number.isSafeInteger(quantity) || quantity <= 0) return;
         setGameState(prevState => {
             if (!prevState || !prevState.currentLocationData || prevState.currentLocationData.locationId !== locationId) return prevState;
-    
+            const storages = prevState.currentLocationData.locationStorages;
+            if (!Array.isArray(storages) || !Array.isArray(prevState.playerCharacter.inventory)) return prevState;
+            const matchingStorages = storages.filter(storage => storage?.storageId === storageId);
+            if (matchingStorages.length !== 1 || !Array.isArray(matchingStorages[0].contents)) return prevState;
+            const priorStorage = matchingStorages[0];
+            const sourceItems = prevState.playerCharacter.inventory.filter(entry => entry.existedId === item.existedId);
+            if (sourceItems.length !== 1 || !Number.isSafeInteger(sourceItems[0].count) || sourceItems[0].count <= 0) return prevState;
+
             const newState = JSON.parse(JSON.stringify(prevState));
             let pc = newState.playerCharacter as PlayerCharacter;
             let location = newState.currentLocationData as Location;
@@ -771,6 +767,7 @@ export const createPlayerActionsManager = (
     
             const existingStack = storage.contents.find(i => i.name === itemToMove.name && !i.equipmentSlot);
             if (existingStack) {
+                if (!Number.isSafeInteger(existingStack.count) || existingStack.count < 0 || !Number.isSafeInteger(existingStack.count + validQuantity)) return prevState;
                 existingStack.count += validQuantity;
             } else {
                 storage.contents.push({ ...itemToMove, existedId: generateId('item') });
@@ -795,9 +792,17 @@ export const createPlayerActionsManager = (
     };
 
     const retrieveFromLocationStorage = (locationId: string, storageId: string, item: Item, quantity: number) => {
+        if (!item.existedId || !Number.isSafeInteger(quantity) || quantity <= 0) return;
         setGameState(prevState => {
             if (!prevState || !prevState.currentLocationData || prevState.currentLocationData.locationId !== locationId) return prevState;
-    
+            const storages = prevState.currentLocationData.locationStorages;
+            if (!Array.isArray(storages) || !Array.isArray(prevState.playerCharacter.inventory)) return prevState;
+            const matchingStorages = storages.filter(storage => storage?.storageId === storageId);
+            if (matchingStorages.length !== 1 || !Array.isArray(matchingStorages[0].contents)) return prevState;
+            const priorStorage = matchingStorages[0];
+            const sourceItems = priorStorage.contents.filter(entry => entry.existedId === item.existedId);
+            if (sourceItems.length !== 1 || !Number.isSafeInteger(sourceItems[0].count) || sourceItems[0].count <= 0) return prevState;
+
             const newState = JSON.parse(JSON.stringify(prevState));
             let pc = newState.playerCharacter as PlayerCharacter;
             let location = newState.currentLocationData as Location;
@@ -824,6 +829,7 @@ export const createPlayerActionsManager = (
 
             const existingStack = pc.inventory.find(i => i.name === itemToMove.name && !i.equipmentSlot);
             if (existingStack) {
+                if (!Number.isSafeInteger(existingStack.count) || existingStack.count < 0 || !Number.isSafeInteger(existingStack.count + validQuantity)) return prevState;
                 existingStack.count += validQuantity;
             } else {
                 pc.inventory.push({ ...itemToMove, existedId: generateId('item') });

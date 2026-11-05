@@ -382,6 +382,7 @@ export interface ThreatArchetype {
 }
 
 export interface CompletedThreatActivity {
+    activityId?: string;
     activityName: string;
     finalState: 'Completed' | 'Abandoned';
     narrativeSummary: string;
@@ -501,6 +502,7 @@ export interface FateCard {
 
 // FIX: Added missing Activity types for NPCs.
 export interface CurrentActivity {
+    activityId?: string; // Stable identity for threat activities; legacy saves may omit it.
     activityName: string;
     description: string;
     totalTimeCostMinutes: number;
@@ -830,6 +832,13 @@ export interface NPCEffectChange {
     effectsToRemove?: string[];
 }
 
+export interface InventoryTransfer {
+    transferId: string;
+    source: { type: 'player' | 'npc'; id: string; itemId: string };
+    destination: { type: 'player' | 'npc'; id: string };
+    quantity: number;
+}
+
 export interface NPCInventoryAdd {
     NPCId: string | null;
     NPCName: string;
@@ -907,6 +916,7 @@ export interface CompleteFactionProject {
 }
 
 export interface CompleteThreatActivity {
+  activityId: string;
   targetLocationId: string;
   threatId: string;
   threatName: string;
@@ -1116,6 +1126,7 @@ export interface GameResponse {
     NPCFateCardUnlocks?: { NPCId: string; cardId: string; cardName: string }[];
     NPCsInScene?: boolean;
     factionCustomStateChanges?: FactionCustomStateChange[];
+    inventoryTransfers?: InventoryTransfer[];
     NPCInventoryAdds?: NPCInventoryAdd[];
     NPCInventoryUpdates?: NPCInventoryUpdate[];
     NPCInventoryRemovals?: NPCInventoryRemoval[];
@@ -1149,20 +1160,6 @@ export interface GameResponse {
     NPCRelationshipLockUpdates?: NPCRelationshipLockUpdate[];
 }
 
-export interface CollectiveActionState {
-    isActive: boolean;
-    initiatorId: string;
-    initiatorName: string;
-    prompt: string;
-    participantIds: string[];
-    actions: Record<string, string>;
-}
-
-export interface SimultaneousActionState {
-    isActive: boolean;
-    actions: Record<string, string>; // playerId -> action
-}
-
 export interface CinemaFrame {
     imagePrompt: string;
     imageUrl?: string;
@@ -1194,6 +1191,8 @@ export interface GameState {
     playerCustomStates: CustomState[];
     plotOutline: PlotOutline | null;
     temporaryStash?: Item[];
+    // Committed transfer IDs and canonical payloads, saved with the game.
+    completedInventoryTransfers?: Record<string, string>;
     worldStateFlags: WorldStateFlag[];
     worldEventsLog: WorldEvent[];
     imageCache: Record<string, ImageCacheEntry>;
@@ -1202,16 +1201,7 @@ export interface GameState {
     NPCsInScene?: boolean;
     cinematics?: Cinematic[];
     thoughtSignature?: string; // Preserved reasoning context from the last turn
-    // Network state
-    networkRole: NetworkRole;
-    myPeerId: string | null;
-    hostPeerId?: string | null;
-// FIX: Changed Peer[] to PeerInfo[] to resolve name collision with peerjs library.
-    peers: PeerInfo[];
-    isConnectedToHost: boolean;
-    playerNeedsToCreateCharacter?: boolean;
-    collectiveActionState?: CollectiveActionState | null;
-    simultaneousActionState?: SimultaneousActionState | null;
+
 }
 
 export interface CombatActionEffect {
@@ -1285,11 +1275,7 @@ export interface GameContext {
     alliesDataForCurrentTurn: AllyCombatObject[];
     playerCustomStates: CustomState[];
     worldEventsLog: WorldEvent[];
-    networkRole: NetworkRole;
     previousThoughtSignature?: string; // Passed back to the model to maintain reasoning context
-// FIX: Changed Peer[] to PeerInfo[] to resolve name collision with peerjs library.
-    peers: PeerInfo[];
-    isConnectedToHost: boolean;
 }
 
 export interface DBSaveSlotInfo {
@@ -1302,6 +1288,7 @@ export interface DBSaveSlotInfo {
 }
 
 export interface AdjacencyMapEntry {
+    targetLocationId?: string; // Legacy links may contain coordinates only.
     name: string;
     shortDescription: string;
     linkType: string;
@@ -1311,45 +1298,7 @@ export interface AdjacencyMapEntry {
     estimatedExternalDifficultyProfile?: DifficultyProfile;
 }
 
-export interface NetworkChatMessage {
-  senderId: string;
-  senderName: string;
-  content: string;
-  timestamp: number;
-}
-
-export interface NetworkMessage {
-    type: NetworkMessageType;
-    payload: any;
-    senderId?: string;
-}
-
 export type Language = 'en' | 'ru';
-
-export type NetworkRole = 'host' | 'player' | 'spectator' | 'none';
-
-// FIX: Renamed interface from Peer to PeerInfo to avoid name collision with the 'peerjs' library.
-export interface PeerInfo {
-    id: string; // Will be a peer connection ID
-    name: string; // The player's character name
-}
-
-// --- NEW Network Message Protocol ---
-export type NetworkMessageType = 
-  'full_sync' | 
-  'game_state_update' | 
-  'new_player_character_data' |
-  'player_joined_notification' |
-  'player_left_notification' |
-  'chat_message' |
-  'turn_passed' |
-  'player_action' |
-  'request_full_sync' |
-  'request_collective_action' |
-  'submit_collective_action' |
-  'request_simultaneous_action' |
-  'simultaneous_action_submit' |
-  'turn_result_from_player';
 
 export interface SaveFile {
   gameContext: GameContext;

@@ -4,8 +4,6 @@ import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CharacterSheet from './components/CharacterSheet';
 import ChatWindow from './components/ChatWindow';
-import CollectiveActionPanel from './components/CollectiveActionPanel';
-import CollectiveActionRequestModal from './components/CollectiveActionRequestModal';
 import CombatTracker from './components/CombatTracker';
 import DetailRenderer from './components/DetailRenderer/index';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -17,16 +15,13 @@ import MarkdownRenderer from './components/MarkdownRenderer';
 import Modal from './components/Modal';
 import LyriaMusicPlayer from './components/LyriaMusicPlayer';
 import { PartyStatus } from './components/PartyStatus';
-import PlayerCreationModal from './components/PlayerCreationModal';
 import SidePanel from './components/SidePanel';
-import SimultaneousActionPanel from './components/SimultaneousActionPanel';
 // FIX: Changed import to named import as per error message indicating no default export.
 import StartScreen  from './components/StartScreen';
 import TurnIndicator from './components/TurnIndicator';
 import { useLocalization } from './context/LocalizationContext';
 import { useGameLogic } from './hooks/useGameLogic';
-import { ChatMessage, Cinematic, Faction, Item, Location, NPC, NetworkRole, PlayerCharacter, Quest, Wound, LocationStorage, Project, LocationData, ImageCacheEntry } from './types';
-import { gameData } from './utils/localizationGameData';
+import { ChatMessage, Cinematic, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, Project, LocationData, ImageCacheEntry } from './types';
 import TextReaderModal from './components/TextReaderModal';
 import { useSpeech } from './context/SpeechContext';
 import { consumeStartupLoadRequest, releasePreparedSaveFile, type PreparedSaveFile } from './utils/fileManager';
@@ -184,21 +179,6 @@ export default function App(): React.ReactNode {
         deleteActiveSkill,
         deletePassiveSkill,
         deleteActiveEffect,
-        startHost,
-        joinGame,
-        sendNewCharacterToHost,
-        initiateCollectiveAction,
-        submitCollectiveAction,
-        processCollectiveActions,
-        cancelCollectiveAction,
-        assignCharacterToPeer,
-        forceSyncAll,
-        startHostingFromLocalGame,
-        initiateSimultaneousAction,
-        submitSimultaneousAction,
-        cancelSimultaneousAction,
-        disconnect,
-        requestSyncFromHost,
         clearAllCompletedFactionProjects,
         clearAllCompletedNpcActivities,
         onDeleteCurrentActivity,
@@ -233,8 +213,6 @@ export default function App(): React.ReactNode {
         generateCinematicAudio,
         lastTurnSaveFile,
         regenerateLastResponse,
-        networkChatHistory,
-        sendNetworkChatMessage,
         deleteFactionBonus,
         isSaving,
         deleteImageFromCache,
@@ -299,7 +277,6 @@ export default function App(): React.ReactNode {
     const [editContent, setEditContent] = useState('');
     const [isMapFullScreen, setIsMapFullScreen] = useState(false);
     const [isCombatFullScreen, setIsCombatFullScreen] = useState(false);
-    const [isCollectiveActionModalOpen, setIsCollectiveActionModalOpen] = useState(false);
     const [viewingCharacter, setViewingCharacter] = useState<PlayerCharacter | NPC | null>(null);
     const [isCharacterSheetFullScreen, setIsCharacterSheetFullScreen] = useState(false);
     const [isPartyStatusFullScreen, setIsPartyStatusFullScreen] = useState(false);
@@ -455,11 +432,11 @@ export default function App(): React.ReactNode {
             );
         } else if (isLocation(data)) {
              const locationData = data as Location & { type: 'location' };
-             const allKnownLocations: Record<string, Location> = { 
-                 ...(worldMap || {}), 
-                 ...(gameState.currentLocationData && gameState.currentLocationData.locationId 
-                     ? { [gameState.currentLocationData.locationId]: gameState.currentLocationData } 
-                     : {}) 
+             const allKnownLocations: Record<string, Location> = {
+                 ...(worldMap || {}),
+                 ...(gameState.currentLocationData && gameState.currentLocationData.locationId
+                     ? { [gameState.currentLocationData.locationId]: gameState.currentLocationData }
+                     : {})
              };
              const foundLocation = locationData.locationId ? allKnownLocations[locationData.locationId] : undefined;
              if (foundLocation && typeof foundLocation === 'object' && !Array.isArray(foundLocation)) {
@@ -478,31 +455,13 @@ export default function App(): React.ReactNode {
         }
     }, [gameState, currentDetailModal, visitedLocations, worldMap]);
 
-    const { isMyTurn, activePlayerName } = useMemo(() => {
-        if (!gameState || !gameSettings || gameSettings.cooperativeGameType === 'None') {
-            return { isMyTurn: true, activePlayerName: null };
-        }
-
-        const activePlayer = gameState.players[gameState.activePlayerIndex];
-        const activeName = activePlayer?.name || null;
-
-        if (gameState.playerNeedsToCreateCharacter) {
-            return { isMyTurn: false, activePlayerName: activeName };
-        }
-
-        const myPlayerId = gameState.myPeerId;
-        if (!myPlayerId || !activePlayer) {
-            return { isMyTurn: true, activePlayerName: activeName }; // Fallback for single player/initial state
-        }
-
-        return { isMyTurn: activePlayer.playerId === myPlayerId, activePlayerName: activeName };
-    }, [gameState, gameSettings]);
+    const activePlayerName = gameSettings?.cooperativeGameType !== 'None' ? gameState?.players[gameState.activePlayerIndex]?.name || null : null;
 
     const npcsInScene = useMemo(() => {
         if (!gameState) return [];
         const { currentLocationData, encounteredNPCs } = gameState;
         if (!currentLocationData || !encounteredNPCs) return [];
-    
+
         const currentLocId = currentLocationData.locationId;
         const currentLocInitialId = currentLocationData.initialId;
         const currentLocName = currentLocationData.name;
@@ -517,12 +476,12 @@ export default function App(): React.ReactNode {
 
         const npcsInLocation = encounteredNPCs.filter(npc => {
             if (!npc) return false;
-    
+
             // 1. Match by location ID
             if (currentLocId && npc.currentLocationId === currentLocId) {
                 return true;
             }
-    
+
             // 2. Match by initial ID (for new locations)
             if (currentLocInitialId && npc.initialLocationId === currentLocInitialId) {
                 return true;
@@ -535,7 +494,7 @@ export default function App(): React.ReactNode {
                     return true;
                 }
             }
-    
+
             return false;
         });
 
@@ -562,7 +521,7 @@ export default function App(): React.ReactNode {
                 // It's fine if it's not a valid JSON yet during streaming.
             }
         }
-        
+
         const combinedNpcSet = new Set(npcsInLocation.map(n => n.NPCId));
         npcsWithRecentJournalsSet.forEach(id => id && combinedNpcSet.add(id));
 
@@ -605,16 +564,6 @@ export default function App(): React.ReactNode {
 
     const handleStartGame = (creationData: any) => {
         startGame(creationData);
-        setHasStarted(true);
-    };
-
-    const handleStartHost = (creationData: any) => {
-        startHost(creationData);
-        setHasStarted(true);
-    };
-
-    const handleJoinGame = (hostId: string, role: NetworkRole, playerName: string) => {
-        joinGame(hostId, role, playerName);
         setHasStarted(true);
     };
 
@@ -767,33 +716,6 @@ export default function App(): React.ReactNode {
         }
     }, [lastPlayerMessage, isLoading, sendMessage, askQuestion]);
 
-    const [isCreatingPlayer, setIsCreatingPlayer] = useState(false);
-
-    useEffect(() => {
-        if (gameState?.playerNeedsToCreateCharacter) {
-            setIsCreatingPlayer(true);
-        } else {
-            setIsCreatingPlayer(false);
-        }
-    }, [gameState?.playerNeedsToCreateCharacter]);
-
-    const handleSubmitNewNetworkPlayer = (creationData: any) => {
-        if (sendNewCharacterToHost) {
-            sendNewCharacterToHost(creationData);
-        }
-        setIsCreatingPlayer(false);
-    };
-
-    const currentWorldData = useMemo(() => {
-        if (!gameSettings) return gameData.fantasy;
-        const { universe, selectedEra } = gameSettings.gameWorldInformation.baseInfo;
-        const universeKey = universe as keyof typeof gameData;
-        if (universeKey === 'history' || universeKey === 'myths') {
-            const eraKey = selectedEra as any;
-            return gameData[universeKey][eraKey] || gameData.fantasy;
-        }
-        return gameData[universeKey] || gameData.fantasy;
-    }, [gameSettings]);
 
     const handleViewCharacter = useCallback((character: PlayerCharacter | NPC) => {
         setViewingCharacter(character);
@@ -811,7 +733,7 @@ export default function App(): React.ReactNode {
             onClearCallback();
         }
     }, [imageModalInfo]);
-    
+
     const handleModalUploadCustom = useCallback((base64: string | null) => {
         setImageModalInfo(prev => {
             if (prev?.onUpload && base64) {
@@ -824,11 +746,11 @@ export default function App(): React.ReactNode {
 
     const handleImageGeneratedInModal = useCallback((generatedFromPrompt: string, newBase64: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => {
         onImageGenerated(generatedFromPrompt, newBase64, sourceProvider, sourceModel);
-        
+
         if (imageModalInfo?.onClearCustom) {
             imageModalInfo.onClearCustom();
         }
-        
+
         setImageModalInfo(prev => {
             if (!prev) return null;
             return { ...prev, prompt: generatedFromPrompt, originalTextPrompt: generatedFromPrompt };
@@ -873,7 +795,7 @@ export default function App(): React.ReactNode {
         if (isRegenerating) {
             if (pendingRegenerationMessage.current) {
                 const rawContent = pendingRegenerationMessage.current;
-                
+
                 if (rawContent.startsWith('[Question] ')) {
                     const actualQuestion = rawContent.substring('[Question] '.length);
                     askQuestion(actualQuestion, null);
@@ -891,8 +813,6 @@ export default function App(): React.ReactNode {
             <ArenaGmRelayPanel />
             <StartScreen
                 onStartLocal={handleStartGame}
-                onStartHost={handleStartHost}
-                onJoinGame={handleJoinGame}
                 onLoadGame={handleLoadGame}
                 onLoadAutosave={handleLoadAutosave}
                 autosaveTimestamp={autosaveTimestamp}
@@ -908,23 +828,6 @@ export default function App(): React.ReactNode {
         </>;
     }
 
-    if (isCreatingPlayer && gameSettings && gameState) {
-        return (
-            <>
-            <ArenaGmRelayPanel />
-            <PlayerCreationModal
-                isOpen={isCreatingPlayer}
-                onClose={() => { /* Disconnect logic could go here */ }}
-                onSubmit={handleSubmitNewNetworkPlayer}
-                universe={gameSettings.gameWorldInformation.baseInfo.universe}
-                currentWorldData={currentWorldData}
-                gameSettings={gameSettings}
-                partyLevel={gameState.playerCharacter.level || 1}
-                shareCharacteristics={gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false}
-            />
-            </>
-        );
-    }
 
         return (
         <>
@@ -969,10 +872,10 @@ export default function App(): React.ReactNode {
                             )}
                         </div>
                     )}
-                    
+
                     <div className="absolute top-4 right-4 z-50">
-                         <button 
-                            onClick={() => setIsUIHidden(!isUIHidden)} 
+                         <button
+                            onClick={() => setIsUIHidden(!isUIHidden)}
                             className="bg-gray-800/80 p-2 rounded-full border border-gray-600 hover:bg-gray-700 transition-colors text-gray-300 hover:text-white backdrop-blur-sm"
                             title={isUIHidden ? t('Show UI') : t('Hide UI')}
                          >
@@ -1018,28 +921,8 @@ export default function App(): React.ReactNode {
                                         isLoading={isLoading}
                                     />
                                 </div>
-                                {gameState?.simultaneousActionState?.isActive ? (
-                                    <SimultaneousActionPanel
-                                        players={gameState.players}
-                                        myPlayerId={gameState.myPeerId}
-                                        roundActions={gameState.simultaneousActionState.actions}
-                                        onSubmitAction={submitSimultaneousAction}
-                                        isLoading={isLoading}
-                                        onCancelAction={gameState.networkRole === 'host' ? cancelSimultaneousAction : undefined}
-                                        isHost={gameState.networkRole === 'host'}
-                                    />
-                                ) : gameState?.collectiveActionState?.isActive ? (
-                                    <CollectiveActionPanel
-                                        gameState={gameState}
-                                        onSubmitAction={submitCollectiveAction}
-                                        onProcessActions={processCollectiveActions}
-                                        onCancelAction={cancelCollectiveAction}
-                                        isLoading={isLoading}
-                                    />
-                                ) : (
-                                    <>
+                                <>
                                         <TurnIndicator
-                                            isMyTurn={isMyTurn}
                                             activePlayerName={activePlayerName}
                                             gameSettings={gameSettings}
                                         />
@@ -1057,8 +940,6 @@ export default function App(): React.ReactNode {
                                             onGetMusicSuggestion={handlePrimaryMusicClick}
                                             isMusicLoading={isMusicLoading}
                                             isMusicPlayerVisible={isMusicPlayerVisible}
-                                            onRequestCollectiveAction={() => setIsCollectiveActionModalOpen(true)}
-                                            onInitiateSimultaneousAction={initiateSimultaneousAction}
         // FIX: Changed onToggleStealth to the defined handler handleStealthButtonClick.
                                             onToggleStealth={handleStealthButtonClick}
                                             isMusicPlayerDocked={isMusicPlayerDocked}
@@ -1068,7 +949,6 @@ export default function App(): React.ReactNode {
                                             playPauseMusicRef={playPauseMusicRef}
                                         />
                                     </>
-                                )}
                                 </>
                             )}
                         </ErrorBoundary>
@@ -1193,15 +1073,7 @@ export default function App(): React.ReactNode {
                                 deletePassiveSkill={deletePassiveSkill}
                                 deleteActiveEffect={deleteActiveEffect}
                                 deleteFactionBonus={deleteFactionBonus}
-                                assignCharacterToPeer={assignCharacterToPeer}
-                                peers={gameState?.peers}
-                                networkRole={gameState?.networkRole}
                                 onViewCharacterSheet={handleViewCharacter}
-                                forceSyncAll={forceSyncAll}
-                                startHostingFromLocalGame={startHostingFromLocalGame}
-                                disconnect={disconnect}
-                                isMyTurn={isMyTurn}
-                                requestSyncFromHost={requestSyncFromHost}
                                 clearAllCompletedFactionProjects={clearAllCompletedFactionProjects}
                                 clearAllCompletedNpcActivities={clearAllCompletedNpcActivities}
                                 onDeleteCurrentActivity={onDeleteCurrentActivity}
@@ -1229,8 +1101,6 @@ export default function App(): React.ReactNode {
                                 regenerateCinemaFrame={regenerateCinemaFrame}
                                 generateCinematicAudio={generateCinematicAudio}
                                 npcsInScene={npcsInScene}
-                                networkChatHistory={networkChatHistory}
-                                sendNetworkChatMessage={sendNetworkChatMessage}
                                 deleteImageFromCache={deleteImageFromCache}
                                 clearImageCache={clearImageCache}
                             />
@@ -1345,9 +1215,9 @@ export default function App(): React.ReactNode {
                         </div>
                     </Modal>
                 )}
-                <Modal 
-                    isOpen={!!currentDetailModal} 
-                    onClose={handleCloseDetailModal} 
+                <Modal
+                    isOpen={!!currentDetailModal}
+                    onClose={handleCloseDetailModal}
                     title={currentDetailModal?.title || t('Details')}
                     size={isDetailModalFullScreen ? "fullscreen" : "default"}
                     onToggleFullScreen={() => setIsDetailModalFullScreen(p => !p)}
@@ -1549,15 +1419,6 @@ export default function App(): React.ReactNode {
                         />
                     </div>
                 </Modal>
-            )}
-            {isCollectiveActionModalOpen && gameState && (
-                <CollectiveActionRequestModal
-                    isOpen={isCollectiveActionModalOpen}
-                    onClose={() => setIsCollectiveActionModalOpen(false)}
-                    players={gameState.players}
-                    myPlayerId={gameState.playerCharacter.playerId}
-                    onSubmit={initiateCollectiveAction}
-                />
             )}
             {editModalData && (
                 <Modal isOpen={true} onClose={() => setEditModalData(null)} title={t("Edit Message")}>

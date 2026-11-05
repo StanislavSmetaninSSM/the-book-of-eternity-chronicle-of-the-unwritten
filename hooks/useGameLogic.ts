@@ -1,7 +1,10 @@
+import { localizeLegacySave, localizeLegacyState } from '../utils/localizeLegacySave';
+import { sanitizeGameState } from '../utils/sanitizeGameState';
+import { isLocalPreferenceKey, sharedSettingsEqual } from '../utils/localGamePreferences';
+import { beginGameplayMutation, gameplayMutationCommitted, guardGameplayActions } from '../utils/gameplayMutationGate';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // FIX: Imported missing types to resolve multiple "Cannot find name" errors.
-import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Quest, Wound, CustomState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item, CompletedActivity, AdjacencyMapEntry, Project, CompletedProject, StructuredBonus, ActiveThreat, Cinematic, FactionRank, NetworkChatMessage, CinemaFrame, SkillMastery, ImageCacheEntry, DayInfo, Month, NetworkRole, NetworkMessage, PeerInfo, CollectiveActionState, SimultaneousActionState } from '../types';
-import Peer, { DataConnection } from 'peerjs';
+import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Quest, Wound, CustomState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item, CompletedActivity, AdjacencyMapEntry, Project, CompletedProject, StructuredBonus, ActiveThreat, Cinematic, FactionRank, CinemaFrame, SkillMastery, ImageCacheEntry, DayInfo, Month } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { getCinemaPrompt, getContinueCinemaPrompt } from '../prompts/cinemaPrompt';
@@ -14,10 +17,10 @@ import { createSaveLoadManager } from './logic/saveLoad';
 import { createInventoryActions } from './logic/inventoryActions';
 import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
-import { createMultiplayerManager } from './logic/multiplayer';
-import { checkAndApplyLevelUp, processAndApplyResponse } from '../utils/responseProcessor';
+import { processAndApplyResponse } from '../utils/responseProcessor';
+import { restorePlayerStats } from '../utils/restorePlayer';
 import { recalculateAllWeights } from '../utils/inventoryManager';
-import { recalculateDerivedStats, buildNextContext, createInitialContext, calculateDate, calculateTotalMinutes, calculateJourneyDay } from '../utils/gameContext';
+import { recalculateDerivedStats, buildNextContext, createInitialContext, calculateDate, calculateTotalMinutes, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
 import {
     clearCrashRecoveryMarker,
     getAutosaveTimestampFromDB,
@@ -28,7 +31,7 @@ import {
     markCrashRecoveryAttempt,
     saveCrashRecoveryPoint,
     loadInterruptedTurnRecovery,
-    clearInterruptedTurnRecovery,
+    clearInterruptedTurnRecoveryIfUnchanged,
 } from '../utils/fileManager';
 import type { CrashRecoveryMarker, CrashRecoveryMetadata, CrashRecoveryReason, InterruptedTurnRecovery } from '../utils/fileManager';
 import { initializeAndPreviewSound, playNotificationSound } from '../utils/soundManager';
@@ -39,6 +42,7 @@ import { deepStripModerationSymbols } from '../utils/textUtils';
 import { gameData } from '../utils/localizationGameData';
 import { translate } from '../utils/localization';
 import { cancelInterruptedArenaGmRequest, requestArenaGmImage } from '../utils/arenaGmRelay';
+
 
 
 interface UseGameLogicProps {
@@ -70,42 +74,186 @@ const formatTime = (totalMinutes: number) => {
 
 
 export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
-    const [gameState, _setGameState] = useState<GameState | null>(null);
+    // Party transitions must change the active player, turn number and history
+    // in one React update. Independent setters are still exposed to the rest of
+    // the lifecycle, but share one ordered state queue.
+    const [core, setCore] = useState<{ gameState: GameState | null; gameHistory: ChatMessage[]; turnNumber: number | null; partyRevision: number }>({ gameState: null, gameHistory: [], turnNumber: null, partyRevision: 0 });
+    const { gameState, gameHistory, turnNumber } = core;
+    const _setGameState = useCallback((action: React.SetStateAction<GameState | null>) => setCore(previous => {
+        const next = typeof action === 'function' ? action(previous.gameState) : action;
+        return next === previous.gameState ? previous : { ...previous, gameState: next };
+    }), []);
+    const _setGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => setCore(previous => {
+        const next = typeof action === 'function' ? action(previous.gameHistory) : action;
+        return next === previous.gameHistory ? previous : { ...previous, gameHistory: next };
+    }), []);
+    const setTurnNumber = useCallback((action: React.SetStateAction<number | null>) => setCore(previous => {
+        const next = typeof action === 'function' ? action(previous.turnNumber) : action;
+        return next === previous.turnNumber ? previous : { ...previous, turnNumber: next };
+    }), []);
     const gameStateRef = useRef(gameState);
-
-    const setGameState = useCallback((action: React.SetStateAction<GameState | null>) => {
-        _setGameState(prevState => {
-            const newState = typeof action === 'function' ? (action as (prevState: GameState | null) => GameState | null)(prevState) : action;
-
-            if (newState) {
-                if (Array.isArray(newState.encounteredNPCs)) {
-                    newState.encounteredNPCs = newState.encounteredNPCs.filter(isObject);
-                }
-                if (Array.isArray(newState.encounteredFactions)) {
-                    newState.encounteredFactions = newState.encounteredFactions.filter(isObject);
-                }
-            }
-
-            gameStateRef.current = newState;
-            return newState;
+    const gameplayMutationRevisionRef = useRef(0);
+    const gameplayMutationAppliedRef = useRef(0);
+    const stateMutationRevisionRef = useRef(0), stateMutationAppliedRef = useRef(0);
+    const historyMutationRevisionRef = useRef(0), historyMutationAppliedRef = useRef(0);
+    const gameplayMutationPendingRef = useRef(false);
+    const [gameplayMutationEpoch, setGameplayMutationEpoch] = useState(0);
+    const mutationMessageRef = useRef({ delivery: '' });
+    const pendingPartyTransitionRef = useRef<{ revision: number } | null>(null);
+    const contextEditRef = useRef({
+        settings: { revision: 0, applied: 0, expected: null as GameSettings | null },
+        instructions: { revision: 0, applied: 0, expected: '' },
+        world: { revision: 0, applied: 0, expected: null as WorldState | null },
+        map: { revision: 0, applied: 0, expected: {} as Record<string, Location> },
+        visited: { revision: 0, applied: 0, expected: [] as Location[] },
+        gameLog: { revision: 0, applied: 0, expected: [] as string[] },
+        combatLog: { revision: 0, applied: 0, expected: [] as string[] }
+    });
+    const [contextEditEpoch, setContextEditEpoch] = useState(0);
+    const contextEditGenerationRef = useRef(0);
+    // Internal state updates (turn commits, restores, and presentation assets)
+    // do not represent competing player edits.
+    const setGameStateInternal = useCallback((action: React.SetStateAction<GameState | null>) => {
+        _setGameState(previous => {
+            const proposed = typeof action === 'function' ? action(previous) : action;
+            const next = sanitizeGameState(proposed);
+            gameStateRef.current = next;
+            return next;
         });
     }, []);
+
+    const setGameState = useCallback((action: React.SetStateAction<GameState | null>) => {
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
+        if (revision === null) {
+            setError(mutationMessageRef.current.delivery);
+            return;
+        }
+        stateMutationRevisionRef.current = revision;
+        setGameStateInternal(previous => {
+            try {
+                const next = typeof action === 'function' ? action(previous) : action;
+                return next;
+            }
+            finally {
+                stateMutationAppliedRef.current = Math.max(stateMutationAppliedRef.current, revision);
+                gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, revision);
+            }
+        });
+        setGameplayMutationEpoch(epoch => epoch + 1);
+        if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
+    }, [setGameStateInternal]);
+
+    const userGameplayActionBlocked = useCallback(() => false, []);
+    const setPresentationState = setGameStateInternal;
 
     const [worldState, setWorldState] = useState<WorldState | null>(null);
     const [gameSettings, setGameSettings] = useState<GameSettings | null>(null);
     const [superInstructions, setSuperInstructions] = useState<string>('');
-    const [gameHistory, setGameHistory] = useState<ChatMessage[]>([]);
+    // Separate context setters must invalidate authority before React can defer
+    // them. Track each field independently so a partial commit cannot release
+    // the hold. Local UI preference updates are intentionally not included.
+    const beginSharedContextEdit = useCallback((field: 'settings' | 'instructions' | 'world' | 'map' | 'visited' | 'gameLog' | 'combatLog') => {
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
+        if (revision === null) throw new Error('Shared context mutation unexpectedly blocked');
+        const entry = contextEditRef.current[field];
+        const generation = contextEditGenerationRef.current;
+        entry.revision = revision;
+        if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
+        return <T,>(value: T): T => {
+            if (generation === contextEditGenerationRef.current) {
+                if (revision >= entry.applied) {
+                    entry.applied = revision;
+                    (entry as unknown as { expected: T }).expected = value;
+                }
+                gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, revision);
+                // A same-value update may bail out of rendering. Schedule a
+                // post-updater commit check even in that case.
+                queueMicrotask(() => setContextEditEpoch(epoch => epoch + 1));
+            }
+            return value;
+        };
+    }, []);
+    const clearPendingContextEdits = useCallback(() => {
+        contextEditGenerationRef.current++;
+        const edits = contextEditRef.current;
+        edits.settings.revision = edits.settings.applied = 0;
+        edits.instructions.revision = edits.instructions.applied = 0;
+        edits.world.revision = edits.world.applied = 0;
+        edits.map.revision = edits.map.applied = 0;
+        edits.visited.revision = edits.visited.applied = 0;
+        edits.gameLog.revision = edits.gameLog.applied = 0;
+        edits.combatLog.revision = edits.combatLog.applied = 0;
+        // Other pending user edits have their own state/history commit checks.
+        gameplayMutationAppliedRef.current = gameplayMutationRevisionRef.current;
+        if (gameplayMutationPendingRef.current) setContextEditEpoch(epoch => epoch + 1);
+    }, []);
+    const gameHistoryRef = useRef(gameHistory);
+    const setGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
+        _setGameHistory(previous => {
+            const next = typeof action === 'function' ? action(previous) : action;
+            gameHistoryRef.current = next;
+            return next;
+        });
+    }, []);
+    const setUserGameHistory = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
+        if (revision === null) { setError(mutationMessageRef.current.delivery); return; }
+        historyMutationRevisionRef.current = revision;
+        setGameHistory(previous => {
+            try { return typeof action === 'function' ? action(previous) : action; }
+            finally {
+                historyMutationAppliedRef.current = Math.max(historyMutationAppliedRef.current, revision);
+                gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, revision);
+            }
+        });
+        setGameplayMutationEpoch(epoch => epoch + 1);
+        if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
+    }, [setGameHistory]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [lastJsonResponse, setLastJsonResponse] = useState<string | null>(null);
     const [lastRequestJson, setLastRequestJson] = useState<string | null>(null);
     const [gameLog, setGameLog] = useState<string[]>([]);
     const [combatLog, setCombatLog] = useState<string[]>([]);
+    // User log clearing shares the same pre-commit authority barrier as other
+    // gameplay edits. Independent media messages may prepend to its result.
+    const setUserGameLog = useCallback((action: React.SetStateAction<string[]>) => {
+        const applied = beginSharedContextEdit('gameLog');
+        setGameLog(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
+    const setUserCombatLog = useCallback((action: React.SetStateAction<string[]>) => {
+        const applied = beginSharedContextEdit('combatLog');
+        setCombatLog(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
+    const setPresentationGameLog = useCallback((action: React.SetStateAction<string[]>) => {
+        setGameLog(previous => {
+            const next = typeof action === 'function' ? action(previous) : action;
+            const pending = contextEditRef.current.gameLog;
+            if (pending.revision !== 0 && pending.applied === pending.revision && previous === pending.expected) {
+                pending.expected = next;
+                queueMicrotask(() => setContextEditEpoch(epoch => epoch + 1));
+            }
+            return next;
+        });
+    }, []);
     const [sceneImagePrompt, setSceneImagePrompt] = useState<string | null>(null);
     const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
     const [worldMap, setWorldMap] = useState<Record<string, Location>>({});
     const [visitedLocations, setVisitedLocations] = useState<Location[]>([]);
-    const [turnNumber, setTurnNumber] = useState<number | null>(null);
+    // These wrappers are only passed to guarded user actions. Turn/restore
+    // setters keep their separate lifecycle and must not self-cancel.
+    const setUserWorldState = useCallback((action: React.SetStateAction<WorldState | null>) => {
+        const applied = beginSharedContextEdit('world');
+        setWorldState(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
+    const setUserWorldMap = useCallback((action: React.SetStateAction<Record<string, Location>>) => {
+        const applied = beginSharedContextEdit('map');
+        setWorldMap(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
+    const setUserVisitedLocations = useCallback((action: React.SetStateAction<Location[]>) => {
+        const applied = beginSharedContextEdit('visited');
+        setVisitedLocations(previous => applied(typeof action === 'function' ? action(previous) : action));
+    }, [beginSharedContextEdit]);
     const [autosaveTimestamp, setAutosaveTimestamp] = useState<string | null>(null);
     const [crashRecoveryInfo, setCrashRecoveryInfo] = useState<CrashRecoveryMetadata | null>(null);
     const [crashRecoveryMarker, setCrashRecoveryMarker] = useState<CrashRecoveryMarker | null>(null);
@@ -129,16 +277,16 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const turnStartTimeRef = useRef<number | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
-    const peerRef = useRef<Peer | null>(null);
-    const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
-    const hostConnectionRef = useRef<DataConnection | null>(null);
+    // Increment synchronously before restoring a snapshot, even before React renders.
+    const syncRevisionRef = useRef(0);
+    const activeTurnRef = useRef<symbol | null>(null);
+    const turnPhaseRef = useRef<'idle' | 'generating' | 'committed'>('idle');
     const lastBroadcastedStateRef = useRef<{ turn: number; playerIndex: number } | null>(null);
     const lastBroadcastedCoopState = useRef<string | null>(null);
 
     const wasLoadingRef = useRef(false);
     const isTurnSubmitPendingRef = useRef(false);
 
-    const [networkChatHistory, setNetworkChatHistory] = useState<NetworkChatMessage[]>([]);
 
     const playerLevelRef = useRef<number | null>(null);
 
@@ -151,46 +299,112 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         wasLoadingRef.current = isLoading;
     }, [isLoading, gameSettings]);
 
-    useEffect(() => {
-        if (!isLoading) {
-            isTurnSubmitPendingRef.current = false;
-        }
-    }, [isLoading]);
-
     const { t } = useLocalization();
+    mutationMessageRef.current = { delivery: t('game_state_updating') };
     const gameContextRef = useRef<GameContext | null>(null);
+
+    // Unlike separate history/turn setters, this callback is pure inside the
+    // React queue. A hold is acquired before scheduling and released only
+    // after the matching composite update has committed.
+    // Returns whether the transition was accepted. Callers that own user input
+    // must not discard it when the transition is refused.
+    const setPartyTransition = useCallback((transition: (state: GameState | null, turn: number | null) => { gameState: GameState; turnNumber: number | null; message: ChatMessage } | null): boolean => {
+        if (pendingPartyTransitionRef.current) { setError(mutationMessageRef.current.delivery); return false; }
+        const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
+        if (revision === null) { setError(mutationMessageRef.current.delivery); return false; }
+        stateMutationRevisionRef.current = revision;
+        historyMutationRevisionRef.current = revision;
+        pendingPartyTransitionRef.current = { revision };
+        setCore(previous => {
+            const result = transition(previous.gameState, previous.turnNumber);
+            if (!result) return { ...previous, partyRevision: revision };
+            const state = sanitizeGameState(result.gameState);
+            return { ...previous, gameState: state, gameHistory: [...previous.gameHistory, result.message], turnNumber: result.turnNumber, partyRevision: revision };
+        });
+        setGameplayMutationEpoch(epoch => epoch + 1);
+        if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
+        return true;
+    }, []);
+
+    useEffect(() => {
+        const pending = pendingPartyTransitionRef.current;
+        if (!pending || core.partyRevision !== pending.revision) return;
+        // These refs are published from the committed render, never from a
+        // speculative invocation of the party transition reducer.
+        gameStateRef.current = gameState;
+        gameHistoryRef.current = gameHistory;
+        stateMutationAppliedRef.current = Math.max(stateMutationAppliedRef.current, pending.revision);
+        historyMutationAppliedRef.current = Math.max(historyMutationAppliedRef.current, pending.revision);
+        gameplayMutationAppliedRef.current = Math.max(gameplayMutationAppliedRef.current, pending.revision);
+        pendingPartyTransitionRef.current = null;
+    }, [core.partyRevision, gameState, gameHistory]);
+
+    useEffect(() => {
+        const contextEdits = contextEditRef.current;
+        const settingsCommitted = contextEdits.settings.applied === contextEdits.settings.revision &&
+            (contextEdits.settings.revision === 0 || sharedSettingsEqual(gameSettings, contextEdits.settings.expected));
+        const instructionsCommitted = contextEdits.instructions.applied === contextEdits.instructions.revision &&
+            (contextEdits.instructions.revision === 0 || superInstructions === contextEdits.instructions.expected);
+        const worldCommitted = contextEdits.world.applied === contextEdits.world.revision &&
+            (contextEdits.world.revision === 0 || worldState === contextEdits.world.expected);
+        const mapCommitted = contextEdits.map.applied === contextEdits.map.revision &&
+            (contextEdits.map.revision === 0 || worldMap === contextEdits.map.expected);
+        const visitedCommitted = contextEdits.visited.applied === contextEdits.visited.revision &&
+            (contextEdits.visited.revision === 0 || visitedLocations === contextEdits.visited.expected);
+        const gameLogCommitted = contextEdits.gameLog.applied === contextEdits.gameLog.revision &&
+            (contextEdits.gameLog.revision === 0 || gameLog === contextEdits.gameLog.expected);
+        const combatLogCommitted = contextEdits.combatLog.applied === contextEdits.combatLog.revision &&
+            (contextEdits.combatLog.revision === 0 || combatLog === contextEdits.combatLog.expected);
+        if (!pendingPartyTransitionRef.current && settingsCommitted && instructionsCommitted && worldCommitted && mapCommitted && visitedCommitted && gameLogCommitted && combatLogCommitted && gameHistoryRef.current === gameHistory &&
+            stateMutationAppliedRef.current === stateMutationRevisionRef.current &&
+            historyMutationAppliedRef.current === historyMutationRevisionRef.current) {
+            if (gameplayMutationCommitted(gameplayMutationPendingRef, gameplayMutationAppliedRef,
+                gameplayMutationRevisionRef, gameState, gameStateRef.current)) {
+                contextEditGenerationRef.current++;
+                contextEdits.settings.revision = contextEdits.settings.applied = 0;
+                contextEdits.instructions.revision = contextEdits.instructions.applied = 0;
+                contextEdits.world.revision = contextEdits.world.applied = 0;
+                contextEdits.map.revision = contextEdits.map.applied = 0;
+                contextEdits.visited.revision = contextEdits.visited.applied = 0;
+                contextEdits.gameLog.revision = contextEdits.gameLog.applied = 0;
+                contextEdits.combatLog.revision = contextEdits.combatLog.applied = 0;
+
+            }
+        }
+    }, [gameState, gameHistory, gameSettings, superInstructions, worldState, worldMap, visitedLocations, gameLog, combatLog, gameplayMutationEpoch, contextEditEpoch, core.partyRevision]);
 
     useEffect(() => {
         if (gameState) {
             playerLevelRef.current = gameState.playerCharacter.level;
+
         }
-    }, [gameState?.playerCharacter.level]);
+    }, [gameState]);
 
     useEffect(() => {
         if (!gameState) {
             playerLevelRef.current = null;
             return;
         }
-    
+
         const currentLevel = gameState.playerCharacter.level;
         const previousLevel = playerLevelRef.current;
-    
+
         if (typeof currentLevel === 'number' && previousLevel !== currentLevel) {
             playerLevelRef.current = currentLevel;
         }
-    
+
         if (previousLevel !== null && typeof currentLevel === 'number' && currentLevel > previousLevel) {
             console.log(`Level up detected! From ${previousLevel} to ${currentLevel}. Scaling quest rewards.`);
-            
+
             const newExpForNextLevel = gameState.playerCharacter.experienceForNextLevel;
             const meaningfulRewardThreshold = newExpForNextLevel * 0.1;
-    
+
             setGameState(currentGameState => {
                 if (!currentGameState) return null;
-    
+
                 let questsWereUpdated = false;
                 const newLogs: string[] = [];
-    
+
                 const updatedActiveQuests = currentGameState.activeQuests.map(quest => {
                     if (quest.rewards?.experience && quest.rewards.experience < meaningfulRewardThreshold) {
                         const oldReward = quest.rewards.experience;
@@ -201,26 +415,26 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                               ? `Мир становится опаснее. Награда за квест «${quest.questName}» была увеличена с ${oldReward} XP до ${newReward} XP, чтобы оставаться актуальной.`
                               : `The world grows more dangerous. The reward for quest '${quest.questName}' has been increased from ${oldReward} XP to ${newReward} XP to remain relevant.`;
                             newLogs.push(logMessage);
-                            
+
                             const newRewards = { ...quest.rewards, experience: newReward };
                             return { ...quest, rewards: newRewards };
                         }
                     }
                     return quest;
                 });
-    
+
                 if (questsWereUpdated) {
-                    setGameLog(currentLog => [...newLogs, ...currentLog]);
+                    setPresentationGameLog(currentLog => [...newLogs, ...currentLog]);
                     return {
                         ...currentGameState,
                         activeQuests: updatedActiveQuests
                     };
                 }
-    
+
                 return currentGameState;
             });
         }
-    }, [gameState, language, setGameState, setGameLog, t]);
+    }, [gameState, language, setGameState, setPresentationGameLog, t]);
 
     useEffect(() => {
         // This effect is the SINGLE SOURCE OF TRUTH for synchronizing all relevant states to gameContextRef.
@@ -235,9 +449,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 gameContextRef.current.worldStateFlags = gameState.worldStateFlags;
                 gameContextRef.current.worldEventsLog = gameState.worldEventsLog;
                 gameContextRef.current.playerCustomStates = gameState.playerCustomStates;
-                gameContextRef.current.networkRole = gameState.networkRole;
-                gameContextRef.current.peers = gameState.peers;
-                gameContextRef.current.isConnectedToHost = gameState.isConnectedToHost;
             }
             if (gameSettings) {
                 gameContextRef.current.gameSettings = gameSettings;
@@ -251,7 +462,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
     }, [gameState, gameSettings, superInstructions, worldState]);
 
-    const restoreFromSaveData = useCallback((data: SaveFile, isNetworkSync: boolean = false, networkIdentityOverride?: { role: NetworkRole; myPeerId: string; hostPeerId: string }) => {
+    const restoreFromSaveData = useCallback((source: SaveFile) => {
+        const data = localizeLegacySave(source);
+        syncRevisionRef.current += 1;
+        clearPendingContextEdits();
+        if (activeTurnRef.current) abortControllerRef.current?.abort();
         // --- BACKWARD COMPATIBILITY MIGRATION FOR EVENT LOGS ---
         const migrateLocationEvents = (loc: any) => {
             if (loc && loc.lastEventsDescription && typeof loc.lastEventsDescription === 'string' && !loc.eventDescriptions) {
@@ -406,27 +621,27 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             data.gameContext.previousTurnResponse.factionDataChanges.forEach(migrateFactionRanks);
         }
         // --- END FACTION RANK MIGRATION ---
-        
-        const loadedSettings = data.gameContext.gameSettings;
+
+        let loadedSettings = data.gameContext.gameSettings;
         const loadedLanguage = loadedSettings.language || 'en';
         setLanguage(loadedLanguage);
 
         // --- CALENDAR MIGRATION AND LOCALIZATION ---
         if (loadedSettings.gameWorldInformation && loadedSettings.gameWorldInformation.calendar) {
             const calendar = loadedSettings.gameWorldInformation.calendar;
-            
-            let baseCalendarTemplate = 
-                loadedSettings.gameWorldInformation.baseInfo?.calendar || 
-                calendar || 
+
+            let baseCalendarTemplate =
+                loadedSettings.gameWorldInformation.baseInfo?.calendar ||
+                calendar ||
                 gameData.fantasy.calendar;
 
             // MIGRATION FOR OLD dayNames FORMAT (string[] instead of DayInfo[])
             // This now runs on the chosen template, ensuring consistency.
             if (baseCalendarTemplate.dayNames && baseCalendarTemplate.dayNames.length > 0 && typeof baseCalendarTemplate.dayNames[0] === 'string') {
                 console.warn("Migrating old calendar dayNames format from string[] to DayInfo[].");
-                
+
                 const isFantasyCalendar = baseCalendarTemplate.months && baseCalendarTemplate.months[0] && (baseCalendarTemplate.months[0].name === 'Месяц Начал' || baseCalendarTemplate.months[0].name === 'fantasy_month_1_name');
-        
+
                 if (isFantasyCalendar) {
                     console.log("Fantasy calendar detected. Restoring day names with descriptions.");
                     baseCalendarTemplate.dayNames = gameData.fantasy.calendar.dayNames;
@@ -435,13 +650,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     baseCalendarTemplate.dayNames = (baseCalendarTemplate.dayNames as unknown as string[]).map((dayName: string) => ({ name: dayName, description: '' }));
                 }
             }
-            
+
             const localizedCalendar = JSON.parse(JSON.stringify(baseCalendarTemplate));
             localizedCalendar.months = localizedCalendar.months.map((month: Month) => ({ ...month, name: translate(loadedLanguage, month.name), description: month.description ? translate(loadedLanguage, month.description) : '' }));
             localizedCalendar.dayNames = localizedCalendar.dayNames.map((day: DayInfo) => ({ ...day, name: translate(loadedLanguage, day.name), description: day.description ? translate(loadedLanguage, day.description) : '' }));
-            
+
             loadedSettings.gameWorldInformation.calendar = localizedCalendar;
-            
+
             if (data.gameContext.worldState) {
                 const totalMinutes = data.gameContext.worldState.currentTimeInMinutes;
                 data.gameContext.worldState.date = calculateDate(totalMinutes, localizedCalendar);
@@ -454,7 +669,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             console.warn("Save data missing calendar, adding default.");
             loadedSettings.gameWorldInformation.calendar = gameData.fantasy.calendar;
         }
-        
+
         // Strip provider, model, search, and image-pipeline settings from legacy saves.
         const legacyAISettings = loadedSettings as GameSettings & Record<string, unknown>;
         [
@@ -465,53 +680,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         ].forEach(key => delete legacyAISettings[key]);
         loadedSettings.showImageSourceInfo = false;
 
+        ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameContext.currentLocation);
+        ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameState?.currentLocationData);
         gameContextRef.current = data.gameContext;
-        const loadedGameState = data.gameState;
-
-        // --- NETWORK STATE RESET ON LOAD ---
-        if (!isNetworkSync) {
-            if (loadedGameState.networkRole === 'host' || loadedGameState.networkRole === 'player' || loadedGameState.networkRole === 'spectator' || !loadedGameState.networkRole) {
-                if (loadedGameState.networkRole && loadedGameState.networkRole !== 'none') {
-                    console.log(`Loaded a network game save (role: ${loadedGameState.networkRole}). Resetting to local game state.`);
-                } else if (!loadedGameState.networkRole) {
-                    console.log(`Old save file missing network role, resetting to local game state.`);
-                }
-                loadedGameState.networkRole = 'none';
-                loadedGameState.myPeerId = null;
-                loadedGameState.hostPeerId = null;
-                loadedGameState.peers = [];
-                loadedGameState.isConnectedToHost = true; // It's a local game now
-        
-                if (gameContextRef.current) {
-                    gameContextRef.current.networkRole = 'none';
-                    gameContextRef.current.peers = [];
-                    gameContextRef.current.isConnectedToHost = true;
-                }
-            }
-        } else {
-             if (networkIdentityOverride) {
-                console.log("Network sync with identity override detected.");
-                loadedGameState.networkRole = networkIdentityOverride.role;
-                loadedGameState.myPeerId = networkIdentityOverride.myPeerId;
-                loadedGameState.hostPeerId = networkIdentityOverride.hostPeerId;
-                loadedGameState.isConnectedToHost = true;
-                console.log(`🔧 OVERRIDE: Role=${loadedGameState.networkRole}, MyID=${loadedGameState.myPeerId}`);
-            } else {
-                console.log("Network sync detected - preserving network role from current state");
-                const currentGameState = gameStateRef.current;
-                if (currentGameState && (currentGameState.networkRole === 'player' || currentGameState.networkRole === 'host')) {
-                    loadedGameState.networkRole = currentGameState.networkRole;
-                    loadedGameState.myPeerId = currentGameState.myPeerId;
-                    loadedGameState.hostPeerId = currentGameState.hostPeerId;
-                    loadedGameState.peers = currentGameState.peers; 
-                    loadedGameState.isConnectedToHost = currentGameState.isConnectedToHost;
-                    console.log(`🔧 PRESERVED: Role=${currentGameState.networkRole}, MyID=${currentGameState.myPeerId}`);
-                } else {
-                     console.log(`🏠 NEW CLIENT?: Using loaded network settings from save data`);
-                }
-            }
-        }
-        // --- END NETWORK STATE RESET ---
+        let loadedGameState = data.gameState;
 
         // --- APPLY EXPERIENCE MIGRATION ---
         if (loadedGameState.playerCharacter) {
@@ -611,7 +783,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         return { ...flagData, flagId: key };
                     }
                     return flagData;
-                }).filter(f => isObject(f));
+                }).filter((f): f is WorldStateFlag => isObject(f));
             }
         }
         loadedGameState.worldStateFlags = processedFlags;
@@ -650,53 +822,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!loadedGameState.players || !Array.isArray(loadedGameState.players) || loadedGameState.players.length === 0) {
             loadedGameState.players = [loadedGameState.playerCharacter];
         }
-        if (loadedGameState.activePlayerIndex === undefined || loadedGameState.activePlayerIndex === null || loadedGameState.activePlayerIndex >= loadedGameState.players.length) {
+        if (!Number.isSafeInteger(loadedGameState.activePlayerIndex) || loadedGameState.activePlayerIndex < 0 || loadedGameState.activePlayerIndex >= loadedGameState.players.length) {
             loadedGameState.activePlayerIndex = 0;
         }
 
-        if (isNetworkSync && loadedGameState.networkRole === 'player' && loadedGameState.myPeerId) {
-            const myPlayer = loadedGameState.players.find(p => p.playerId === loadedGameState.myPeerId);
-            if (myPlayer) {
-                loadedGameState.playerCharacter = myPlayer;
-                console.log(`🎯 FIXED: Player character set to ${myPlayer.name} (${myPlayer.playerId})`);
-                loadedGameState.playerNeedsToCreateCharacter = false;
-            } else {
-                console.warn(`🚫 WARNING: Player ${loadedGameState.myPeerId} not found in players array! Triggering character creation.`);
-                loadedGameState.playerNeedsToCreateCharacter = true;
-            }
-        } else if (isNetworkSync && loadedGameState.networkRole === 'host' && loadedGameState.myPeerId) {
-            const myPlayer = loadedGameState.players.find(p => p.playerId === loadedGameState.myPeerId);
-            if (myPlayer) {
-                loadedGameState.playerCharacter = myPlayer;
-                console.log(`🏠 HOST: Host character set to ${myPlayer.name} (${myPlayer.playerId})`);
-            } else {
-                console.warn(`🚫 WARNING: Host ${loadedGameState.myPeerId} not found in players array!`);
-            }
-        }
-
-        let updatedPc = loadedGameState.playerCharacter;
-        let levelUpLogs: string[] = [];
-        if (updatedPc) {
-            updatedPc = recalculateDerivedStats(updatedPc);
-            updatedPc = recalculateAllWeights(updatedPc);
-            if (updatedPc.totalWeight !== undefined && updatedPc.maxWeight !== undefined) {
-                updatedPc.isOverloaded = updatedPc.totalWeight > updatedPc.maxWeight;
-            } else {
-                updatedPc.isOverloaded = false;
-            }
-            if (updatedPc.criticalExcessWeight === undefined) {
-                updatedPc.criticalExcessWeight = 15;
-            }
-
-            const result = checkAndApplyLevelUp(updatedPc, t);
-            updatedPc = result.pc;
-            levelUpLogs = result.logs;
-        }
-
+        const levelUpLogs = restorePlayerStats(loadedGameState, t);
         let finalGameLog = data.gameLog || [];
         if (levelUpLogs.length > 0) {
-            loadedGameState.playerCharacter = updatedPc;
-            loadedGameState.players[loadedGameState.activePlayerIndex] = updatedPc;
             finalGameLog = [...finalGameLog, ...levelUpLogs];
         }
 
@@ -712,60 +844,47 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (loadedSettings.doNotUseWorldEvents === undefined) {
             loadedSettings.doNotUseWorldEvents = false;
         }
-       
-        console.log(`🔄 RESTORE DEBUG: About to restore game state`);
-        console.log(`  - Is Network Sync: ${isNetworkSync}`);
-        console.log(`  - Loaded Network Role: ${loadedGameState.networkRole}`);
-        console.log(`  - Loaded Active Player Index: ${loadedGameState.activePlayerIndex}`);
-        console.log(`  - Loaded Players:`, loadedGameState.players.map(p => ({ name: p.name, id: p.playerId })));
-        console.log(`  - Loaded My Peer ID: ${loadedGameState.myPeerId}`);
 
-        if (!isNetworkSync) {
-            console.log("🔌 CLEANUP: Cleaning up network connections for local game load");
-            if (hostConnectionRef.current) {
-                hostConnectionRef.current.close();
-                hostConnectionRef.current = null;
-            }
-            connectionsRef.current.forEach(conn => conn.close());
-            connectionsRef.current.clear();
-            if (peerRef.current) {
-                peerRef.current.destroy();
-                peerRef.current = null;
-            }
-        } else {
-            console.log("🌐 NETWORK SYNC: Preserving network connections");
-        }
-
-        setGameState(loadedGameState);
+        loadedGameState = sanitizeGameState(loadedGameState)!;
+        const restoredCombatLog = data.combatLog ?? [];
+        const restoredWorldMap = data.gameContext.worldMap ?? {};
+        const restoredVisitedLocations = data.gameContext.visitedLocations ?? [];
+        const restored = { ...data, gameState: loadedGameState, gameLog: finalGameLog, combatLog: restoredCombatLog,
+            // The live context ref is synchronized by effects and must not
+            // mutate the commit barrier's expected values before comparison.
+            gameContext: { ...data.gameContext, gameSettings: { ...loadedSettings },
+                superInstructions: data.gameContext.superInstructions || '', worldMap: restoredWorldMap,
+                visitedLocations: restoredVisitedLocations } };
+        setGameStateInternal(loadedGameState);
         setWorldState(data.gameContext.worldState);
         setGameSettings(loadedSettings);
         setSuperInstructions(data.gameContext.superInstructions || '');
         setGameHistory(data.gameHistory as ChatMessage[]);
         setGameLog(finalGameLog);
-        setCombatLog(data.combatLog ?? []);
+        setCombatLog(restoredCombatLog);
         setLastJsonResponse(data.lastJsonResponse);
         setSceneImagePrompt(data.sceneImagePrompt);
-        setWorldMap(data.gameContext.worldMap ?? {});
-        setVisitedLocations(data.gameContext.visitedLocations ?? []);
+        setWorldMap(restoredWorldMap);
+        setVisitedLocations(restoredVisitedLocations);
         setTurnNumber(data.gameContext.currentTurnNumber);
-
         setIsLoading(false);
         setError(null);
+        return restored;
 
-    }, [setLanguage, t, setGameState, setWorldState, setGameSettings, setSuperInstructions, setGameHistory, setGameLog, setCombatLog, setLastJsonResponse, setSceneImagePrompt, setWorldMap, setVisitedLocations, setTurnNumber, setIsLoading, setError, language]);
+    }, [clearPendingContextEdits, setLanguage, t, setGameState, setWorldState, setGameSettings, setSuperInstructions, setGameHistory, setGameLog, setCombatLog, setLastJsonResponse, setSceneImagePrompt, setWorldMap, setVisitedLocations, setTurnNumber, setIsLoading, setError, language]);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastSavedTurnRef = useRef<number | null>(null);
     const prevPlayersLengthRef = useRef<number | undefined>(undefined);
 
     const onImageGenerated = useCallback((cacheKey: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => {
-        setGameState(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             const newCacheEntry: ImageCacheEntry = { src, sourceProvider, sourceModel };
             const newCache = { ...(prev.imageCache || {}), [cacheKey]: newCacheEntry };
             return { ...prev, imageCache: newCache };
         });
-    }, [setGameState]);
+    }, [setPresentationState]);
 
     useEffect(() => {
         const fetchInitialData = async () => {
@@ -783,138 +902,75 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         fetchInitialData();
     }, []);
 
-    const syncNewPeerRef = useRef((conn: DataConnection) => {
-        console.warn("syncNewPeer called before initialization.");
-    });
-    const sendMessageRef = useRef((_message: string, _image?: { data: string; mimeType: string; } | null) => {
-        console.warn("sendMessageRef called before initialization.");
-    });
-
-    const sendNetworkChatMessage = useCallback((content: string) => {
-        const currentGameState = gameStateRef.current;
-        if (!currentGameState || !currentGameState.myPeerId) return;
-
-        let senderName: string;
-        if (currentGameState.networkRole === 'host') {
-            senderName = t('Host');
-        } else {
-            const senderPlayer = currentGameState.players.find(p => p.playerId === currentGameState!.myPeerId);
-            senderName = senderPlayer ? senderPlayer.name : (currentGameState.peers.find(p => p.id === currentGameState!.myPeerId)?.name || `Player-${currentGameState.myPeerId.slice(-4)}`);
-        }
-
-        const chatMessage: NetworkChatMessage = {
-            senderId: currentGameState.myPeerId,
-            senderName: senderName,
-            content: content,
-            timestamp: Date.now()
-        };
-
-        const message: NetworkMessage = {
-            type: 'chat_message',
-            payload: chatMessage,
-            senderId: currentGameState.myPeerId,
-        };
-
-        if (currentGameState.networkRole === 'host') {
-            setNetworkChatHistory(prev => [...prev, message.payload]);
-            connectionsRef.current.forEach(conn => {
-                conn.send(message);
-            });
-        } else if (currentGameState.networkRole === 'player' && hostConnectionRef.current) {
-            hostConnectionRef.current.send(message);
-        }
-    }, [t, setNetworkChatHistory]);
-
     const addPlayer = useCallback((creationData: PlayerCharacter | any) => {
-        if (!gameSettings) return;
-
-        const currentPartyLevel = gameStateRef.current?.playerCharacter.level || 1;
-
-        const newPlayer: PlayerCharacter = creationData.playerId
-            ? creationData
-            : createNewPlayerCharacter(
-                creationData,
-                gameSettings,
-                {
-                    partyLevel: currentPartyLevel,
-                    shareCharacteristics: gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false,
-                    templatePlayer: creationData.templatePlayer
-                }
-            );
-
-        setGameState(prevState => {
-            if (!prevState) return null;
-            const updatedPlayers = [...prevState.players, newPlayer];
-            return { ...prevState, players: updatedPlayers };
+        if (!gameSettings || userGameplayActionBlocked()) return;
+        const newPlayer: PlayerCharacter = creationData.playerId ? creationData : createNewPlayerCharacter(
+            creationData, gameSettings, {
+                partyLevel: gameStateRef.current?.playerCharacter.level || 1,
+                shareCharacteristics: gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false,
+                templatePlayer: creationData.templatePlayer
+            });
+        setGameState(prev => {
+            if (!prev) return prev;
+            const players = [...prev.players];
+            if (Number.isSafeInteger(prev.activePlayerIndex) && prev.activePlayerIndex >= 0 && prev.activePlayerIndex < players.length) {
+                players[prev.activePlayerIndex] = prev.playerCharacter;
+            }
+            return { ...prev, players: [...players, newPlayer] };
         });
+        setGameHistory(prev => [...prev, { sender: 'system', content: t('player_joined', { name: newPlayer.name }) }]);
+    }, [gameSettings, t, setGameState, setGameHistory, userGameplayActionBlocked]);
 
-        setGameHistory(prevHistory => {
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('player_joined', { name: newPlayer.name }),
-            };
-            return [...prevHistory, systemMessage];
-        });
+    const removePlayer = useCallback((playerIdToRemove: string): boolean => {
+        if (userGameplayActionBlocked()) return false;
+        const current = gameStateRef.current;
+        const matches = current?.players?.filter(p => p?.playerId === playerIdToRemove) || [];
+        if (!playerIdToRemove || matches.length !== 1) {
+            setError(t('player_remove_identity_conflict'));
+            return false;
+        }
+        return setPartyTransition((prevState, currentTurnNumber) => {
+            if (!prevState || prevState.players.length <= 1 || !Number.isSafeInteger(prevState.activePlayerIndex) ||
+                prevState.activePlayerIndex < 0 || prevState.activePlayerIndex >= prevState.players.length) return null;
 
-    }, [gameSettings, t, setGameState, setGameHistory]);
-
-    const removePlayer = useCallback((playerIdToRemove: string) => {
-        setGameState(prevState => {
-            if (!prevState || prevState.players.length <= 1) return prevState;
-
-            const playerToRemove = prevState.players.find(p => p.playerId === playerIdToRemove);
-            if (!playerToRemove) return prevState;
-
-            const newPlayers = prevState.players.filter(p => p.playerId !== playerIdToRemove);
+            const targets = prevState.players.filter(p => p?.playerId === playerIdToRemove);
+            if (targets.length !== 1) return null;
+            const playerToRemove = targets[0];
+            const synchronizedPlayers = [...prevState.players];
+            synchronizedPlayers[prevState.activePlayerIndex] = prevState.playerCharacter;
+            const newPlayers = synchronizedPlayers.filter(p => p.playerId !== playerIdToRemove);
             let newActivePlayerIndex = prevState.activePlayerIndex;
             const removedPlayerIndex = prevState.players.findIndex(p => p.playerId === playerIdToRemove);
 
-            if (removedPlayerIndex < newActivePlayerIndex) {
-                newActivePlayerIndex--;
-            }
-            else if (removedPlayerIndex === newActivePlayerIndex || newActivePlayerIndex >= newPlayers.length) {
-                newActivePlayerIndex = 0;
-            }
+            if (removedPlayerIndex < newActivePlayerIndex) newActivePlayerIndex--;
+            else if (removedPlayerIndex === newActivePlayerIndex || newActivePlayerIndex >= newPlayers.length) newActivePlayerIndex = 0;
             newActivePlayerIndex = Math.max(0, Math.min(newPlayers.length - 1, newActivePlayerIndex));
             const newPc = newPlayers[newActivePlayerIndex];
 
-            const newState = {
-                ...prevState,
-                players: newPlayers,
-                activePlayerIndex: newActivePlayerIndex,
-                playerCharacter: newPc,
-            };
-
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('player_removed', { name: playerToRemove.name }),
-            };
-            setGameHistory(prev => [...prev, systemMessage]);
-
-            return newState;
+            const newState = { ...prevState, players: newPlayers, activePlayerIndex: newActivePlayerIndex, playerCharacter: newPc };
+            const systemMessage: ChatMessage = { sender: 'system', content: t('player_removed', { name: playerToRemove.name }) };
+            return { gameState: newState, turnNumber: currentTurnNumber, message: systemMessage };
         });
-    }, [t, setGameState, setGameHistory]);
+    }, [t, setPartyTransition, userGameplayActionBlocked]);
 
-    const passTurnToPlayer = useCallback((targetPlayerIndex: number) => {
-        setGameState(prevState => {
-            if (!prevState || !gameSettings) return prevState;
-            if (targetPlayerIndex === prevState.activePlayerIndex) return prevState;
+    const passTurnToPlayer = useCallback((targetPlayerIndex: number): boolean => {
+        return setPartyTransition((prevState, currentTurnNumber) => {
+            if (!prevState || !gameSettings) return null;
+            if (targetPlayerIndex === prevState.activePlayerIndex) return null;
 
-            if (prevState.networkRole !== 'none' && prevState.networkRole !== 'host') {
-                console.warn("Non-host trying to pass turn in network game");
-                return prevState;
-            }
-
-            if (targetPlayerIndex < 0 || targetPlayerIndex >= prevState.players.length) {
-                console.error(`Invalid targetPlayerIndex: ${targetPlayerIndex}, players length: ${prevState.players.length}`);
-                return prevState;
+            if (!Array.isArray(prevState.players) || !Number.isSafeInteger(targetPlayerIndex) ||
+                targetPlayerIndex < 0 || targetPlayerIndex >= prevState.players.length ||
+                !Number.isSafeInteger(prevState.activePlayerIndex) || prevState.activePlayerIndex < 0 ||
+                prevState.activePlayerIndex >= prevState.players.length || !prevState.players[targetPlayerIndex]) {
+                console.error(`Invalid targetPlayerIndex: ${targetPlayerIndex}`);
+                return null;
             }
 
             const playerIds = new Set();
             for (const player of prevState.players) {
-                if (playerIds.has(player.playerId)) {
-                    console.error(`Duplicate playerId detected before turn pass: ${player.playerId}`);
-                    return prevState;
+                if (!player || !player.playerId || playerIds.has(player.playerId)) {
+                    console.error(`Missing or duplicate playerId detected before turn pass: ${player?.playerId}`);
+                    return null;
                 }
                 playerIds.add(player.playerId);
             }
@@ -922,14 +978,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             const nextGameState = JSON.parse(JSON.stringify(prevState));
 
             const currentActivePlayerIndex = nextGameState.activePlayerIndex;
-            const outgoingPlayerCharacterState = { ...nextGameState.playerCharacter };
             const outgoingPlayerSnapshot = nextGameState.players[currentActivePlayerIndex];
-
             if (!outgoingPlayerSnapshot) {
                 console.error(`No player found at current active index: ${currentActivePlayerIndex}`);
-                return prevState;
+                return null;
             }
 
+            const outgoingPlayerCharacterState = { ...nextGameState.playerCharacter };
             let updatedOutgoingSnapshot = { ...outgoingPlayerSnapshot, ...outgoingPlayerCharacterState };
 
             if (gameSettings.cooperativeGameType === 'MultiplePersonalities' && !gameSettings.multiplePersonalitiesSettings?.shareNpcReputation) {
@@ -953,7 +1008,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             if (!incomingPlayerSnapshot) {
                 console.error(`No player found at target index: ${targetPlayerIndex}`);
-                return prevState;
+                return null;
             }
 
             let newActivePlayerCharacter: PlayerCharacter;
@@ -1012,7 +1067,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 });
             }
 
-            let nextTurnNumber = turnNumber || 0;
+            let nextTurnNumber = currentTurnNumber || 0;
             if (targetPlayerIndex < currentActivePlayerIndex) {
                 nextTurnNumber++;
             }
@@ -1026,188 +1081,176 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             for (const player of nextGameState.players) {
                 if (finalPlayerIds.has(player.playerId)) {
                     console.error(`Duplicate playerId detected after turn pass: ${player.playerId}. Aborting turn pass.`);
-                    return prevState;
+                    return null;
                 }
                 finalPlayerIds.add(player.playerId);
             }
 
-            console.log(`🎯 PASS TURN DEBUG: Turn passed successfully`);
-            console.log(`  - From Player Index: ${currentActivePlayerIndex} (${prevState.players[currentActivePlayerIndex]?.name})`);
-            console.log(`  - To Player Index: ${targetPlayerIndex} (${newActivePlayerCharacter.name})`);
-            console.log(`  - New Active Player ID: ${newActivePlayerCharacter.playerId}`);
-            console.log(`  - Network Role: ${nextGameState.networkRole}`);
-            console.log(`  - Turn Number: ${nextTurnNumber}`);
-            console.log(`  - Final Players Array:`, nextGameState.players.map(p => ({ name: p.name, id: p.playerId })));
-
-            setTurnNumber(nextTurnNumber);
-
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('turn_passed_to', { name: newActivePlayerCharacter.name }),
+            return {
+                gameState: nextGameState,
+                turnNumber: nextTurnNumber,
+                message: { sender: 'system', content: t('turn_passed_to', { name: newActivePlayerCharacter.name }) },
             };
-            setGameHistory(prev => [...prev, systemMessage]);
-
-            return nextGameState;
         });
-    }, [gameSettings, t, turnNumber, setGameState, setTurnNumber, setGameHistory]);
+    }, [gameSettings, t, setPartyTransition]);
 
-    const cleanupNetwork = useCallback(() => {
-        console.log("Performing full network cleanup on game load...");
-        if (hostConnectionRef.current) {
-            hostConnectionRef.current.close();
-            hostConnectionRef.current = null;
-        }
-        connectionsRef.current.forEach(conn => conn.close());
-        connectionsRef.current.clear();
-        if (peerRef.current) {
-            peerRef.current.destroy();
-            peerRef.current = null;
-        }
-    }, []);
-
-    const broadcastFullSync = useCallback((saveData: SaveFile) => {
-        console.log("Broadcasting full sync to all clients...");
-        const syncMessage: NetworkMessage = {
-            type: 'full_sync',
-            payload: { saveFile: saveData },
+    // Do not replace a state that changed while the save was being read.
+    const beginLocalLoad = useCallback((): (() => boolean) | null => {
+        const initialState = gameStateRef.current;
+        const initialSyncRevision = syncRevisionRef.current;
+        const initialGameplayRevision = gameplayMutationRevisionRef.current;
+        const canCommit = () => {
+            const blocked = !!activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current ||
+                gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
+                gameplayMutationRevisionRef.current !== initialGameplayRevision;
+            if (blocked) {
+                setError(language === 'ru'
+                    ? 'Загрузка недоступна во время хода или изменения игры. Дождитесь завершения действия и повторите загрузку.'
+                    : 'Loading is unavailable while the game is changing. Wait for the current action and retry.');
+                return false;
+            }
+            return true;
         };
-
-        const currentGameState = gameStateRef.current;
-
-        if (currentGameState?.networkRole !== 'host') {
-            console.warn("Non-host trying to broadcast sync!");
-            return;
-        }
-
-        connectionsRef.current.forEach(conn => {
-            console.log(`📡 Sending sync to client: ${conn.peer}`);
-            conn.send(syncMessage);
-        });
-    }, []);
+        return canCommit() ? canCommit : null;
+    }, [language, setError]);
 
     const allManagers = useMemo(() => {
         const saveLoadManager = createSaveLoadManager({
             gameContextRef, gameStateRef, gameHistory, gameLog, combatLog, lastJsonResponse, sceneImagePrompt,
-            restoreFromSaveData, t, setAutosaveTimestamp, setDbSaveSlots, cleanupNetwork, setIsSaving,
+            restoreFromSaveData, t, setAutosaveTimestamp, setDbSaveSlots, beginLocalLoad, setIsSaving,
         });
 
         const { packageSaveData } = saveLoadManager;
 
         const turnManager = createTurnManager({
-            gameState, setGameState, gameHistory, setGameHistory,
+            gameState, setGameState: setGameStateInternal, gameHistory, setGameHistory,
             isLoading, setIsLoading, setError,
             setLastJsonResponse, setLastRequestJson,
             setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions,
             setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
-            gameContextRef, abortControllerRef,
+            gameContextRef, abortControllerRef, syncRevisionRef, activeTurnRef, turnPhaseRef, gameplayMutationRevisionRef, gameplayMutationPendingRef,
             setSuperInstructions, setGameSettings,
             setLanguage,
             t,
             turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel,
             language, gameSettings,
-            hostConnectionRef,
             gameStateRef,
-            broadcastFullSync,
             combatLog,
             gameLog,
-            // Pass true for manual turn snapshots to ensure data integrity if desired, 
-            // or false if these snapshots shouldn't trigger cleanup. 
+            // Pass true for manual turn snapshots to ensure data integrity if desired,
+            // or false if these snapshots shouldn't trigger cleanup.
             // For safety, we disable GC on internal turn snapshots to avoid accidental loss during rapid turns.
             packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false),
             setLastTurnSaveFile
         });
 
-        const { startGame: baseStartGame, initializeAndRunFirstTurn: baseInitializeAndRunFirstTurn } = turnManager;
-
-        const initializeAndRunFirstTurn = (creationData: any, networkConfig?: { role: NetworkRole; peerId?: string }) => {
-            baseInitializeAndRunFirstTurn(creationData, networkConfig);
-        };
-        
-
         return {
             ...turnManager,
-            initializeAndRunFirstTurn,
             ...saveLoadManager,
-            ...createInventoryActions({
+            ...guardGameplayActions(createInventoryActions({
                 setGameState, gameContextRef, t, gameState
-            }),
-            ...createPlayerActionsManager({
-                setGameState, setGameHistory, setGameLog, setCombatLog, setVisitedLocations,
-                setWorldMap, setWorldState, gameSettings, gameContextRef, t
-            }),
+            }), userGameplayActionBlocked),
+            ...guardGameplayActions(createPlayerActionsManager({
+                setGameState, setGameHistory, setUserGameHistory, setGameLog: setUserGameLog, setCombatLog: setUserCombatLog, setVisitedLocations: setUserVisitedLocations,
+                setWorldMap: setUserWorldMap, setWorldState: setUserWorldState, gameSettings, gameContextRef, t
+            }), userGameplayActionBlocked),
             ...createMusicManager({
-                gameContextRef, setError, t, setGameLog, setMusicPrompt,
+                gameContextRef, setError, t, setGameLog: setPresentationGameLog, setMusicPrompt,
                 setIsMusicLoading, setIsMusicPlayerVisible, previousMusicQueries
             }),
-            ...createMultiplayerManager({
-                setGameState,
-                setGameHistory,
-                setError,
-                t,
-                initializeAndRunFirstTurn: (creationData, networkConfig) => {
-                    const initialContext = createInitialContext(creationData, language);
-                    gameContextRef.current = initialContext;
-
-                    const firstTurnManager = createTurnManager({ gameState: null, setGameState, gameHistory: initialContext.responseHistory, setGameHistory, isLoading, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, gameContextRef, abortControllerRef, setSuperInstructions, setGameSettings, setLanguage, t, turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel, language: initialContext.gameSettings.language, gameSettings: initialContext.gameSettings, hostConnectionRef, gameStateRef, broadcastFullSync: (saveData: SaveFile) => { }, combatLog: [], gameLog: [], packageSaveDataForTurn: () => packageSaveData(gameStateRef.current!, false), setLastTurnSaveFile });
-                    firstTurnManager.initializeAndRunFirstTurn(creationData, networkConfig);
-                },
-                restoreFromSaveData,
-                packageSaveData,
-                broadcastFullSync,
-                addPlayer,
-                removePlayer,
-                passTurnToPlayer,
-                gameContextRef,
-                peerRef,
-                connectionsRef,
-                hostConnectionRef,
-                setIsLoading,
-                syncNewPeerRef,
-                sendMessageRef,
-                gameStateRef,
-                onChatMessage: (message: NetworkChatMessage) => {
-                    setNetworkChatHistory(prev => [...prev, message]);
-                }
-            }),
-            broadcastFullSync
         };
     }, [
         gameState, gameHistory, isLoading, error, combatLog, gameLog, lastJsonResponse, sceneImagePrompt,
-        gameSettings, superInstructions, language, t, restoreFromSaveData, setGameState, setGameHistory, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, setSuperInstructions, setGameSettings, setLanguage, setAutosaveTimestamp, setDbSaveSlots, setMusicPrompt, setIsMusicLoading, setIsMusicPlayerVisible,
-        setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, cleanupNetwork, broadcastFullSync
+        gameSettings, superInstructions, language, t, restoreFromSaveData, setGameState, setGameHistory, setUserGameLog, setUserCombatLog, setPresentationGameLog, setUserWorldMap, setUserWorldState, setUserVisitedLocations, setIsLoading, setError, setLastJsonResponse, setLastRequestJson, setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions, setWorldMap, setVisitedLocations, setWorldState, setTurnNumber, setSuperInstructions, setGameSettings, setLanguage, setAutosaveTimestamp, setDbSaveSlots, setMusicPrompt, setIsMusicLoading, setIsMusicPlayerVisible,
+        setLastTurnSaveFile, addPlayer, removePlayer, passTurnToPlayer, beginLocalLoad
     ]);
 
-    const resumeInterruptedGameTurn = useCallback(async () => {
-        const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
-        if (!recovery) return false;
-        if (recovery.baseState.networkRole !== 'none') {
+
+    // The manager exposes a low-level recovery primitive for its own turn
+    // machinery. Do not expose it from the hook without checking the live
+    // session: the checkpoint's role is not the current connection's role.
+    const resumeInterruptedTurnSafely = useCallback((recovery: Parameters<typeof allManagers.resumeInterruptedTurn>[0]) => {
+        if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none') || activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current) {
             setError(language === 'ru'
-                ? 'Автовозобновление прерванного хода поддерживается только для локальной игры. Для сетевой игры восстановите последнее сохранение вручную.'
-                : 'Automatic interrupted-turn recovery is only supported for local games. For network games, restore the latest save manually.');
+                ? 'Возобновление доступно только для локального прерванного хода, когда игра не занята.'
+                : 'Interrupted-turn recovery requires a local checkpoint and an idle game.');
+            return;
+        }
+        try {
+            const localized = localizeLegacyState(recovery.baseState, recovery.context);
+            return allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
+        } catch (error) { setError(formatError(error)); return; }
+    }, [allManagers, language, setError]);
+
+    const resumeInterruptedGameTurn = useCallback(async () => {
+        const initialState = gameStateRef.current;
+        const initialSyncRevision = syncRevisionRef.current;
+        const initialGameplayRevision = gameplayMutationRevisionRef.current;
+        const blocked = () => !!activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current ||
+            gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
+            gameplayMutationRevisionRef.current !== initialGameplayRevision;
+        const reject = () => {
+            setError(language === 'ru'
+                ? 'Состояние изменилось или игра занята; повторите запрос позже.'
+                : 'The state changed or the game is busy; try again later.');
+            return false;
+        };
+        if (blocked()) return reject();
+        const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
+        if (blocked()) return reject();
+        if (!recovery) return false;
+        if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none')) {
+            setError(language === 'ru'
+                ? 'Этот контрольный пункт создан в прежней сетевой версии игры, поэтому ход не возобновляется автоматически. Загрузите последнее сохранение вручную.'
+                : 'This checkpoint was created by the former networked version of the game, so the turn is not resumed automatically. Load the latest save manually.');
             return false;
         }
+        let localized: ReturnType<typeof localizeLegacyState>;
+        try { localized = localizeLegacyState(recovery.baseState, recovery.context); }
+        catch (error) { setError(formatError(error)); return false; }
         await cancelInterruptedArenaGmRequest();
+        // Cancellation and checkpoint reads can both yield to a connection,
+        // restore, turn, or local edit. Do not clear the recovery on refusal.
+        if (blocked()) return reject();
         setInterruptedTurnRecovery(null);
         setError(null);
-        void allManagers.resumeInterruptedTurn(recovery);
+        void allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
         return true;
     }, [allManagers, interruptedTurnRecovery, language, setError]);
 
     const discardInterruptedGameTurn = useCallback(async () => {
-        await cancelInterruptedArenaGmRequest();
-        await clearInterruptedTurnRecovery();
-        setInterruptedTurnRecovery(null);
-    }, []);
-
-    const clearStashForNewTurn = useCallback(() => {
-        setGameState(prev => {
-            if (!prev) return null;
-            if (prev.temporaryStash && prev.temporaryStash.length > 0) {
-                return { ...prev, temporaryStash: [] };
+        const initialState = gameStateRef.current;
+        const syncRevision = syncRevisionRef.current;
+        const gameplayRevision = gameplayMutationRevisionRef.current;
+        const blocked = () => !!activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current ||
+            gameStateRef.current !== initialState || syncRevisionRef.current !== syncRevision || gameplayMutationRevisionRef.current !== gameplayRevision;
+        const reject = () => setError(language === 'ru'
+            ? 'Отмена сохранённого прерванного хода недоступна во время изменения игры. Повторите запрос после завершения текущего действия.'
+            : 'Discarding an interrupted turn is unavailable while the game is changing. Try again after the current action.');
+        if (blocked()) { reject(); return; }
+        try {
+            const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
+            if (blocked()) { reject(); return; }
+            if (!recovery) {
+                setError(language === 'ru' ? 'Сохранённый прерванный ход не найден.' : 'No interrupted-turn checkpoint was found.');
+                return;
             }
-            return prev;
-        });
-    }, [setGameState]);
+            await cancelInterruptedArenaGmRequest();
+            if (blocked()) { reject(); return; }
+            // Conditional deletion is atomic with its IndexedDB read: a newer
+            // checkpoint cannot be removed even if it appears while awaiting IO.
+            const deleted = await clearInterruptedTurnRecoveryIfUnchanged(recovery);
+            if (!deleted) {
+                setError(language === 'ru'
+                    ? 'Сохранённый ход изменился или был удалён. Проверьте текущее восстановление перед повтором.'
+                    : 'The checkpoint changed or was removed. Review the current recovery before trying again.');
+                return;
+            }
+            setInterruptedTurnRecovery(current => current === recovery ? null : current);
+        } catch (error) {
+            setError(formatError(error));
+        }
+    }, [interruptedTurnRecovery, language, setError]);
 
     const recordCrash = useCallback((source: string, errorToRecord: unknown, componentStack?: string) => {
         const marker = markCrashDetected(source, errorToRecord, componentStack);
@@ -1247,14 +1290,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const loadCrashRecovery = useCallback(async (): Promise<boolean> => {
         const metadata = getCrashRecoveryMetadata();
-        const currentState = gameStateRef.current;
-
-        if (metadata?.networkRole === 'player' || currentState?.networkRole === 'player') {
+        const initialState = gameStateRef.current;
+        const initialRevision = syncRevisionRef.current;
+        const initialGameplayRevision = gameplayMutationRevisionRef.current;
+        const recoveryBusy = () => !!activeTurnRef.current || isTurnSubmitPendingRef.current ||
+            gameplayMutationPendingRef.current ||
+            gameplayMutationRevisionRef.current !== initialGameplayRevision;
+        const rejectBusy = () => {
             setError(language === 'ru'
-                ? 'Восстановление локального состояния недоступно для клиента сетевой игры. Переподключитесь или запросите синхронизацию у хоста.'
-                : 'Local crash recovery is unavailable for multiplayer clients. Reconnect or request sync from the host.');
+                ? 'Восстановление недоступно во время хода или изменения игры. Дождитесь завершения и повторите запрос.'
+                : 'Recovery is unavailable during a turn or game update. Wait for it to finish and try again.');
             return false;
-        }
+        };
+        if (recoveryBusy()) return rejectBusy();
 
         const attemptedMarker = markCrashRecoveryAttempt();
         if (attemptedMarker) {
@@ -1270,6 +1318,16 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return false;
             }
 
+            // IndexedDB is asynchronous and metadata can be stale or absent.
+            // Recheck both the actual checkpoint and the current session before
+            // a local restore replaces the snapshot or overwrites newer state.
+            if (recoveryBusy()) return rejectBusy();
+            if (gameStateRef.current !== initialState || syncRevisionRef.current !== initialRevision) {
+                setError(language === 'ru'
+                    ? 'Состояние игры изменилось во время чтения восстановления. Повторите запрос, если хотите загрузить сохранение.'
+                    : 'The game state changed while recovery was loading. Retry if you want to load the checkpoint.');
+                return false;
+            }
             restoreFromSaveData(data);
             return true;
         } catch (e: any) {
@@ -1291,17 +1349,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
     }, [turnNumber, gameState, allManagers, saveCrashRecoveryFromData]);
 
-    useEffect(() => {
-        return () => {
-            if (peerRef.current) {
-                peerRef.current.destroy();
-            }
-        };
-    }, []);
-
     const updateGameSettings = useCallback((newSettings: Partial<GameSettings>) => {
+        // Display/media preferences do not invalidate game-rule edits.
+        const shared = Object.keys(newSettings).some(key => !isLocalPreferenceKey(key));
+        if (shared && userGameplayActionBlocked()) return;
+        const applied = shared ? beginSharedContextEdit('settings') : null;
         setGameSettings(prevSettings => {
-            if (!prevSettings) return prevSettings;
+            if (!prevSettings) return applied ? applied(prevSettings) : prevSettings;
 
             if (newSettings.notificationSound === true && prevSettings.notificationSound === false) {
                 initializeAndPreviewSound();
@@ -1309,18 +1363,20 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             const updatedSettings = { ...prevSettings, ...newSettings };
 
-            return updatedSettings;
+            return applied ? applied(updatedSettings) : updatedSettings;
         });
-    }, []);
+    }, [userGameplayActionBlocked, beginSharedContextEdit]);
 
     const updateSuperInstructions = useCallback((newInstructions: string) => {
-        setSuperInstructions(newInstructions);
-    }, []);
+        if (userGameplayActionBlocked()) return;
+        const applied = beginSharedContextEdit('instructions');
+        setSuperInstructions(() => applied(newInstructions));
+    }, [userGameplayActionBlocked, beginSharedContextEdit]);
 
     const editLocationData = (locationId: string, field: keyof Location, value: any) => {
-        if (!gameSettings?.allowHistoryManipulation) return;
+        if (!gameSettings?.allowHistoryManipulation || userGameplayActionBlocked()) return;
 
-        setWorldMap(prevMap => {
+        setUserWorldMap(prevMap => {
             const newMap = { ...prevMap };
             if (newMap[locationId]) {
                 newMap[locationId] = { ...newMap[locationId], [field]: value };
@@ -1331,14 +1387,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return newMap;
         });
 
-        setVisitedLocations(prev => {
+        setUserVisitedLocations(prev => {
             const newLocations = prev.map(loc => loc.locationId === locationId ? { ...loc, [field]: value } : loc);
             if (gameContextRef.current) {
                 gameContextRef.current.visitedLocations = newLocations;
             }
             return newLocations;
         });
-        
+
         setGameState(prev => {
             if(!prev) return null;
             if(prev.currentLocationData?.locationId === locationId){
@@ -1355,17 +1411,18 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const updatePlayerPortrait = useCallback((playerId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => {
         setGameState(prevState => {
             if (!prevState || !prevState.players || prevState.players.length === 0) return prevState;
-    
-            const pcIndex = prevState.players.findIndex(p => p.playerId === playerId);
+
+            const matches = prevState.players.flatMap((p, index) => p?.playerId === playerId ? [index] : []);
+            const pcIndex = matches.length === 1 && playerId ? matches[0] : -1;
             if (pcIndex === -1) {
                 console.warn(`updatePlayerPortrait: Player with ID ${playerId} not found.`);
                 return prevState;
             }
-    
+
             const newPlayers = [...prevState.players];
             const playerToUpdate = { ...newPlayers[pcIndex] };
             let newImageCache = { ...prevState.imageCache };
-    
+
             if (portraitData.custom !== undefined) {
                 const currentKey = playerToUpdate.portrait;
                 if (currentKey && currentKey.startsWith('custom-portrait-')) {
@@ -1384,28 +1441,28 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 if (currentKey && currentKey.startsWith('custom-portrait-')) {
                     delete newImageCache[currentKey];
                 }
-                
+
                 // FIX: When accepting a new prompt, update image_prompt, clear pending_image_prompt, and reset portrait.
                 // This ensures the new prompt becomes the active one.
                 playerToUpdate.image_prompt = portraitData.prompt;
                 playerToUpdate.pending_image_prompt = null;
                 playerToUpdate.portrait = null;
             }
-    
+
             newPlayers[pcIndex] = playerToUpdate;
-    
+
             let newPlayerCharacter = prevState.playerCharacter;
-            if (prevState.activePlayerIndex === pcIndex) {
+            if (prevState.playerCharacter?.playerId === playerId) {
                 newPlayerCharacter = playerToUpdate;
             }
-    
+
             const newState = {
                 ...prevState,
                 players: newPlayers,
                 playerCharacter: newPlayerCharacter,
                 imageCache: newImageCache,
             };
-    
+
             return newState;
         });
     }, [setGameState]);
@@ -1446,7 +1503,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     }
                 }
                 newNpc.custom_image_prompt = null;
-                
+
                 // FIX: When accepting a new prompt, update image_prompt and clear pending_image_prompt.
                 newNpc.image_prompt = portraitData.prompt;
                 newNpc.pending_image_prompt = null;
@@ -1463,10 +1520,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return newState;
         });
     }, [setGameState]);
-    
+
     // FIX: Added deleteImageFromCache function to manage the image cache.
     const deleteImageFromCache = useCallback((prompt: string) => {
-        setGameState(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             const newCache = { ...prev.imageCache };
             if (newCache[prompt]) {
@@ -1482,15 +1539,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             return { ...prev, imageCache: newCache };
         });
-    }, [setGameState]);
+    }, [setPresentationState]);
 
     // FIX: Added clearImageCache function and exported it from the useGameLogic hook.
     const clearImageCache = useCallback(() => {
-        setGameState(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             return { ...prev, imageCache: {} };
         });
-    }, [setGameState]);
+    }, [setPresentationState]);
 
     const regenerateLastResponse = useCallback(async (): Promise<boolean> => {
         const turnSaveToUse = lastTurnSaveFile;
@@ -1499,6 +1556,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(t('no_regeneration_data'));
             return false;
         }
+        if (!beginLocalLoad()) return false;
 
         try {
             restoreFromSaveData(turnSaveToUse);
@@ -1507,93 +1565,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(formatError(e));
             return false;
         }
-    }, [lastTurnSaveFile, restoreFromSaveData, setError, t]);
+    }, [lastTurnSaveFile, restoreFromSaveData, beginLocalLoad, setError, t]);
 
-    const passTurnManually = useCallback(() => {
-        if (!gameState || !gameSettings || gameSettings.cooperativeGameType === 'None') return;
-        if (!gameState.players || gameState.players.length === 0) return;
+    const passTurnManually = useCallback((): boolean => {
+        if (!gameState || !gameSettings || gameSettings.cooperativeGameType === 'None') return false;
+        if (!gameState.players || gameState.players.length === 0) return false;
 
         const currentActivePlayerIndex = gameState.activePlayerIndex;
         let nextPlayerIndex = (currentActivePlayerIndex + 1) % gameState.players.length;
 
-        passTurnToPlayer(nextPlayerIndex);
+        return passTurnToPlayer(nextPlayerIndex);
     }, [gameState, gameSettings, passTurnToPlayer]);
-
-    useEffect(() => {
-        if (gameState?.networkRole === 'host' && turnNumber !== null) {
-            const currentTurnInfo = { turn: turnNumber, playerIndex: gameState.activePlayerIndex };
-            const lastState = lastBroadcastedStateRef.current;
-
-            const shouldBroadcast = !lastState ||
-                lastState.turn < currentTurnInfo.turn ||
-                (lastState.turn === currentTurnInfo.turn && lastState.playerIndex !== currentTurnInfo.playerIndex);
-
-            if (shouldBroadcast) {
-                // For broadcasts to clients, we generally want a clean state, but maybe full GC isn't strictly necessary every sync.
-                // However, if the host GCs, the clients will receive the GC'd state.
-                // Let's keep GC ON for broadcasts to keep packet size smaller if possible, or OFF for speed.
-                // Prompt asked to only GC on MANUAL saves. So OFF here.
-                const saveData = allManagers.packageSaveData(gameState, false);
-                if (saveData) {
-                    allManagers.broadcastFullSync(saveData);
-                    lastBroadcastedStateRef.current = currentTurnInfo;
-                }
-            }
-        }
-    }, [turnNumber, gameState?.activePlayerIndex, gameState, allManagers]);
-
-    useEffect(() => {
-        if (gameState?.networkRole === 'host') {
-            const currentCoopState = JSON.stringify({
-                collective: gameState.collectiveActionState,
-                simultaneous: gameState.simultaneousActionState
-            });
-
-            if (currentCoopState !== lastBroadcastedCoopState.current) {
-                console.log("Co-op state changed on host, broadcasting sync.");
-                const saveData = allManagers.packageSaveData(gameState, false);
-                if (saveData) {
-                    allManagers.broadcastFullSync(saveData);
-                    lastBroadcastedCoopState.current = currentCoopState;
-                }
-            }
-        }
-    }, [gameState, allManagers]);
-
-    const forceSyncAll = useCallback(() => {
-        if (gameState?.networkRole !== 'host') {
-            console.warn("forceSyncAll called by non-host.");
-            return;
-        }
-        console.log("Host is forcing a full sync...");
-        const saveData = allManagers.packageSaveData(gameState, false);
-        if (saveData) {
-            allManagers.broadcastFullSync(saveData);
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('host_forced_sync'),
-            };
-            setGameHistory(prev => [...prev, systemMessage]);
-        } else {
-            console.error("Could not package save data for forced sync.");
-        }
-    }, [gameState, allManagers, t, setGameHistory]);
-
-    useEffect(() => {
-        if (gameState?.networkRole === 'host') {
-            const currentLength = gameState.players?.length;
-            const prevLength = prevPlayersLengthRef.current;
-
-            if (typeof prevLength === 'number' && typeof currentLength === 'number' && currentLength !== prevLength) {
-                console.log(`Player list changed on host (${prevLength} -> ${currentLength}), broadcasting new state...`);
-                const newSaveData = allManagers.packageSaveData(gameState, false);
-                if (newSaveData) {
-                    allManagers.broadcastFullSync(newSaveData);
-                }
-            }
-        }
-        prevPlayersLengthRef.current = gameState?.players?.length;
-    }, [gameState, allManagers]);
 
     const deleteActiveSkill = useCallback((skillName: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
@@ -1622,17 +1604,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const deleteActiveEffect = useCallback((characterType: 'player' | 'npc', characterId: string | null, effectId: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
-    
+
         setGameState(prevState => {
             if (!prevState) return null;
             const newState = JSON.parse(JSON.stringify(prevState));
-    
+
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.activePlayerEffects = (pc.activePlayerEffects || []).filter((e: Effect) => e.effectId !== effectId);
-                
+
                 newState.playerCharacter = recalculateDerivedStats(pc);
-    
+
                 if (gameContextRef.current) {
                     gameContextRef.current.playerCharacter = newState.playerCharacter;
                 }
@@ -1641,9 +1623,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 if (npcIndex > -1) {
                     const npc = newState.encounteredNPCs[npcIndex];
                     npc.activeEffects = (npc.activeEffects || []).filter((e: Effect) => e.effectId !== effectId);
-                    
+
                     newState.encounteredNPCs[npcIndex] = recalculateDerivedStats(npc);
-    
+
                     if (gameContextRef.current) {
                         gameContextRef.current.encounteredNPCs = newState.encounteredNPCs;
                     }
@@ -1662,7 +1644,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => w.woundId !== woundId);
                  if (gameContextRef.current) {
-                    gameContextRef.current.playerCharacter.playerWounds = pc.playerWounds;
+                    gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerWounds: pc.playerWounds };
                 }
             } else if (characterType === 'npc' && characterId) {
                 const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === characterId);
@@ -1682,7 +1664,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setGameState(prevState => {
             if (!prevState) return null;
             const newState = JSON.parse(JSON.stringify(prevState));
-            
+
             let woundToRemove: Wound | undefined;
 
             if (characterType === 'player') {
@@ -1730,7 +1712,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => !w.healingState || w.healingState.currentState !== 'Healed');
                  if (gameContextRef.current) {
-                    gameContextRef.current.playerCharacter.playerWounds = pc.playerWounds;
+                    gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerWounds: pc.playerWounds };
                 }
             } else if (characterType === 'npc' && characterId) {
                 const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === characterId);
@@ -1873,30 +1855,30 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setGameState(prevState => {
             if (!prevState) return null;
             if (!prevState.playerCharacter.playerCustomStates) return prevState;
-    
+
             const pc = prevState.playerCharacter;
             const initialLength = pc.playerCustomStates.length;
-            const newPlayerCustomStates = pc.playerCustomStates.filter(s => 
+            const newPlayerCustomStates = pc.playerCustomStates.filter(s =>
                 s.stateId !== idOrName && s.stateName !== idOrName
             );
-    
+
             if (newPlayerCustomStates.length === initialLength) {
                 console.warn(`Could not find player custom state to delete with identifier: ${idOrName}`);
                 return prevState; // No change
             }
-    
+
             const newPc = { ...pc, playerCustomStates: newPlayerCustomStates };
             const newState = { ...prevState, playerCharacter: newPc, playerCustomStates: newPlayerCustomStates };
-            
+
             if (gameContextRef.current) {
                 gameContextRef.current.playerCustomStates = newPlayerCustomStates;
-                gameContextRef.current.playerCharacter.playerCustomStates = newPlayerCustomStates;
+                gameContextRef.current.playerCharacter = { ...gameContextRef.current.playerCharacter, playerCustomStates: newPlayerCustomStates };
             }
-            
+
             return newState;
         });
     }, [gameSettings, setGameState]);
-    
+
     const deleteNpcCustomState = useCallback((npcId: string, idOrName: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
@@ -1916,7 +1898,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [gameSettings, setGameState]);
 
     const deleteLocationThreat = useCallback((locationId: string, threatId: string) => {
-        if (!gameSettings?.allowHistoryManipulation) return;
+        if (!gameSettings?.allowHistoryManipulation || userGameplayActionBlocked()) return;
 
         const updater = (location: Location) => {
             if (location && location.activeThreats) {
@@ -1926,7 +1908,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return location;
         };
 
-        setWorldMap(prevMap => {
+        setUserWorldMap(prevMap => {
             const newMap = { ...prevMap };
             if (newMap[locationId]) {
                 newMap[locationId] = updater(newMap[locationId]);
@@ -1949,7 +1931,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return prevState;
         });
 
-        setVisitedLocations(prev => {
+        setUserVisitedLocations(prev => {
             const newLocations = prev.map(loc => loc.locationId === locationId ? updater(loc) : loc);
             if (gameContextRef.current) {
                 gameContextRef.current.visitedLocations = newLocations;
@@ -1957,7 +1939,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             return newLocations;
         });
 
-    }, [gameSettings, setGameState, setWorldMap, setVisitedLocations]);
+    }, [gameSettings, setGameState, setUserWorldMap, setUserVisitedLocations, userGameplayActionBlocked]);
 
     const deleteFactionBonus = useCallback((factionId: string, bonusIdentifier: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
@@ -2013,7 +1995,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const clearNpcJournalsNow = useCallback(() => {
         if (!gameSettings) return;
-        
+
         setGameState(prevState => {
             if (!prevState) return null;
 
@@ -2046,7 +2028,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const handlePrimaryMusicClick = () => {
         generateMusicPrompt();
     };
-    
+
     const stopPlayingCinematic = useCallback(() => {
         setPlayingCinematic(null);
     }, []);
@@ -2055,280 +2037,45 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const cinemaFrames = playingCinematic?.frames || null;
     const closeCinemaPlayer = stopPlayingCinematic;
 
-    const syncNewPeer = useCallback((conn: DataConnection) => {
-        const newPeer: PeerInfo = { id: conn.peer, name: conn.metadata.playerName || `Player-${conn.peer.slice(-4)}` };
-
-        setGameState(prev => {
-            if (!prev) {
-                console.warn("syncNewPeer called before gameState is initialized. Peer will not be synced yet.");
-                return null;
-            }
-            const updatedPeers = [...prev.peers.filter(p => p.id !== newPeer.id), newPeer];
-            return { ...prev, peers: updatedPeers };
-        });
-
-        const connectMessage: ChatMessage = { sender: 'system', content: t('player_has_connected', { name: newPeer.name }) };
-        setGameHistory(prev => [...prev, connectMessage]);
-
-        // CRITICAL FIX: When syncing a new peer, we perform a full save package BUT with performGC=false.
-        // This is safer/faster and prevents any potential image loss during the sync process.
-        const saveData = allManagers.packageSaveData(gameStateRef.current!, false);
-        
-        if (saveData) {
-            const syncMessage: NetworkMessage = {
-                type: 'full_sync',
-                payload: { saveFile: saveData },
-            };
-            conn.send(syncMessage);
-            console.log(`Sent full_sync to ${conn.peer}`);
-        } else {
-            console.warn("Could not package save data for new peer, game state might be null. This can happen if a player connects during initial world generation.");
-        }
-    }, [allManagers, t, setGameState, setGameHistory]);
-
-    useEffect(() => {
-        syncNewPeerRef.current = syncNewPeer;
-    }, [syncNewPeer]);
-
-    const beginTurnSubmission = useCallback(() => {
-        if (isTurnSubmitPendingRef.current || isLoading) return false;
-        if (!gameStateRef.current || !gameContextRef.current) return false;
-
+    const runLocalSubmission = useCallback(async (kind: 'action' | 'question', text: string, image?: { data: string; mimeType: string } | null): Promise<boolean> => {
+        if (isTurnSubmitPendingRef.current || isLoading || activeTurnRef.current || !gameStateRef.current || !gameContextRef.current) return false;
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return false; }
         isTurnSubmitPendingRef.current = true;
-        return true;
-    }, [isLoading]);
-
-    const sendMessageWithStashClear = useCallback(async (message: string, image?: { data: string; mimeType: string; } | null) => {
-        if (!beginTurnSubmission()) return;
-
+        const startingRevision = syncRevisionRef.current;
+        const startingGameplayRevision = gameplayMutationRevisionRef.current;
         try {
             await savePreActionCrashRecovery();
-
-            if (message.trim().toLowerCase() === '[system action] pass turn') {
-                passTurnManually();
+            if (syncRevisionRef.current !== startingRevision ||
+                gameplayMutationRevisionRef.current !== startingGameplayRevision || gameplayMutationPendingRef.current) {
+                setError(t('turn_game_state_changed')); isTurnSubmitPendingRef.current = false; return false;
+            }
+            // Acceptance is distinct from completion: once dispatched, failures may
+            // occur after a committed turn and must not cause automatic retries.
+            const isManualPass = kind === 'action' && text.trim().toLowerCase() === '[system action] pass turn';
+            if (isManualPass) {
+                // A refused pass is not an accepted action, so the caller must keep the draft.
+                if (!passTurnManually()) { isTurnSubmitPendingRef.current = false; return false; }
                 isTurnSubmitPendingRef.current = false;
-                return;
+                return true;
             }
-
-            clearStashForNewTurn();
-            allManagers.sendMessage(message, image);
-        } catch (e) {
+            const task = kind === 'action' ? allManagers.sendMessage(text, image) : allManagers.askQuestion(text, image);
+            void Promise.resolve(task).catch(error => { console.error('Submission failed', error); setError(formatError(error)); })
+                .finally(() => { isTurnSubmitPendingRef.current = false; });
+            return true;
+        } catch (error) {
             isTurnSubmitPendingRef.current = false;
-            throw e;
+            setError(formatError(error));
+            return false;
         }
-    }, [allManagers, beginTurnSubmission, clearStashForNewTurn, passTurnManually, savePreActionCrashRecovery]);
+    }, [isLoading, t, savePreActionCrashRecovery, passTurnManually, allManagers, setError]);
+    const sendMessageWithStashClear = useCallback((message: string, image?: { data: string; mimeType: string } | null) => runLocalSubmission('action', message, image), [runLocalSubmission]);
+    const askQuestionWithRecovery = useCallback((question: string, image?: { data: string; mimeType: string } | null) => runLocalSubmission('question', question, image), [runLocalSubmission]);
 
-    const askQuestionWithRecovery = useCallback(async (question: string, image?: { data: string; mimeType: string; } | null) => {
-        if (!beginTurnSubmission()) return;
-
-        try {
-            await savePreActionCrashRecovery();
-            return await allManagers.askQuestion(question, image);
-        } catch (e) {
-            isTurnSubmitPendingRef.current = false;
-            throw e;
-        }
-    }, [allManagers, beginTurnSubmission, savePreActionCrashRecovery]);
-
-    useEffect(() => {
-        (sendMessageRef as React.MutableRefObject<any>).current = sendMessageWithStashClear;
-    }, [sendMessageWithStashClear]);
-
-    const myPlayerId = gameState?.myPeerId;
-
-    const initiateCollectiveAction = useCallback((participantIds: string[], prompt: string, remoteInitiator?: { id: string; name: string }) => {
-        const currentState = gameStateRef.current;
-        if (!currentState) return;
-
-        const isRemote = !!remoteInitiator;
-        const initiatorId = isRemote ? remoteInitiator.id : (myPlayerId || '');
-        const initiatorName = isRemote ? remoteInitiator.name : (currentState.players.find(p => p.playerId === initiatorId)?.name || 'Player');
-
-        if (currentState.networkRole === 'host') {
-            setGameState(prevState => {
-                if (!prevState) return null;
-                const newCollectiveState: CollectiveActionState = {
-                    isActive: true,
-                    initiatorId: initiatorId,
-                    initiatorName: initiatorName,
-                    prompt: prompt,
-                    participantIds: participantIds,
-                    actions: {}
-                };
-                return { ...prevState, collectiveActionState: newCollectiveState };
-            });
-        } else if (currentState.networkRole === 'player' && hostConnectionRef.current && !isRemote) {
-            const message: NetworkMessage = {
-                type: 'request_collective_action',
-                payload: { participantIds, prompt, initiatorId, initiatorName },
-                senderId: initiatorId
-            };
-            hostConnectionRef.current.send(message);
-        }
-    }, [t, setGameState, myPlayerId]);
-
-    const submitCollectiveAction = useCallback((action: string, senderOverrideId?: string) => {
-        const currentState = gameStateRef.current;
-        if (!currentState || !currentState.collectiveActionState?.isActive) return;
-
-        const effectiveSenderId = senderOverrideId || currentState.myPeerId;
-        if (!effectiveSenderId) {
-            console.warn(`[HOST/CLIENT] submit_collective_action: No effective sender ID. Returning.`);
-            return;
-        }
-
-        if (currentState.networkRole === 'host') {
-            console.log(`[HOST] Processing submit_collective_action from senderId: ${effectiveSenderId}, Action: "${action}"`);
-            setGameState(prevState => {
-                if (!prevState) {
-                    console.warn(`[HOST] submit_collective_action: prevState is null, cannot update.`);
-                    return null;
-                }
-                if (!prevState.collectiveActionState?.isActive) {
-                    console.warn(`[HOST] submit_collective_action: collectiveActionState is not active, returning previous state.`);
-                    return prevState;
-                }
-
-                const currentActions = { ...prevState.collectiveActionState.actions };
-
-                if (currentActions[effectiveSenderId] === action) {
-                    console.warn(`[HOST] submit_collective_action: Action for ${effectiveSenderId} is already set to the same value. Skipping update.`);
-                    return prevState;
-                }
-
-                currentActions[effectiveSenderId] = action; // Update the action for the specific sender
-
-                const newCollectiveState = { ...prevState.collectiveActionState, actions: currentActions };
-                const newState = { ...prevState, collectiveActionState: newCollectiveState };
-
-                console.log(`[HOST] Updated collectiveActionState for ${effectiveSenderId}:`, newCollectiveState.actions);
-                return newState;
-            });
-        } else if (currentState.networkRole === 'player' && hostConnectionRef.current) {
-            const message: NetworkMessage = {
-                type: 'submit_collective_action',
-                payload: { action },
-                senderId: effectiveSenderId // This should be the client's myPeerId
-            };
-            console.log(`[CLIENT] Sending 'submit_collective_action' to host. MyPeerId: ${effectiveSenderId}, Action: "${action}"`);
-            hostConnectionRef.current.send(message);
-
-            setGameState(prevState => {
-                if (!prevState || !prevState.collectiveActionState?.isActive) return prevState;
-                const newActions = { ...prevState.collectiveActionState.actions, [effectiveSenderId]: action };
-                const newCollectiveState = { ...prevState.collectiveActionState, actions: newActions };
-                console.log(`[CLIENT] Updated local collectiveActionState for ${effectiveSenderId}:`, newCollectiveState.actions);
-                return { ...prevState, collectiveActionState: newCollectiveState };
-            });
-        }
-    }, [setGameState]);
-
-    const processCollectiveActions = useCallback(() => {
-        const currentState = gameStateRef.current;
-        if (!currentState || !currentState.collectiveActionState?.isActive) return;
-
-        const { prompt, actions, initiatorName } = currentState.collectiveActionState;
-        let combinedMessage = `[${t('Collective Action requested by {name}', { name: initiatorName })}: ${prompt}]\n`;
-
-        currentState.players.forEach(p => {
-            if (actions[p.playerId]) {
-                combinedMessage += `${p.name}: ${actions[p.playerId]}\n`;
-            }
-        });
-
-        if (gameContextRef.current) {
-            (gameContextRef.current as any).collectiveActionState = null;
-        }
-
-        if (gameStateRef.current) {
-            gameStateRef.current.collectiveActionState = null;
-        }
-
-        sendMessageWithStashClear(combinedMessage.trim());
-
-        setGameState(prev => prev ? { ...prev, collectiveActionState: null } : null);
-    }, [t, setGameState, sendMessageWithStashClear]);
-
-    const cancelCollectiveAction = useCallback(() => {
-        setGameState(prevState => {
-            if (!prevState) return null;
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('collective_action_cancelled', { name: prevState.collectiveActionState?.initiatorName || 'Player' })
-            };
-            setGameHistory(prevHistory => [...prevHistory, systemMessage]);
-            return { ...prevState, collectiveActionState: null };
-        });
-    }, [t, setGameHistory, setGameState]);
-
-    const initiateSimultaneousAction = useCallback(() => {
-        const currentState = gameStateRef.current;
-        if (!currentState) return;
-
-        if (currentState.networkRole === 'host') {
-            const newSimultaneousState: SimultaneousActionState = {
-                isActive: true,
-                actions: {}
-            };
-            setGameState(prevState => {
-                if (!prevState) return null;
-                return { ...prevState, simultaneousActionState: newSimultaneousState };
-            });
-        } else if (currentState.networkRole === 'player' && hostConnectionRef.current) {
-            const message: NetworkMessage = {
-                type: 'request_simultaneous_action',
-                payload: {},
-                senderId: myPlayerId!,
-            };
-            hostConnectionRef.current.send(message);
-        }
-    }, [setGameState, myPlayerId]);
-
-    const submitSimultaneousAction = useCallback((action: string) => {
-        const currentState = gameStateRef.current;
-        if (!currentState || !currentState.simultaneousActionState?.isActive || !myPlayerId) return;
-
-        const myPlayerIdConst = myPlayerId;
-
-        if (currentState.networkRole === 'host') {
-            setGameState(prevState => {
-                if (!prevState || !prevState.simultaneousActionState?.isActive) return prevState;
-                const newActions = { ...prevState.simultaneousActionState.actions, [myPlayerIdConst]: action };
-                const newSimultaneousState = { ...prevState.simultaneousActionState, actions: newActions };
-                return { ...prevState, simultaneousActionState: newSimultaneousState };
-            });
-        } else if (currentState.networkRole === 'player' && hostConnectionRef.current) {
-            const message: NetworkMessage = {
-                type: 'simultaneous_action_submit',
-                payload: { action },
-                senderId: myPlayerIdConst
-            };
-            hostConnectionRef.current.send(message);
-
-            setGameState(prevState => {
-                if (!prevState || !prevState.simultaneousActionState?.isActive) return prevState;
-                const newActions = { ...prevState.simultaneousActionState.actions, [myPlayerIdConst]: action };
-                const newSimultaneousState = { ...prevState.simultaneousActionState, actions: newActions };
-                return { ...prevState, simultaneousActionState: newSimultaneousState };
-            });
-        }
-    }, [setGameState, myPlayerId]);
-
-    const cancelSimultaneousAction = useCallback(() => {
-        setGameState(prevState => {
-            if (!prevState) return null;
-            const systemMessage: ChatMessage = {
-                sender: 'system',
-                content: t('simultaneous_action_cancelled')
-            };
-            setGameHistory(prevHistory => [...prevHistory, systemMessage]);
-            return { ...prevState, simultaneousActionState: null };
-        });
-    }, [t, setGameHistory, setGameState]);
-
+    const cinemaAbortControllerRef = useRef<AbortController | null>(null);
     const cancelCinemaGeneration = useCallback(() => {
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
+        if (cinemaAbortControllerRef.current) {
+            cinemaAbortControllerRef.current.abort();
+            cinemaAbortControllerRef.current = null;
         }
         setIsGeneratingCinema(false);
         setExtendingCinematicId(null);
@@ -2342,7 +2089,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setError(null);
         setCinemaGenerationProgress({ current: 0, total: 1, message: t('Generating trailer script...') });
 
-        abortControllerRef.current = new AbortController();
+        cinemaAbortControllerRef.current?.abort();
+        const cinemaController = new AbortController();
+        cinemaAbortControllerRef.current = cinemaController;
 
         try {
             const cinemaContext = {
@@ -2350,12 +2099,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 superInstructions: narrativeStyleGuide.getGuide() + '\n' + superInstructions,
             };
 
-            const prompt = getCinemaPrompt(userPrompt, cinemaContext);
-            
+            const prompt = getCinemaPrompt(cinemaContext, userPrompt);
+
             const result = await executeCancellableJsonGeneration(
                 prompt,
                 cinemaContext,
-                abortControllerRef.current.signal,
+                cinemaController.signal,
                 (text) => { /* streaming not needed here */ }
             );
 
@@ -2372,23 +2121,24 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setCinemaGenerationProgress({ current: 0, total: newCinematic.frames.length, message: t('Generating scene images...') });
 
                 for (let i = 0; i < newCinematic.frames.length; i++) {
-                    if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
-                    if (gameContextRef.current?.gameSettings?.disableImageGeneration === true) break;
+                    if (cinemaController.signal.aborted) throw new Error("Cancelled");
+                    if (Boolean(gameContextRef.current?.gameSettings?.disableImageGeneration)) break;
                     setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newCinematic.frames.length}` }));
 
                     const imageUrl = await requestArenaGmImage(
                         newCinematic.frames[i].imagePrompt,
                         1024,
                         1024,
-                        abortControllerRef.current.signal,
+                        cinemaController.signal,
                     );
-                    if (!abortControllerRef.current.signal.aborted) {
+                    if (!cinemaController.signal.aborted) {
                         newCinematic.frames[i].imageUrl = imageUrl;
                     }
                 }
             }
-            
-            setGameState(prev => {
+
+            if (cinemaController.signal.aborted) return;
+            setPresentationState(prev => {
                 if (!prev) return null;
                 const cinematics = [...(prev.cinematics || []), newCinematic];
                 return { ...prev, cinematics };
@@ -2402,9 +2152,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 console.error("Failed to generate film trailer:", e);
             }
         } finally {
-            setIsGeneratingCinema(false);
+            if (cinemaAbortControllerRef.current === cinemaController) {
+                cinemaAbortControllerRef.current = null;
+                setIsGeneratingCinema(false);
+            }
         }
-    }, [gameSettings, superInstructions, t, setError, setGameState]);
+    }, [gameSettings, superInstructions, t, setError, setPresentationState]);
 
     const continueFilmTrailer = useCallback(async (cinematicId: string) => {
         if (!gameContextRef.current || !gameSettings) return;
@@ -2419,7 +2172,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setExtendingCinematicId(cinematicId);
         setError(null);
         setCinemaGenerationProgress({ current: 0, total: 1, message: t('Continuing trailer script...') });
-        abortControllerRef.current = new AbortController();
+        cinemaAbortControllerRef.current?.abort();
+        const cinemaController = new AbortController();
+        cinemaAbortControllerRef.current = cinemaController;
 
         try {
             const cinemaContext = {
@@ -2427,11 +2182,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 superInstructions: narrativeStyleGuide.getGuide() + '\n' + superInstructions,
             };
 
-            const prompt = getContinueCinemaPrompt(cinematicToExtend, cinemaContext);
+            const prompt = getContinueCinemaPrompt(cinemaContext, cinematicToExtend);
             const result = await executeCancellableJsonGeneration(
                 prompt,
                 cinemaContext,
-                abortControllerRef.current.signal,
+                cinemaController.signal,
                 (text) => { /* streaming not needed here */ }
             );
 
@@ -2441,19 +2196,20 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setCinemaGenerationProgress({ current: 0, total: newFrames.length, message: t('Generating additional scenes...') });
 
                 for (let i = 0; i < newFrames.length; i++) {
-                    if (abortControllerRef.current.signal.aborted) throw new Error("Cancelled");
-                    if (gameContextRef.current?.gameSettings?.disableImageGeneration === true) break;
+                    if (cinemaController.signal.aborted) throw new Error("Cancelled");
+                    if (Boolean(gameContextRef.current?.gameSettings?.disableImageGeneration)) break;
                     setCinemaGenerationProgress(prev => ({ ...prev, current: i + 1, message: `${t('Generating scene')} ${i + 1}/${newFrames.length}` }));
                     newFrames[i].imageUrl = await requestArenaGmImage(
                         newFrames[i].imagePrompt,
                         1024,
                         1024,
-                        abortControllerRef.current.signal,
+                        cinemaController.signal,
                     );
                 }
             }
 
-            setGameState(prev => {
+            if (cinemaController.signal.aborted) return;
+            setPresentationState(prev => {
                 if (!prev) return null;
                 const newCinematics = (prev.cinematics || []).map(c => {
                     if (c.id === cinematicId) {
@@ -2472,10 +2228,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 console.error("Failed to continue film trailer:", e);
             }
         } finally {
-            setIsGeneratingCinema(false);
-            setExtendingCinematicId(null);
+            if (cinemaAbortControllerRef.current === cinemaController) {
+                cinemaAbortControllerRef.current = null;
+                setIsGeneratingCinema(false);
+                setExtendingCinematicId(null);
+            }
         }
-    }, [gameSettings, superInstructions, t, setError, setGameState, gameStateRef]);
+    }, [gameSettings, superInstructions, t, setError, setPresentationState, gameStateRef]);
 
     const playCinematic = useCallback((cinematicId: string) => {
         const cinematic = gameStateRef.current?.cinematics?.find(c => c.id === cinematicId);
@@ -2483,7 +2242,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setPlayingCinematic(cinematic);
         }
     }, []);
-    
+
     const exportCinematic = useCallback((cinematicId: string) => {
         const cinematic = gameStateRef.current?.cinematics?.find(c => c.id === cinematicId);
         if (cinematic) {
@@ -2495,9 +2254,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             a.download = filename;
             a.click();
              URL.revokeObjectURL(url);
-            setGameLog(prev => [t('CinematicExported', { filename }), ...prev]);
+            setPresentationGameLog(prev => [t('CinematicExported', { filename }), ...prev]);
         }
-    }, [t, setGameLog, gameStateRef]);
+    }, [t, setPresentationGameLog, gameStateRef]);
 
     const importCinematic = useCallback(() => {
         const input = document.createElement('input');
@@ -2512,7 +2271,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         const content = re.target?.result as string;
                         const cinematic = JSON.parse(content) as Cinematic;
                         if (cinematic.id && cinematic.title && cinematic.frames) {
-                            setGameState(prev => {
+                            setPresentationState(prev => {
                                 if (!prev) return null;
                                 const existing = (prev.cinematics || []).find(c => c.id === cinematic.id);
                                 if (existing) {
@@ -2520,7 +2279,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                                     return prev;
                                 }
                                 const cinematics = [...(prev.cinematics || []), cinematic];
-                                setGameLog(p => [t('CinematicImported'), ...p]);
+                                setPresentationGameLog(p => [t('CinematicImported'), ...p]);
                                 return { ...prev, cinematics };
                             });
                         } else {
@@ -2535,19 +2294,19 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
         };
         input.click();
-    }, [t, setError, setGameLog, setGameState]);
+    }, [t, setError, setPresentationGameLog, setPresentationState]);
 
     const deleteCinematic = useCallback((cinematicId: string) => {
-        setGameState(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             const cinematics = (prev.cinematics || []).filter(c => c.id !== cinematicId);
-            setGameLog(p => [t('CinematicDeleted'), ...p]);
+            setPresentationGameLog(p => [t('CinematicDeleted'), ...p]);
             return { ...prev, cinematics };
         });
-    }, [setGameState, setGameLog, t]);
+    }, [setPresentationState, setPresentationGameLog, t]);
 
     const updateCinematic = useCallback((cinematicId: string, updates: Partial<Omit<Cinematic, 'id'>>) => {
-        setGameState(prev => {
+        setPresentationState(prev => {
             if (!prev) return null;
             const newCinematics = (prev.cinematics || []).map(c => {
                 if (c.id === cinematicId) {
@@ -2555,17 +2314,17 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 }
                 return c;
             });
-            setGameLog(p => [t('CinematicUpdated'), ...p]);
+            setPresentationGameLog(p => [t('CinematicUpdated'), ...p]);
             return { ...prev, cinematics: newCinematics };
         });
-    }, [setGameState, setGameLog, t]);
+    }, [setPresentationState, setPresentationGameLog, t]);
 
     const regenerateCinemaFrame = useCallback(async (cinematicId: string, frameIndex: number, newPrompt: string): Promise<boolean> => {
         if (gameSettings?.disableImageGeneration || gameContextRef.current?.gameSettings?.disableImageGeneration) return false;
         try {
             const imageUrl = await requestArenaGmImage(newPrompt, 1024, 1024);
             if (imageUrl) {
-                setGameState(prev => {
+                setPresentationState(prev => {
                     if (!prev) return null;
                     const newCinematics = (prev.cinematics || []).map(c => {
                         if (c.id === cinematicId) {
@@ -2596,7 +2355,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(formatError(e));
             return false;
         }
-    }, [gameSettings, gameContextRef, setGameState, setError]);
+    }, [gameSettings, gameContextRef, setPresentationState, setError]);
 
     const generateCinematicAudio = useCallback(async (cinematicId: string, voice: string) => {
         setIsGeneratingCinema(true);
@@ -2605,7 +2364,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         try {
             const cinematic = gameStateRef.current?.cinematics?.find(c => c.id === cinematicId);
             if (!cinematic) throw new Error("Cinematic not found");
-            
+
             const fullText = cinematic.frames.map(f => f.subtitle).join('\n');
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const response = await ai.models.generateContent({
@@ -2641,6 +2400,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         isLoading,
         error,
         ...allManagers,
+        resumeInterruptedTurn: resumeInterruptedTurnSafely,
         sendMessage: sendMessageWithStashClear,
         askQuestion: askQuestionWithRecovery,
         lastJsonResponse,
@@ -2688,14 +2448,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         deletePassiveSkill,
         onEditNpcMemory,
         onDeleteNpcMemory,
-        forceSyncAll,
-        initiateCollectiveAction,
-        submitCollectiveAction,
-        processCollectiveActions,
-        cancelCollectiveAction,
-        initiateSimultaneousAction,
-        submitSimultaneousAction,
-        cancelSimultaneousAction,
         clearAllCompletedFactionProjects,
         clearAllCompletedNpcActivities,
         onDeleteCurrentActivity,
@@ -2726,8 +2478,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         closeCinemaPlayer,
         lastTurnSaveFile,
         regenerateLastResponse,
-        networkChatHistory,
-        sendNetworkChatMessage,
         deleteActiveEffect,
         forgetHealedWound,
         forgetActiveWound,

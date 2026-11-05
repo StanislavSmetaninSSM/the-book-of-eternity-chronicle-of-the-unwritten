@@ -1,15 +1,14 @@
-
 import React from 'react';
-import { GameState, GameContext, ChatMessage, GameResponse, WorldStateFlag, Location, NPC, PeerInfo, NetworkRole, GameSettings, NetworkMessage, SaveFile, Item } from '../../types';
+import { GameState, GameContext, ChatMessage, GameResponse, WorldStateFlag, Location, NPC, GameSettings, SaveFile } from '../../types';
 import { executeTurn, askGmQuestion as executeGmQuestion, getModelForStep, executeWorldProgression } from '../../utils/gemini';
-import { createInitialContext, buildNextContext } from '../../utils/gameContext';
+import { createInitialContext, buildNextContext, WorldMapWarning } from '../../utils/gameContext';
 import { formatError } from '../../utils/errorUtils';
 import { playNotificationSound } from '../../utils/soundManager';
-import { DataConnection } from 'peerjs';
 import { deepMergeResponses, processAndApplyResponse } from '../../utils/responseProcessor';
 import { deepStripModerationSymbols } from '../../utils/textUtils';
 import { acquireArenaGmTurnLease } from '../../utils/arenaGmRelay';
-import { clearInterruptedTurnRecovery, saveInterruptedTurnRecovery } from '../../utils/fileManager';
+import { shouldRunWorldProgression } from '../../utils/worldProgression.js';
+import { clearInterruptedTurnRecoveryIfUnchanged, saveInterruptedTurnRecovery, type InterruptedTurnRecovery } from '../../utils/fileManager';
 
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => {
@@ -19,6 +18,10 @@ const asArray = <T>(value: T | T[] | null | undefined): T[] => {
 };
 const isObject = (item: any): item is object => (item && typeof item === 'object' && !Array.isArray(item));
 
+// Distinguish explicit cancellation from a superseded turn. Only the former
+// discards this turn's own recovery record.
+const USER_CANCELLED_TURN = Symbol('user-cancelled-turn');
+
 export const createTurnManager = (
     {
         gameState, setGameState, gameHistory, setGameHistory,
@@ -27,15 +30,15 @@ export const createTurnManager = (
         setGameLog, setCombatLog, setSceneImagePrompt, setSuggestedActions,
         setWorldMap, setVisitedLocations, setWorldState, setTurnNumber,
         gameContextRef, abortControllerRef,
+        syncRevisionRef = { current: 0 }, activeTurnRef = { current: null }, turnPhaseRef = { current: 'idle' },
+        gameplayMutationRevisionRef = { current: 0 }, gameplayMutationPendingRef = { current: false },
         setSuperInstructions, setGameSettings,
         setLanguage,
         t,
         turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel,
         language,
         gameSettings,
-        hostConnectionRef,
         gameStateRef,
-        broadcastFullSync,
         combatLog,
         gameLog,
         packageSaveDataForTurn,
@@ -60,6 +63,11 @@ export const createTurnManager = (
         setTurnNumber: React.Dispatch<React.SetStateAction<number | null>>,
         gameContextRef: React.MutableRefObject<GameContext | null>,
         abortControllerRef: React.MutableRefObject<AbortController | null>,
+        syncRevisionRef?: React.MutableRefObject<number>,
+        activeTurnRef?: React.MutableRefObject<symbol | null>,
+        turnPhaseRef?: React.MutableRefObject<'idle' | 'generating' | 'committed'>,
+        gameplayMutationRevisionRef?: React.MutableRefObject<number>,
+        gameplayMutationPendingRef?: React.MutableRefObject<boolean>,
         setSuperInstructions: React.Dispatch<React.SetStateAction<string>>,
         setGameSettings: React.Dispatch<React.SetStateAction<any>>,
         setLanguage: (lang: any) => void,
@@ -70,55 +78,79 @@ export const createTurnManager = (
         setCurrentModel: React.Dispatch<React.SetStateAction<string | null>>,
         language: any,
         gameSettings: GameSettings | null,
-        hostConnectionRef: React.MutableRefObject<DataConnection | null>,
         gameStateRef: React.RefObject<GameState | null>,
-        broadcastFullSync: (saveData: SaveFile) => void,
         combatLog: string[],
         gameLog: string[],
         packageSaveDataForTurn?: () => SaveFile | null;
         setLastTurnSaveFile?: React.Dispatch<React.SetStateAction<SaveFile | null>>;
     }
 ) => {
-    const clearStashForNewTurn = () => {
-        setGameState(prev => {
-            if (!prev) return null;
-            if (prev.temporaryStash && prev.temporaryStash.length > 0) {
-                return { ...prev, temporaryStash: [] };
-            }
-            return prev;
-        });
-    };
+    // Clear the previous stash only in the candidate state. A rejected turn
+    // must leave it available, and a successful turn may create a new stash.
+    const withoutPreviousStash = (state: GameState): GameState =>
+        state.temporaryStash?.length ? { ...state, temporaryStash: [] } : state;
+
+    const retainPresentation = (state: GameState, latest: GameState | null): GameState => ({
+        ...state,
+        ...(latest?.imageCache !== undefined ? { imageCache: latest.imageCache } : {}),
+        ...(latest?.cinematics !== undefined ? { cinematics: latest.cinematics } : {})
+    });
 
     const handleTurn = async (context: GameContext, fullHistoryForTurn: ChatMessage[], baseStateOverride?: GameState) => {
+        if (activeTurnRef.current) return;
+
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
+        const turnToken = Symbol('turn');
+        activeTurnRef.current = turnToken;
+        turnPhaseRef.current = 'generating';
+        const startingRevision = syncRevisionRef.current;
+        const startingGameplayRevision = gameplayMutationRevisionRef.current;
+
+        const wasSuperseded = () => syncRevisionRef.current !== startingRevision || gameplayMutationRevisionRef.current !== startingGameplayRevision;
         setIsLoading(true);
         setError(null);
-        clearStashForNewTurn();
-        if (!context.enemiesDataForCurrentTurn || context.enemiesDataForCurrentTurn.length === 0) {
-          setCombatLog([]);
-        }
+        const startingCombatLog = context.enemiesDataForCurrentTurn?.length ? combatLog : [];
+        if (startingCombatLog !== combatLog) setCombatLog([]);
         setGameLog([]);
         setLastJsonResponse('');
         setSuggestedActions([]);
-        abortControllerRef.current = new AbortController();
+        const turnController = new AbortController();
+        abortControllerRef.current = turnController;
         // Each turn owns its lease; never share it with the separate Ask GM flow.
         let releaseArenaGmTurn: (() => void) | null = null;
+        // Errors after committing the state (e.g. broadcasting it) must not
+        // roll back its logs or suggest that the user repeat the action.
+        let stateCommitted = false;
+        let checkpoint: InterruptedTurnRecovery | null = null;
+        const clearOwnCheckpoint = async () => {
+            if (checkpoint) await clearInterruptedTurnRecoveryIfUnchanged(checkpoint);
+        };
+        const reportSuperseded = () => {
+            const warning = t(syncRevisionRef.current !== startingRevision ? 'turn_sync_before_send' : 'turn_game_state_changed');
+            setError(warning);
+            setGameHistory(prev => [...prev, { sender: 'system', content: warning }]);
+            setIsLoading(false);
+        };
 
         try {
             const onPartialResponse = (response: any, stepName: string, modelName: string) => {
+                if (wasSuperseded()) return;
                 setLastJsonResponse(JSON.stringify(response, null, 2));
                 if (response.items_and_stat_calculations) {
                     setGameLog(response.items_and_stat_calculations);
                 }
             };
             const onStepStart = (stepName: string, modelName: string) => {
+                if (wasSuperseded()) return;
                 setCurrentStep(stepName);
                 setCurrentModel(getModelForStep(stepName, context));
             };
             const onStreamingChunk = (text: string) => {
+                if (wasSuperseded()) return;
                 setLastJsonResponse(text);
             };
 
-            const baseState: GameState | null = baseStateOverride || gameStateRef.current;
+            let baseState: GameState | null = baseStateOverride || gameStateRef.current;
 
             if (!baseState) {
                 const errorMsg = "Critical error: Game state is missing when trying to process a turn. This might be due to a stale state closure. Aborting turn.";
@@ -127,195 +159,116 @@ export const createTurnManager = (
                 setIsLoading(false);
                 return;
             }
-            
+
+            setLastRequestJson(JSON.stringify(context, null, 2));
+
             // Save the submitted action and its pre-turn state before the first relay request.
             // If the browser reloads, the start screen can replay this exact action from the saved baseline.
-            if (baseState.networkRole === 'none') {
-                try {
-                    await saveInterruptedTurnRecovery({ context, baseState, history: fullHistoryForTurn });
-                } catch (recoveryError) {
-                    console.error('Could not persist interrupted-turn recovery checkpoint:', recoveryError);
-                    setError(t('Could not save the interrupted turn checkpoint. The game will continue, but a browser reload may lose this action.'));
-                }
+            try {
+                checkpoint = await saveInterruptedTurnRecovery({ context, baseState, history: fullHistoryForTurn });
+            } catch (recoveryError) {
+                console.error('Could not persist interrupted-turn recovery checkpoint:', recoveryError);
+                setError(t('Could not save the interrupted turn checkpoint. The game will continue, but a browser reload may lose this action.'));
             }
 
+            if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
             // Keep automatic/optional image jobs out of the mailbox for the entire staged turn.
-            releaseArenaGmTurn = await acquireArenaGmTurnLease();
+            releaseArenaGmTurn = await acquireArenaGmTurnLease(turnController.signal);
             const finalResponseRaw = await executeTurn(
                 context,
-                abortControllerRef.current.signal,
+                turnController.signal,
                 onPartialResponse,
                 onStreamingChunk,
                 onStepStart
             );
-            
+
+            if (wasSuperseded()) { reportSuperseded(); return; }
+            if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
             const finalResponse = deepStripModerationSymbols(finalResponseRaw);
-          
+
             if (context.gameSettings.allowHistoryManipulation !== true && finalResponse.playerBehaviorAssessment?.historyManipulationCoefficient >= 0.8) {
                 setError(t("history_manipulation_rejection"));
                 setGameHistory(prev => prev.slice(0, -1)); // Remove the offending player message
                 setIsLoading(false);
-                await clearInterruptedTurnRecovery().catch(error => console.error('Could not clear rejected turn checkpoint:', error));
+                await clearOwnCheckpoint().catch(error => console.error('Could not clear rejected turn checkpoint:', error));
                 return;
             }
-          
-            setLastJsonResponse(JSON.stringify(finalResponse, null, 2));
-            if (finalResponse.image_prompt !== undefined && finalResponse.image_prompt !== null) {
-                setSceneImagePrompt(finalResponse.image_prompt);
-            }
-            setSuggestedActions(finalResponse.dialogueOptions || []);
 
+            setLastJsonResponse(JSON.stringify(finalResponse, null, 2));
             const gmMessage: ChatMessage = { sender: 'gm', content: finalResponse.response || '' };
-                      
+
             // FIX: Passing context.worldMap to processAndApplyResponse to prevent data bleeding
-            const { newState, logsToAdd, combatLogsToAdd } = processAndApplyResponse(finalResponse, baseState, context.gameSettings, t, true, context.currentTurnNumber, context.worldMap);
+            let { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalResponse, withoutPreviousStash(baseState), context.gameSettings, t, true, context.currentTurnNumber, context.worldMap);
+            newState = retainPresentation(newState, gameStateRef.current);
+            const applyResponsePresentation = () => {
+                if (finalResponse.image_prompt !== undefined && finalResponse.image_prompt !== null) {
+                    setSceneImagePrompt(finalResponse.image_prompt);
+                }
+                setSuggestedActions(finalResponse.dialogueOptions || []);
+            };
 
             // Save the thought signature to the game state for the next turn
             if (finalResponse.thoughtSignature) {
                 newState.thoughtSignature = finalResponse.thoughtSignature;
             }
-            
-            if (finalResponse.itemJournalUpdates) {
-                asArray(finalResponse.itemJournalUpdates).forEach(update => {
-                    let itemFound = false;
-                    
-                    const findAndUpdate = (inventory: Item[]) => {
-                        if (itemFound || !inventory) return;
-            
-                        let item: Item | null = null;
-                        
-                        if (update.itemId) {
-                            item = inventory.find((i: Item) => i.existedId === update.itemId) || null;
-                        }
-                        
-                        if (!item && update.initialItemId) {
-                            item = inventory.find((i: Item) => i.initialId === update.initialItemId) || null;
-                        }
-            
-                        if (!item && update.itemName) {
-                            item = inventory.find((i: Item) => i.name === update.itemName && (!i.journalEntries || i.journalEntries.length === 0)) || inventory.find(i => i.name === update.itemName);
-                        }
-            
-                        if (item) {
-                            if (!Array.isArray(item.journalEntries)) {
-                                item.journalEntries = [];
-                            }
-                            item.journalEntries.unshift(update.entryToAppend);
-                            itemFound = true;
-                        }
-                    };
-            
-                    newState.players.forEach(p => {
-                        if (p?.inventory) findAndUpdate(p.inventory);
-                    });
-            
-                    if (!itemFound) {
-                        newState.encounteredNPCs.forEach(npc => {
-                            if (npc?.inventory) findAndUpdate(npc.inventory);
-                        });
-                    }
-                });
-            }
-
-
-            if (newState.currentLocationData.initialId) {
-                newState.encounteredNPCs.forEach(npc => {
-                    if (npc.initialLocationId === newState.currentLocationData.initialId) {
-                        npc.currentLocationId = newState.currentLocationData.locationId;
-                    }
-                });
-            }
 
             const newHistoryWithAnswer = [...fullHistoryForTurn, gmMessage];
-            const currentRole = baseState.networkRole;
+            const onWorldMapWarning = (warning: WorldMapWarning) => {
+                newHistoryWithAnswer.push({ sender: 'system', content: t(`world_map_warning_${warning.kind}`, { subject: warning.subject }) });
+            };
 
-            if (currentRole === 'player') {
-                const nextContext = buildNextContext(context, finalResponse, newState, newHistoryWithAnswer, true);
+            // Apply the local result
+            const nextContext = buildNextContext(context, processedResponse, newState, newHistoryWithAnswer, true, onWorldMapWarning);
 
-                const newSaveData: SaveFile = {
-                    gameContext: nextContext,
-                    gameState: newState,
-                    gameHistory: newHistoryWithAnswer,
-                    gameLog: [...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd],
-                    combatLog: combatLog.concat(combatLogsToAdd),
-                    lastJsonResponse: JSON.stringify(finalResponse, null, 2),
-                    sceneImagePrompt: finalResponse.image_prompt || null,
-                    timestamp: new Date().toISOString()
-                };
-                
-                if (hostConnectionRef.current) {
-                    const message: NetworkMessage = {
-                        type: 'turn_result_from_player',
-                        payload: { saveFile: newSaveData },
-                        senderId: baseState.myPeerId!,
-                    };
-                    hostConnectionRef.current.send(message);
-                    
-                    // Optimistic update for UI responsiveness
-                    setGameHistory(newHistoryWithAnswer);
-                    setGameLog([...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd]);
-                    if (combatLogsToAdd.length > 0) {
-                        setCombatLog(prev => [...prev, ...combatLogsToAdd]);
-                    }
-                    gameContextRef.current = nextContext;
-                    setWorldMap(nextContext.worldMap);
-                    setVisitedLocations(nextContext.visitedLocations);
-                    setWorldState(nextContext.worldState);
-                    setTurnNumber(nextContext.currentTurnNumber);
-                    setGameState(newState);
-                    // isLoading remains true until sync from host
-                } else {
-                    setError(t("connection_lost"));
-                    setIsLoading(false);
-                }
-            } else { // Host or local
-                const nextContext = buildNextContext(context, finalResponse, newState, newHistoryWithAnswer, true);
+            applyResponsePresentation();
 
-                setGameLog([...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd]);
-                if (combatLogsToAdd.length > 0) {
-                    setCombatLog(prev => [...prev, ...combatLogsToAdd]);
-                }
-                setGameHistory(newHistoryWithAnswer);
-                
-                gameContextRef.current = nextContext;
-                setWorldMap(nextContext.worldMap);
-                setVisitedLocations(nextContext.visitedLocations);
-                setWorldState(nextContext.worldState);
-                setTurnNumber(nextContext.currentTurnNumber);
-                
-                if (nextContext.gameSettings.notificationSound) {
-                    playNotificationSound();
-                }
-
-                setGameState(newState);
-
-                if (currentRole === 'host') {
-                    const newSaveData: SaveFile = {
-                        gameContext: nextContext,
-                        gameState: newState,
-                        gameHistory: newHistoryWithAnswer,
-                        gameLog: [...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd],
-                        combatLog: combatLog.concat(combatLogsToAdd),
-                        lastJsonResponse: JSON.stringify(finalResponse, null, 2),
-                        sceneImagePrompt: finalResponse.image_prompt || null,
-                        timestamp: new Date().toISOString()
-                    };
-                    broadcastFullSync(newSaveData);
-                }
+            setGameLog([...asArray(finalResponse.items_and_stat_calculations), ...logsToAdd]);
+            if (combatLogsToAdd.length > 0) {
+                setCombatLog(prev => [...prev, ...combatLogsToAdd]);
             }
-            if (baseState.networkRole === 'none') {
-                await clearInterruptedTurnRecovery().catch(error => console.error('Could not clear completed-turn checkpoint:', error));
+            setGameHistory(newHistoryWithAnswer);
+
+            gameContextRef.current = nextContext;
+            setWorldMap(nextContext.worldMap);
+            setVisitedLocations(nextContext.visitedLocations);
+            setWorldState(nextContext.worldState);
+            setTurnNumber(nextContext.currentTurnNumber);
+
+            if (nextContext.gameSettings.notificationSound) {
+                playNotificationSound();
             }
-          
+
+            setGameState(previous => retainPresentation(newState, previous));
+            stateCommitted = true;
+            turnPhaseRef.current = 'committed';
+
+            await clearOwnCheckpoint().catch(error => console.error('Could not clear completed-turn checkpoint:', error));
+
         } catch (err: any) {
-          if (err.name !== 'AbortError') {
-            const formattedError = formatError(err);
+          if (turnController.signal.reason === USER_CANCELLED_TURN) {
+            await clearOwnCheckpoint().catch(error => console.error('Could not clear cancelled-turn checkpoint:', error));
+          }
+          if (wasSuperseded()) { reportSuperseded(); return; }
+          // Roll back streamed calculations only if the state was not applied.
+          // A post-commit error must retain the committed logs and story.
+          if (!stateCommitted) {
+            setGameLog(gameLog);
+            setCombatLog(combatLog);
+          }
+          setIsLoading(false);
+          if (err.name !== 'AbortError' || stateCommitted) {
+            const detail = formatError(err);
+            const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : detail;
             setError(formattedError);
             const systemMessage: ChatMessage = { sender: 'system', content: `Error: ${formattedError}` };
             setGameHistory(prev => [...prev, systemMessage]);
           }
         } finally {
-            if (gameStateRef.current?.networkRole !== 'player') {
+            if (activeTurnRef.current === turnToken) {
+                activeTurnRef.current = null;
+                turnPhaseRef.current = 'idle';
+            }
+
                 setIsLoading(false);
                 if (turnStartTimeRef.current) {
                     const endTime = performance.now();
@@ -323,15 +276,19 @@ export const createTurnManager = (
                     setTurnTime(elapsedTime);
                     turnStartTimeRef.current = null;
                 }
-            }
+
             const releaseTurnLease = releaseArenaGmTurn;
             releaseArenaGmTurn = null;
             releaseTurnLease?.();
         }
     };
-    
+
     const sendMessage = (message: string, image?: { data: string; mimeType: string; } | null) => {
-        if (isLoading) return;
+        if (isLoading || activeTurnRef.current) return;
+
+
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
+
 
         if (packageSaveDataForTurn && setLastTurnSaveFile) {
             const saveData = packageSaveDataForTurn();
@@ -339,14 +296,14 @@ export const createTurnManager = (
                 setLastTurnSaveFile(saveData);
             }
         }
-        
+
         turnStartTimeRef.current = performance.now();
         setTurnTime(null);
         setCurrentStep(null);
         setCurrentModel(null);
         const playerMessage: ChatMessage = { sender: 'player', content: message };
         setSuggestedActions([]);
-        
+
         const newHistory = [...gameHistory, playerMessage];
         setGameHistory(newHistory);
 
@@ -359,11 +316,11 @@ export const createTurnManager = (
             newContext.previousThoughtSignature = gameState.thoughtSignature;
         }
         setLastRequestJson(JSON.stringify(newContext, null, 2));
-        
-        handleTurn(newContext, newHistory);
+
+        return handleTurn(newContext, newHistory);
     };
 
-    const initializeAndRunFirstTurn = (creationData: any, networkConfig: { role: NetworkRole, peerId?: string } = { role: 'none' }) => {
+    const initializeAndRunFirstTurn = (creationData: any) => {
         const initialContext = createInitialContext(creationData, language);
         gameContextRef.current = initialContext;
 
@@ -375,28 +332,7 @@ export const createTurnManager = (
             activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [],
             enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null,
             worldStateFlags: [], worldEventsLog: [], imageCache: {},
-            networkRole: networkConfig.role,
-            myPeerId: networkConfig.peerId || null,
-            hostPeerId: networkConfig.role === 'host' ? networkConfig.peerId : (networkConfig.role === 'player' || networkConfig.role === 'spectator' ? creationData.hostId : null),
-            peers: [],
-            isConnectedToHost: networkConfig.role === 'host' || networkConfig.role === 'none',
-            playerNeedsToCreateCharacter: false,
         };
-        
-        if (networkConfig.role === 'host' && networkConfig.peerId) {
-            const hostPeerInfo: PeerInfo = {
-                id: networkConfig.peerId,
-                name: creationData.multiplayerNickname || creationData.playerName || `Player-${networkConfig.peerId.slice(-4)}`
-            };
-            baseState.peers.push(hostPeerInfo);
-    
-            baseState.playerCharacter.playerId = networkConfig.peerId;
-            baseState.players[0].playerId = networkConfig.peerId;
-            
-            initialContext.playerCharacter.playerId = networkConfig.peerId;
-            initialContext.players[0].playerId = networkConfig.peerId;
-            initialContext.peers = baseState.peers;
-        }
 
         setGameState(baseState);
         setSuperInstructions(initialContext.superInstructions || '');
@@ -416,36 +352,42 @@ export const createTurnManager = (
     };
 
     const askQuestion = async (question: string, image?: { data: string; mimeType: string; } | null) => {
-        const baseState: GameState | null = gameStateRef.current;
-        if (!gameContextRef.current || isLoading || !baseState) return;
-    
+        let baseState: GameState | null = gameStateRef.current;
+        if (!gameContextRef.current || isLoading || !baseState || activeTurnRef.current) return;
+
+
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
+
+
         if (packageSaveDataForTurn && setLastTurnSaveFile) {
             const saveData = packageSaveDataForTurn();
             if (saveData) {
                 setLastTurnSaveFile(saveData);
             }
         }
-    
+
         turnStartTimeRef.current = performance.now();
         setTurnTime(null);
         setCurrentStep(null);
         setCurrentModel(null);
         setIsLoading(true);
         setError(null);
-        clearStashForNewTurn();
-        if (!gameContextRef.current?.enemiesDataForCurrentTurn || gameContextRef.current.enemiesDataForCurrentTurn.length === 0) {
-            setCombatLog([]);
-        }
+        const startingCombatLog = gameContextRef.current?.enemiesDataForCurrentTurn?.length ? combatLog : [];
+        if (startingCombatLog !== combatLog) setCombatLog([]);
         setLastJsonResponse('');
         setSuggestedActions([]);
-        abortControllerRef.current = new AbortController();
-    
+        const turnController = new AbortController();
+        abortControllerRef.current = turnController;
+
         const questionMessage: ChatMessage = { sender: 'player', content: `[Question] ${question}` };
         const historyWithQuestion = [...gameHistory, questionMessage];
         setGameHistory(historyWithQuestion);
-    
-        const context = { 
-            ...gameContextRef.current, 
+
+        // The OOC instruction is a one-request override, not a new campaign
+        // instruction. Preserve the pre-question value in the resulting save.
+        const retainedSuperInstructions = gameContextRef.current.superInstructions;
+        let context: GameContext = {
+            ...gameContextRef.current,
             message: question,
             image: image || null,
             superInstructions: "The user is asking a question out-of-character. Answer it as the Game Master based on the rules and current state, then return to the game.",
@@ -456,28 +398,46 @@ export const createTurnManager = (
             previousThoughtSignature: baseState.thoughtSignature
         };
         setLastRequestJson(JSON.stringify(context, null, 2));
-        
+        const turnToken = Symbol('question');
+        activeTurnRef.current = turnToken;
+        turnPhaseRef.current = 'generating';
+        const startingRevision = syncRevisionRef.current;
+        const startingGameplayRevision = gameplayMutationRevisionRef.current;
+        const wasSuperseded = () => syncRevisionRef.current !== startingRevision || gameplayMutationRevisionRef.current !== startingGameplayRevision;
+        let stateCommitted = false;
+        const reportSuperseded = () => {
+            const warning = t(syncRevisionRef.current !== startingRevision ? 'turn_sync_before_send' : 'turn_game_state_changed');
+            setError(warning);
+            setGameHistory(prev => [...prev, { sender: 'system', content: warning }]);
+            setIsLoading(false);
+        };
+
         try {
+            setLastRequestJson(JSON.stringify(context, null, 2));
             const onStepStart = (stepName: string, modelName: string) => {
+              if (wasSuperseded()) return;
               setCurrentStep(stepName);
               setCurrentModel(getModelForStep(stepName, context));
             };
             const onStreamingChunk = (text: string) => {
+              if (wasSuperseded()) return;
               setLastJsonResponse(text);
             };
-    
-            const finalResponseRaw: GameResponse = await executeGmQuestion(context, abortControllerRef.current.signal, onStreamingChunk, onStepStart);
+
+            const finalResponseRaw: GameResponse = await executeGmQuestion(context, turnController.signal, onStreamingChunk, onStepStart);
+            if (wasSuperseded()) { reportSuperseded(); return; }
+            if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
             const finalResponse = deepStripModerationSymbols(finalResponseRaw);
-            
+
             let finalMergedResponse = finalResponse;
             const gmMessage: ChatMessage = { sender: 'gm', content: finalResponse.response || '' };
-    
-            if (finalResponse.generateWorldProgression === true) {
+
+            if (shouldRunWorldProgression(finalResponse.generateWorldProgression, context.gameSettings)) {
                 const wpContext = { ...context, responseHistory: [...historyWithQuestion, gmMessage] };
-                const wpResponseRaw = await executeWorldProgression(wpContext, abortControllerRef.current!.signal, onStreamingChunk, (r, s, m) => setLastJsonResponse(JSON.stringify(r, null, 2)), onStepStart);
+                const wpResponseRaw = await executeWorldProgression(wpContext, turnController.signal, onStreamingChunk, (r, s, m) => { if (!wasSuperseded()) setLastJsonResponse(JSON.stringify(r, null, 2)); }, onStepStart);
                 const wpResponse = deepStripModerationSymbols(wpResponseRaw);
                 finalMergedResponse = deepMergeResponses(finalResponse, wpResponse);
-                
+
                 // If World Progression returns a new signature, use it. Otherwise keep the one from the question.
                 if (wpResponse.thoughtSignature) {
                     finalMergedResponse.thoughtSignature = wpResponse.thoughtSignature;
@@ -485,101 +445,68 @@ export const createTurnManager = (
                     finalMergedResponse.thoughtSignature = finalResponse.thoughtSignature;
                 }
             }
-            
+
+            if (wasSuperseded()) { reportSuperseded(); return; }
+            if (turnController.signal.aborted) throw new DOMException('Turn cancelled.', 'AbortError');
             setLastJsonResponse(JSON.stringify(finalMergedResponse, null, 2));
-    
+
             // FIX: Passing context.worldMap instead of visitedLocations
-            const { newState, logsToAdd, combatLogsToAdd } = processAndApplyResponse(finalMergedResponse as GameResponse, baseState, gameSettings, t, false, context.currentTurnNumber, context.worldMap);
-            
+            let { newState, logsToAdd, combatLogsToAdd, processedResponse } = processAndApplyResponse(finalMergedResponse as GameResponse, withoutPreviousStash(baseState), gameSettings, t, false, context.currentTurnNumber, context.worldMap);
+
+            newState = retainPresentation(newState, gameStateRef.current);
             // Save the signature if present
             if (finalMergedResponse.thoughtSignature) {
                 newState.thoughtSignature = finalMergedResponse.thoughtSignature;
             }
 
             const newHistoryWithAnswer = [...historyWithQuestion, gmMessage];
+            const onWorldMapWarning = (warning: WorldMapWarning) => {
+                newHistoryWithAnswer.push({ sender: 'system', content: t(`world_map_warning_${warning.kind}`, { subject: warning.subject }) });
+            };
             const newLogsForThisTurn = [...asArray(finalMergedResponse.items_and_stat_calculations), ...logsToAdd];
-            
-            const currentRole = baseState.networkRole;
-    
-            if (currentRole === 'player') {
-                const nextContext = buildNextContext(context, finalMergedResponse as GameResponse, newState, newHistoryWithAnswer, false);
-                const newSaveData: SaveFile = {
-                    gameContext: nextContext,
-                    gameState: newState,
-                    gameHistory: newHistoryWithAnswer,
-                    gameLog: [...gameLog, ...newLogsForThisTurn],
-                    combatLog: [...combatLog, ...combatLogsToAdd],
-                    lastJsonResponse: JSON.stringify(finalMergedResponse, null, 2),
-                    sceneImagePrompt: finalMergedResponse.image_prompt || null,
-                    timestamp: new Date().toISOString()
-                };
-                
-                if (hostConnectionRef.current) {
-                    const message: NetworkMessage = {
-                        type: 'turn_result_from_player',
-                        payload: { saveFile: newSaveData },
-                        senderId: baseState.myPeerId!,
-                    };
-                    hostConnectionRef.current.send(message);
-                    
-                    // Optimistic update for UI responsiveness
-                    setGameHistory(newHistoryWithAnswer);
-                    setGameLog(prev => [...prev, ...newLogsForThisTurn]);
-                    if (combatLogsToAdd.length > 0) {
-                        setCombatLog(prev => [...prev, ...combatLogsToAdd]);
-                    }
-                    gameContextRef.current = nextContext;
-                    setWorldMap(nextContext.worldMap);
-                    setVisitedLocations(nextContext.visitedLocations);
-                    setWorldState(nextContext.worldState);
-                    setTurnNumber(nextContext.currentTurnNumber);
-                    setGameState(newState);
-                    // isLoading remains true until sync from host
-                } else {
-                    setError(t("connection_lost"));
-                    setIsLoading(false);
-                }
-            } else { // Host or local
-                setGameLog(prev => [...prev, ...newLogsForThisTurn]);
-                if (combatLogsToAdd.length > 0) {
-                    setCombatLog(prev => [...prev, ...combatLogsToAdd]);
-                }
-                
-                const nextContext = buildNextContext(context, finalMergedResponse as GameResponse, newState, newHistoryWithAnswer, false);
-                gameContextRef.current = nextContext;
-    
-                setGameHistory(newHistoryWithAnswer);
-                setWorldState(nextContext.worldState);
-                setWorldMap(nextContext.worldMap);
-                setVisitedLocations(nextContext.visitedLocations);
-                setTurnNumber(nextContext.currentTurnNumber);
-                
-                setGameState(newState);
-    
-                if (currentRole === 'host') {
-                    const newSaveData: SaveFile = {
-                        gameContext: nextContext,
-                        gameState: newState,
-                        gameHistory: newHistoryWithAnswer,
-                        gameLog: [...gameLog, ...newLogsForThisTurn],
-                        combatLog: [...combatLog, ...combatLogsToAdd],
-                        lastJsonResponse: JSON.stringify(finalMergedResponse, null, 2),
-                        sceneImagePrompt: finalMergedResponse.image_prompt || null,
-                        timestamp: new Date().toISOString()
-                    };
-                    broadcastFullSync(newSaveData);
-                }
+
+
+            // Apply the local result
+            setGameLog(prev => [...prev, ...newLogsForThisTurn]);
+            if (combatLogsToAdd.length > 0) {
+                setCombatLog(prev => [...prev, ...combatLogsToAdd]);
             }
-          
+
+            const nextContext = buildNextContext({ ...context, superInstructions: retainedSuperInstructions }, processedResponse, newState, newHistoryWithAnswer, false, onWorldMapWarning);
+
+            gameContextRef.current = nextContext;
+
+            setGameHistory(newHistoryWithAnswer);
+            setWorldState(nextContext.worldState);
+            setWorldMap(nextContext.worldMap);
+            setVisitedLocations(nextContext.visitedLocations);
+            setTurnNumber(nextContext.currentTurnNumber);
+
+            setGameState(previous => retainPresentation(newState, previous));
+            stateCommitted = true;
+            turnPhaseRef.current = 'committed';
+
         } catch (err: any) {
-          if (err.name !== 'AbortError') {
-            const formattedError = formatError(err);
+          if (wasSuperseded()) { reportSuperseded(); return; }
+          if (!stateCommitted) {
+            setGameLog(gameLog);
+            setCombatLog(combatLog);
+          }
+          setIsLoading(false);
+          if (err.name !== 'AbortError' || stateCommitted) {
+            const detail = formatError(err);
+            const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : detail;
             setError(formattedError);
             const systemMessage: ChatMessage = { sender: 'system', content: `Error: ${formattedError}` };
-            setGameHistory([...historyWithQuestion, systemMessage]);
+            if (stateCommitted) setGameHistory(prev => [...prev, systemMessage]);
+            else setGameHistory([...historyWithQuestion, systemMessage]);
           }
         } finally {
-            if (gameStateRef.current?.networkRole !== 'player') {
+            if (activeTurnRef.current === turnToken) {
+                activeTurnRef.current = null;
+                turnPhaseRef.current = 'idle';
+            }
+
                 setIsLoading(false);
                 if (turnStartTimeRef.current) {
                     const endTime = performance.now();
@@ -587,21 +514,31 @@ export const createTurnManager = (
                     setTurnTime(elapsedTime);
                     turnStartTimeRef.current = null;
                 }
-            }
+
         }
     };
-    
+
     const cancelRequest = () => {
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-            void clearInterruptedTurnRecovery().catch(error => console.error('Could not clear cancelled-turn checkpoint:', error));
-            setIsLoading(false);
-            setError("Request cancelled by user.");
+        if (turnPhaseRef.current === 'committed') {
+            const warning = t('error_turn_applied_followup');
+            setError(warning);
+            setGameHistory(prev => [...prev, { sender: 'system', content: warning }]);
+            if (!activeTurnRef.current) setIsLoading(false);
+            return;
+        }
+        if (abortControllerRef.current && activeTurnRef.current) {
+            abortControllerRef.current.abort(USER_CANCELLED_TURN);
+            // Keep the submission lock until the task's catch/finally has run.
+            setIsLoading(true);
+            setError(t('requestCancelledByUser'));
             setSuggestedActions([]);
         }
     };
 
     const resumeInterruptedTurn = (recovery: { context: GameContext; baseState: GameState; history: ChatMessage[] }) => {
+
+        if (gameplayMutationPendingRef.current) { setError(t('game_state_updating')); return; }
+
         gameContextRef.current = recovery.context;
         setGameState(recovery.baseState);
         setGameHistory(recovery.history);
@@ -616,7 +553,7 @@ export const createTurnManager = (
     };
 
     const startGame = (creationData: any) => {
-        initializeAndRunFirstTurn(creationData, { role: 'none' });
+        initializeAndRunFirstTurn(creationData);
     };
 
     return {

@@ -1,0 +1,6 @@
+[
+  {"id":"ordinary","rolls":[12,10],"statModifier":4,"difficultyModifier":0,"luck":0,"weaponDamage":12,"resistance":0,"expectedResult":"Full Success","expectedDamage":18,"expectedHealth":82,"wound":null},
+  {"id":"critical-luck","rolls":[20],"statModifier":4,"difficultyModifier":0,"luck":10,"weaponDamage":12,"resistance":0,"expectedResult":"Critical Success","expectedDamage":28,"expectedHealth":72,"wound":"Light"},
+  {"id":"resistance","rolls":[12,10],"statModifier":4,"difficultyModifier":0,"luck":0,"weaponDamage":12,"resistance":25,"expectedResult":"Full Success","expectedDamage":14,"expectedHealth":86,"wound":null},
+  {"id":"severe-damage","rolls":[12,10],"statModifier":4,"difficultyModifier":0,"luck":0,"weaponDamage":44,"resistance":0,"expectedResult":"Full Success","expectedDamage":50,"expectedHealth":50,"wound":"Moderate"}
+]
