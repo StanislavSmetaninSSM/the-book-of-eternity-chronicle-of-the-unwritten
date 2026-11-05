@@ -2,23 +2,31 @@ import { ensureThreatActivityIds } from './gameContext';
 
 import { GameContext, GameResponse } from '../types';
 // @ts-ignore
-import * as mainPromptModule from '../prompts/mainPromptModule.js';
-import * as mainPromptSteps from '../prompts/mainPromptSteps.js';
-
-// @ts-ignore
 import { getMusicPrompt } from '../prompts/musicPrompt.js';
 // @ts-ignore
 import { getCorrectionPrompt, getAdultPrompt } from '../prompts/systemPrompts.js';
-// @ts-ignore
-import narrativeStyleGuide from '../prompts/narrativeStyleGuide.js';
-// @ts-ignore
-import worldLogicGuide from '../prompts/worldLogicGuide.js';
 import { mergeStageResponses } from "./responseProcessor";
 import { ArenaGmRelayRequestError, requestArenaGmStep } from './arenaGmRelay';
 import { withGameContext } from './relayPromptContext.js';
 import { shouldRunWorldProgression } from './worldProgression.js';
 import { NARRATIVE_FOCUS } from './narrativeFocus.js';
 import { getNarrativeRuleReference } from './arenaRuleReference.js';
+
+// The Game Master rulebook (about 3 MB of source text), the stage guides and the step
+// prompt builders are only needed once a turn is actually generated. They are loaded on
+// demand so the start screen does not have to download and parse them.
+let mainPromptModulePromise: Promise<typeof import('../prompts/mainPromptModule.js')> | null = null;
+const loadMainPromptModule = () => (mainPromptModulePromise ??= import('../prompts/mainPromptModule.js'));
+
+let promptStepsPromise: Promise<typeof import('../prompts/mainPromptSteps.js')> | null = null;
+const loadPromptSteps = () => (promptStepsPromise ??= import('../prompts/mainPromptSteps.js'));
+
+type StageGuides = { narrative: { getGuide: () => string }; world: { getGuide: () => string } };
+let stageGuidesPromise: Promise<StageGuides> | null = null;
+const loadStageGuides = (): Promise<StageGuides> => (stageGuidesPromise ??= Promise.all([
+    import('../prompts/narrativeStyleGuide.js'),
+    import('../prompts/worldLogicGuide.js'),
+]).then(([narrative, world]) => ({ narrative: narrative.default, world: world.default } as StageGuides)));
 
 const MAX_REGENERATION_RETRIES = 10;
 
@@ -143,7 +151,7 @@ async function attemptCorrection(
         isRegenerationAttempt: true,
     } as GameContext & { isRegenerationAttempt: boolean };
     const correctionText = await callGenerativeApiRaw(
-        getCorrectionPrompt(invalidJson, context, error),
+        await getCorrectionPrompt(invalidJson, context, error),
         correctionContext,
         abortSignal,
     );
@@ -166,6 +174,9 @@ export async function executeStepWithCorrection(
 ): Promise<{ response: any, signature?: string }> {
     let lastError: any = null;
     let additionalGuides = '';
+    const guides = await loadStageGuides();
+    const narrativeStyleGuide = guides.narrative;
+    const worldLogicGuide = guides.world;
 
     // Add guides based on the step name
     if (stepName === 'Step0_AnalysisAndPlanning_TaskGuide' || stepName === 'Step0_5_Verification_TaskGuide') {
@@ -199,7 +210,8 @@ export async function executeStepWithCorrection(
     const isNarrative = stepName === 'Step6_NarrativeGeneration_TaskGuide' || stepName === 'StepSimpleFullResponse_TaskGuide';
     // The pilot covers narrative, NPC detail, inventory, combat audit, world and faction progression.
     // Simple turns, remaining mechanical stages and first-turn setup keep full inline guides.
-    const fullRules = mainPromptModule.getGameMasterGuideRules();
+    const { getGameMasterGuideRules } = await loadMainPromptModule();
+    const fullRules = getGameMasterGuideRules();
     const useReference = stepName === 'Step6_NarrativeGeneration_TaskGuide' || stepName === 'Step4_NPC_TaskGuide' || (stepName === 'Step5_Inventory_TaskGuide' && context.currentTurnNumber > 1) || (stepName === 'Step3_Combat_TaskGuide' && context.currentTurnNumber > 1) || (stepName === 'Step_WorldProgression_TaskGuide' && context.currentTurnNumber > 1) || (stepName === 'Step_FactionProgression_TaskGuide' && context.currentTurnNumber > 1);
     const reference = useReference
         ? await getNarrativeRuleReference(fullRules, narrativeStyleGuide.getGuide(), abortSignal, worldLogicGuide.getGuide(), stepName)
@@ -307,6 +319,7 @@ export async function executeTurn(
     let partiallyGeneratedResponse: any = {};
     // Use the previous thought signature from context if available to start the chain
     let currentSignature = context.previousThoughtSignature;
+    const mainPromptSteps = await loadPromptSteps();
 
     const executeStep = async (stepName: string, promptFn: () => string) => {
         const currentContext = { ...context, previousThoughtSignature: currentSignature };
@@ -438,6 +451,7 @@ export async function askGmQuestion(
     onStreamingChunk: (text: string) => void,
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
+    const mainPromptSteps = await loadPromptSteps();
     const onPartialResponse = (response: any, stepName: string, modelName: string) => {
         // This is a single-step process, so onPartialResponse is equivalent to the final response.
         // We don't need to do anything special here as the final return will handle the full object.
@@ -468,6 +482,7 @@ export async function executeWorldProgression(
     onPartialResponse: (response: any, stepName: string, modelName: string) => void,
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
+    const mainPromptSteps = await loadPromptSteps();
      const result = await executeStepWithCorrection(
         'Step_WorldProgression_TaskGuide',
          mainPromptSteps.getStepWorldProgression,

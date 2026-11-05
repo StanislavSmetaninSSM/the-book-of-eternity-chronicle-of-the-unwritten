@@ -1,7 +1,4 @@
 
-// @ts-ignore
-import * as mainPromptModule from './mainPromptModule.js';
-
 /**
  * Creates a highly focused prompt to ask the AI to correct a malformed JSON string.
  * This version forces a step-by-step debugging process.
@@ -10,9 +7,11 @@ import * as mainPromptModule from './mainPromptModule.js';
  * @param {Error} error The JavaScript Error object from the failed JSON.parse() call.
  * @returns {string} The improved correction prompt.
  */
-export const getCorrectionPrompt = (invalidJson, gameContext, error) => {
+export const getCorrectionPrompt = async (invalidJson, gameContext, error) => {
     // We get the main guide rules which contain the full JSON schema description.
-    const schemaDescription = mainPromptModule.getGameMasterGuideRules();
+    // Loaded on demand so the rulebook stays out of the initial client bundle.
+    const { getGameMasterGuideRules } = await import('./mainPromptModule.js');
+    const schemaDescription = getGameMasterGuideRules();
 
     return `
 <SYSTEM_CORRECTION_PROTOCOL>
