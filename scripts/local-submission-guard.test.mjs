@@ -28,3 +28,16 @@ test('accepted submission remains locked until its turn finishes',async()=>{
  const scope={isTurnSubmitPendingRef:{current:false},isLoading:false,activeTurnRef:{current:null},gameStateRef:{current:{}},gameContextRef:{current:{}},gameplayMutationPendingRef:{current:false},syncRevisionRef:{current:0},gameplayMutationRevisionRef:{current:0},savePreActionCrashRecovery:async()=>{},setError:()=>{},formatError:String,t:k=>k,passTurnManually:()=>{},allManagers:{sendMessage:()=>{calls++;return new Promise(r=>finish=r)},askQuestion:()=>{calls++;return new Promise(r=>finish=r)}}};
  vm.runInNewContext(js,scope);assert.equal(await scope.run('question','why'),true);assert.equal(await scope.run('action','duplicate'),false);assert.equal(calls,1);finish();await new Promise(r=>setImmediate(r));assert.equal(scope.isTurnSubmitPendingRef.current,false);
 });
+
+test('manual pass turn is accepted only when the local party accepts it',async()=>{
+ const text=await readFile(new URL('../hooks/useGameLogic.ts',import.meta.url),'utf8');const source=ts.createSourceFile('hook.ts',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);let callback;
+ function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(source)==='runLocalSubmission')callback=n.initializer.arguments[0].getText(source);ts.forEachChild(n,visit)}visit(source);
+ const js=ts.transpileModule(`this.run = ${callback}`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+ for(const accepted of [true,false]){
+  let calls=0,passes=0;
+  const scope={isTurnSubmitPendingRef:{current:false},isLoading:false,activeTurnRef:{current:null},gameStateRef:{current:{}},gameContextRef:{current:{}},gameplayMutationPendingRef:{current:false},syncRevisionRef:{current:0},gameplayMutationRevisionRef:{current:0},savePreActionCrashRecovery:async()=>{},setError:()=>{},formatError:String,t:k=>k,passTurnManually:()=>{passes++;return accepted},allManagers:{sendMessage:async()=>{calls++;},askQuestion:async()=>{calls++;}}};
+  vm.runInNewContext(js,scope);
+  assert.equal(await scope.run('action','[system action] pass turn'),accepted);
+  assert.equal(passes,1);assert.equal(calls,0);assert.equal(scope.isTurnSubmitPendingRef.current,false);
+ }
+});

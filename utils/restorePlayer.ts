@@ -19,6 +19,8 @@ export function restorePlayerStats(state: GameState, t: TFunction): string[] {
     state.playerCharacter = player;
 
     const playerIndex = state.activePlayerIndex;
-    if (playerIndex >= 0 && playerIndex < state.players.length) state.players[playerIndex] = player;
+    if (Array.isArray(state.players) && Number.isSafeInteger(playerIndex) && playerIndex >= 0 && playerIndex < state.players.length) {
+        state.players[playerIndex] = player;
+    }
     return result.logs;
 }

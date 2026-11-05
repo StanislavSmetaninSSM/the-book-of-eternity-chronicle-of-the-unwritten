@@ -46,5 +46,12 @@ test('malformed party indices resolve only unambiguous identity without overwrit
   assert.throws(()=>localizeLegacySave({gameState:{players:[a,a],playerCharacter:a,activePlayerIndex:0},gameContext:{}}),/ambiguous/);
   const fallback=localizeLegacySave({gameState:{playerCharacter:b,activePlayerIndex:-1},gameContext:{players:[a,b],playerCharacter:b}});
   assert.deepEqual(fallback.gameState.players.map(p=>p.playerId),['a','b']);
+  assert.throws(()=>localizeLegacySave({gameState:{players:'oops',playerCharacter:a,activePlayerIndex:0},gameContext:{}}),/roster is unreadable/);
+  assert.throws(()=>localizeLegacySave({gameState:{players:[],activePlayerIndex:0},gameContext:{}}),/no player character/);
+  const emptyRoster={gameState:{players:[],playerCharacter:b,activePlayerIndex:0},gameContext:{}};
+  const restoredEmptyRoster=localizeLegacySave(emptyRoster);
+  assert.deepEqual(restoredEmptyRoster.gameState.players.map(p=>p.playerId),['b']);
+  assert.equal(restoredEmptyRoster.gameState.activePlayerIndex,0);
+  assert.deepEqual(emptyRoster.gameState.players,[]);
  } finally {await server.close()}
 });

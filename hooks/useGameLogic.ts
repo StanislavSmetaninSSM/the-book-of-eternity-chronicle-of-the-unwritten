@@ -306,10 +306,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // Unlike separate history/turn setters, this callback is pure inside the
     // React queue. A hold is acquired before scheduling and released only
     // after the matching composite update has committed.
-    const setPartyTransition = useCallback((transition: (state: GameState | null, turn: number | null) => { gameState: GameState; turnNumber: number | null; message: ChatMessage } | null) => {
-        if (pendingPartyTransitionRef.current) { setError(mutationMessageRef.current.delivery); return; }
+    // Returns whether the transition was accepted. Callers that own user input
+    // must not discard it when the transition is refused.
+    const setPartyTransition = useCallback((transition: (state: GameState | null, turn: number | null) => { gameState: GameState; turnNumber: number | null; message: ChatMessage } | null): boolean => {
+        if (pendingPartyTransitionRef.current) { setError(mutationMessageRef.current.delivery); return false; }
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
-        if (revision === null) { setError(mutationMessageRef.current.delivery); return; }
+        if (revision === null) { setError(mutationMessageRef.current.delivery); return false; }
         stateMutationRevisionRef.current = revision;
         historyMutationRevisionRef.current = revision;
         pendingPartyTransitionRef.current = { revision };
@@ -321,6 +323,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
         setGameplayMutationEpoch(epoch => epoch + 1);
         if (activeTurnRef.current && turnPhaseRef.current === 'generating') abortControllerRef.current?.abort();
+        return true;
     }, []);
 
     useEffect(() => {
@@ -918,15 +921,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setGameHistory(prev => [...prev, { sender: 'system', content: t('player_joined', { name: newPlayer.name }) }]);
     }, [gameSettings, t, setGameState, setGameHistory, userGameplayActionBlocked]);
 
-    const removePlayer = useCallback((playerIdToRemove: string) => {
-        if (userGameplayActionBlocked()) return;
+    const removePlayer = useCallback((playerIdToRemove: string): boolean => {
+        if (userGameplayActionBlocked()) return false;
         const current = gameStateRef.current;
         const matches = current?.players?.filter(p => p?.playerId === playerIdToRemove) || [];
         if (!playerIdToRemove || matches.length !== 1) {
             setError(t('player_remove_identity_conflict'));
-            return;
+            return false;
         }
-        setPartyTransition((prevState, currentTurnNumber) => {
+        return setPartyTransition((prevState, currentTurnNumber) => {
             if (!prevState || prevState.players.length <= 1 || !Number.isSafeInteger(prevState.activePlayerIndex) ||
                 prevState.activePlayerIndex < 0 || prevState.activePlayerIndex >= prevState.players.length) return null;
 
@@ -950,8 +953,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         });
     }, [t, setPartyTransition, userGameplayActionBlocked]);
 
-    const passTurnToPlayer = useCallback((targetPlayerIndex: number) => {
-        setPartyTransition((prevState, currentTurnNumber) => {
+    const passTurnToPlayer = useCallback((targetPlayerIndex: number): boolean => {
+        return setPartyTransition((prevState, currentTurnNumber) => {
             if (!prevState || !gameSettings) return null;
             if (targetPlayerIndex === prevState.activePlayerIndex) return null;
 
@@ -1198,8 +1201,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!recovery) return false;
         if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none')) {
             setError(language === 'ru'
-                ? 'Автовозобновление прерванного хода поддерживается только для локальной игры. Для сетевой игры восстановите последнее сохранение вручную.'
-                : 'Automatic interrupted-turn recovery is only supported for local games. For network games, restore the latest save manually.');
+                ? 'Этот контрольный пункт создан в прежней сетевой версии игры, поэтому ход не возобновляется автоматически. Загрузите последнее сохранение вручную.'
+                : 'This checkpoint was created by the former networked version of the game, so the turn is not resumed automatically. Load the latest save manually.');
             return false;
         }
         let localized: ReturnType<typeof localizeLegacyState>;
@@ -1317,7 +1320,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             // IndexedDB is asynchronous and metadata can be stale or absent.
             // Recheck both the actual checkpoint and the current session before
-            // a local restore resets network identity or overwrites newer state.
+            // a local restore replaces the snapshot or overwrites newer state.
             if (recoveryBusy()) return rejectBusy();
             if (gameStateRef.current !== initialState || syncRevisionRef.current !== initialRevision) {
                 setError(language === 'ru'
@@ -1564,14 +1567,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         }
     }, [lastTurnSaveFile, restoreFromSaveData, beginLocalLoad, setError, t]);
 
-    const passTurnManually = useCallback(() => {
-        if (!gameState || !gameSettings || gameSettings.cooperativeGameType === 'None') return;
-        if (!gameState.players || gameState.players.length === 0) return;
+    const passTurnManually = useCallback((): boolean => {
+        if (!gameState || !gameSettings || gameSettings.cooperativeGameType === 'None') return false;
+        if (!gameState.players || gameState.players.length === 0) return false;
 
         const currentActivePlayerIndex = gameState.activePlayerIndex;
         let nextPlayerIndex = (currentActivePlayerIndex + 1) % gameState.players.length;
 
-        passTurnToPlayer(nextPlayerIndex);
+        return passTurnToPlayer(nextPlayerIndex);
     }, [gameState, gameSettings, passTurnToPlayer]);
 
     const deleteActiveSkill = useCallback((skillName: string) => {
@@ -2048,9 +2051,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             // Acceptance is distinct from completion: once dispatched, failures may
             // occur after a committed turn and must not cause automatic retries.
-            const task = kind === 'action' && text.trim().toLowerCase() === '[system action] pass turn'
-                ? Promise.resolve(passTurnManually())
-                : kind === 'action' ? allManagers.sendMessage(text, image) : allManagers.askQuestion(text, image);
+            const isManualPass = kind === 'action' && text.trim().toLowerCase() === '[system action] pass turn';
+            if (isManualPass) {
+                // A refused pass is not an accepted action, so the caller must keep the draft.
+                if (!passTurnManually()) { isTurnSubmitPendingRef.current = false; return false; }
+                isTurnSubmitPendingRef.current = false;
+                return true;
+            }
+            const task = kind === 'action' ? allManagers.sendMessage(text, image) : allManagers.askQuestion(text, image);
             void Promise.resolve(task).catch(error => { console.error('Submission failed', error); setError(formatError(error)); })
                 .finally(() => { isTurnSubmitPendingRef.current = false; });
             return true;

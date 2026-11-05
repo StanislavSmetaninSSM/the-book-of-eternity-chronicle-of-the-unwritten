@@ -209,7 +209,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
 
   const isDisabled = isLoading || isSubmitting || !isActionDraftReady;
   const isMyTurn = true;
-  const placeholderText = isLoading ? t("Waiting for game synchronization...") : isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?");
+  const placeholderText = isLoading ? t("The Game Master is responding...") : isQuestionMode ? t("Ask the Game Master a question...") : t("What do you do next?");
 
   const doSubmit = useCallback(async () => {
     if (isDisabled || submittingRef.current || (content.trim() === '' && !selectedImage)) return;

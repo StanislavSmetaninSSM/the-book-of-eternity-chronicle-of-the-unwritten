@@ -97,7 +97,7 @@ export const common = {
     "Upload Image": "Upload Image",
     "Ask a question (OOC)": "Ask a question (OOC)",
     "Repeat last message": "Repeat last message",
-    "Waiting for game synchronization...": "Waiting for game synchronization...",
+    "The Game Master is responding...": "The Game Master is responding...",
     "Are you sure you want to delete this message?": "Are you sure you want to delete this message?",
     "Generated image": "Generated image",
     ...ui_overrides.en
@@ -197,7 +197,7 @@ export const common = {
     "Upload Image": "Загрузить изображение",
     "Ask a question (OOC)": "Задать вопрос (OOC)",
     "Repeat last message": "Повторить последнее сообщение",
-    "Waiting for game synchronization...": "Ожидание синхронизации с игрой...",
+    "The Game Master is responding...": "Мастер игры отвечает...",
     "Are you sure you want to delete this message?": "Вы уверены, что хотите удалить это сообщение?",
     "Generated image": "Сгенерированное изображение",
     ...ui_overrides.ru

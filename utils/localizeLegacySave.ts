@@ -13,8 +13,14 @@ export function localizeLegacyState(state: GameState, context: GameContext): { s
     // then make the active roster member the local character.
     let players = Array.isArray(state.players) && state.players.length ? [...state.players]
         : Array.isArray(context.players) && context.players.length ? [...context.players] : [];
+    if (state.players !== undefined && state.players !== null && !Array.isArray(state.players)) {
+        throw new Error('Cannot safely load this save: the party roster is unreadable. The original save was not changed.');
+    }
     let playerCharacter = state.playerCharacter || context.playerCharacter;
     let index = state.activePlayerIndex;
+    if (!players.length && !playerCharacter) {
+        throw new Error('Cannot safely load this save: it contains no player character. The original save was not changed.');
+    }
     if (players.length) {
         const ids = players.map(p => p?.playerId).filter(Boolean);
         if (new Set(ids).size !== ids.length || players.some(p => !p)) {
