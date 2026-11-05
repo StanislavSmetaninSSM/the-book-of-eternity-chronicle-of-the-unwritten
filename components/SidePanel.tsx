@@ -26,6 +26,7 @@ import WorldPanel from './WorldPanel';
 import ConfirmationModal from './ConfirmationModal';
 import ImageRenderer from './ImageRenderer';
 import PlayersPanel from './PlayersPanel';
+import { withLiveActivePlayer } from '../utils/partyView';
 import Modal from './Modal';
 import CinemaHall from './CinemaHall';
 import ImageCacheGallery from './ImageCacheGallery';
@@ -563,7 +564,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
                 onDeleteActiveEffect={deleteActiveEffect}
               />}
               {sidePanelView === 'Quests' && gameState && <QuestLog activeQuests={gameState.activeQuests} completedQuests={gameState.completedQuests} onOpenModal={onOpenDetailModal} lastUpdatedQuestId={lastUpdatedQuestId} allowHistoryManipulation={gameSettings?.allowHistoryManipulation ?? false} forgetQuest={forgetQuest} />}
-              {sidePanelView === 'Characters' && gameState && gameSettings && <PlayersPanel playerCharacter={gameState.playerCharacter} players={gameState.players} gameSettings={gameSettings} onAddPlayer={addPlayer} removePlayer={removePlayer} passTurnToPlayer={passTurnToPlayer} allowHistoryManipulation={gameSettings.allowHistoryManipulation} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} updatePlayerPortrait={updatePlayerPortrait} />}
+              {sidePanelView === 'Characters' && gameState && gameSettings && <PlayersPanel playerCharacter={gameState.playerCharacter} players={withLiveActivePlayer(gameState.players, gameState.playerCharacter)} gameSettings={gameSettings} onAddPlayer={addPlayer} removePlayer={removePlayer} passTurnToPlayer={passTurnToPlayer} allowHistoryManipulation={gameSettings.allowHistoryManipulation} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} updatePlayerPortrait={updatePlayerPortrait} />}
               {sidePanelView === 'World' && <WorldPanel
                 worldState={worldState}
                 worldStateFlags={gameState?.worldStateFlags || null}

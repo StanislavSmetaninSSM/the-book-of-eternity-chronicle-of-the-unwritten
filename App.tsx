@@ -18,6 +18,7 @@ import { PartyStatus } from './components/PartyStatus';
 import SidePanel from './components/SidePanel';
 // FIX: Changed import to named import as per error message indicating no default export.
 import StartScreen  from './components/StartScreen';
+import { withLiveActivePlayer } from './utils/partyView';
 import TurnIndicator from './components/TurnIndicator';
 import { useLocalization } from './context/LocalizationContext';
 import { useGameLogic } from './hooks/useGameLogic';
@@ -345,7 +346,9 @@ export default function App(): React.ReactNode {
     useEffect(() => {
         if (viewingCharacter && gameState) {
             if ('playerId' in viewingCharacter) { // It's a PlayerCharacter
-                const freshCharacter = gameState.players.find(p => p.playerId === viewingCharacter.playerId);
+                const freshCharacter = gameState.playerCharacter?.playerId === viewingCharacter.playerId
+                    ? gameState.playerCharacter
+                    : gameState.players.find(p => p.playerId === viewingCharacter.playerId);
                 if (freshCharacter && JSON.stringify(freshCharacter) !== JSON.stringify(viewingCharacter)) {
                     setViewingCharacter(freshCharacter);
                 }
@@ -398,7 +401,9 @@ export default function App(): React.ReactNode {
             }
         } else if (isPlayerCharacter(data)) {
             const pcData = data as PlayerCharacter & { type: 'playerCharacter' };
-            const foundPlayer = gameState.players.find((p: PlayerCharacter) => p.playerId === pcData.playerId);
+            const foundPlayer = gameState.playerCharacter?.playerId === pcData.playerId
+                ? gameState.playerCharacter
+                : gameState.players.find((p: PlayerCharacter) => p.playerId === pcData.playerId);
             if (foundPlayer) {
                 updatedData = Object.assign({}, data, foundPlayer);
             }
@@ -455,7 +460,7 @@ export default function App(): React.ReactNode {
         }
     }, [gameState, currentDetailModal, visitedLocations, worldMap]);
 
-    const activePlayerName = gameSettings?.cooperativeGameType !== 'None' ? gameState?.players[gameState.activePlayerIndex]?.name || null : null;
+    const activePlayerName = gameSettings?.cooperativeGameType !== 'None' ? gameState?.playerCharacter?.name || null : null;
 
     const npcsInScene = useMemo(() => {
         if (!gameState) return [];
@@ -895,7 +900,7 @@ export default function App(): React.ReactNode {
                                 <>
                                 {gameState && gameSettings?.showPartyStatusPanel && gameState.players.length > 1 && (
                                     <PartyStatus
-                                        players={gameState.players}
+                                        players={withLiveActivePlayer(gameState.players, gameState.playerCharacter)}
                                         activePlayerIndex={gameState.activePlayerIndex}
                                         onPassTurn={passTurnManually}
                                         gameSettings={gameSettings}
@@ -1354,7 +1359,7 @@ export default function App(): React.ReactNode {
                 >
                     <div className="flex-1 flex flex-col h-full bg-gray-900 -m-6 p-4">
                         <PartyStatus
-                            players={gameState.players}
+                            players={withLiveActivePlayer(gameState.players, gameState.playerCharacter)}
                             activePlayerIndex={gameState.activePlayerIndex}
                             onPassTurn={passTurnManually}
                             gameSettings={gameSettings}

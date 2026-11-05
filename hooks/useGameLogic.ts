@@ -19,6 +19,7 @@ import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
 import { processAndApplyResponse } from '../utils/responseProcessor';
 import { restorePlayerStats } from '../utils/restorePlayer';
+import { cloneGameStateForEdit } from '../utils/gameStateClone';
 import { recalculateAllWeights } from '../utils/inventoryManager';
 import { recalculateDerivedStats, buildNextContext, createInitialContext, calculateDate, calculateTotalMinutes, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
 import {
@@ -459,8 +460,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (worldState) {
                 gameContextRef.current.worldState = worldState;
             }
+            // Manual party passes advance the turn counter without a GM turn, so
+            // the persisted/GM-visible counter must follow the displayed one.
+            if (typeof turnNumber === 'number') {
+                gameContextRef.current.currentTurnNumber = turnNumber;
+            }
         }
-    }, [gameState, gameSettings, superInstructions, worldState]);
+    }, [gameState, gameSettings, superInstructions, worldState, turnNumber]);
 
     const restoreFromSaveData = useCallback((source: SaveFile) => {
         const data = localizeLegacySave(source);
@@ -975,7 +981,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 playerIds.add(player.playerId);
             }
 
-            const nextGameState = JSON.parse(JSON.stringify(prevState));
+            const nextGameState = cloneGameStateForEdit(prevState);
 
             const currentActivePlayerIndex = nextGameState.activePlayerIndex;
             const outgoingPlayerSnapshot = nextGameState.players[currentActivePlayerIndex];
@@ -1607,7 +1613,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
 
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
@@ -1639,7 +1645,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => w.woundId !== woundId);
@@ -1663,7 +1669,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
 
             let woundToRemove: Wound | undefined;
 
@@ -1707,7 +1713,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => !w.healingState || w.healingState.currentState !== 'Healed');
