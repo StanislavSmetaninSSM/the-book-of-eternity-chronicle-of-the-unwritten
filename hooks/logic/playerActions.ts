@@ -10,6 +10,7 @@ import { deleteMessage as deleteMessageUtil, clearHalfHistory as clearHalfHistor
 import { recalculateDerivedStats, calculateDate, calculateTotalMinutes, calculateJourneyDay } from '../../utils/gameContext';
 import { recalculateAllWeights } from '../../utils/inventoryManager';
 import { cloneGameStateForEdit } from '../../utils/gameStateClone';
+import { notifyWarning } from '../../utils/notifications';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -819,7 +820,7 @@ export const createPlayerActionsManager = (
 
             const weightToTake = sourceItem.weight * validQuantity;
             if (pc.totalWeight + weightToTake > pc.maxWeight + pc.criticalExcessWeight) {
-                alert(t('You are carrying too much to take this item.'));
+                notifyWarning(t('You are carrying too much to take this item.'));
                 return prevState;
             }
 

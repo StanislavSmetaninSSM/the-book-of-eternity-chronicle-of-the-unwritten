@@ -18,6 +18,7 @@ import {
 } from '../../utils/inventoryManager';
 import { recalculateDerivedStats } from '../../utils/gameContext';
 import { cloneGameStateForEdit } from '../../utils/gameStateClone';
+import { notifyWarning } from '../../utils/notifications';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
@@ -81,7 +82,7 @@ export const createInventoryActions = (
                 const prospectiveWeight = (npcWithStats.totalWeight || 0) + weightOfMovedItem;
 
                 if (prospectiveWeight > criticalWeight) {
-                    alert(t('npc_overloaded_refusal'));
+                    notifyWarning(t('npc_overloaded_refusal'));
                     return;
                 }
             }
@@ -136,7 +137,7 @@ export const createInventoryActions = (
             const isPenalty = (mainHandIsTwoHander && mainHandId !== offHandId) || (offHandIsTwoHander && mainHandId !== offHandId);
 
             if (isPenalty) {
-                alert(t('two_handed_penalty_warning'));
+                notifyWarning(t('two_handed_penalty_warning'));
             }
             
             let pc = recalculateAllWeights(newPc);
@@ -398,7 +399,7 @@ export const createInventoryActions = (
 
             const prospectiveWeight = prevState.playerCharacter.totalWeight + item.weight * validQuantity;
             if (prospectiveWeight > prevState.playerCharacter.maxWeight + prevState.playerCharacter.criticalExcessWeight) {
-                alert(t('You still cannot carry this item. Drop something else first.'));
+                notifyWarning(t('You still cannot carry this item. Drop something else first.'));
                 return prevState;
             }
 

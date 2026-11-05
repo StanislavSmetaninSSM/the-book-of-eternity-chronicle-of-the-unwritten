@@ -6,6 +6,7 @@ import { ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 import { GameSettings, ImageCacheEntry } from '../types';
 import { requestArenaGmImage } from '../utils/arenaGmRelay';
+import { notifyWarning } from '../utils/notifications';
 
 interface ImageRendererProps {
     prompt: string | null | undefined;
@@ -55,7 +56,7 @@ const UploadButton: React.FC<UploadButtonProps> = React.memo(({ isOverlay, onUpl
         const file = e.target.files?.[0];
         if (file) {
             if (!file.type.startsWith('image/')) {
-                alert(t("Please select an image file."));
+                notifyWarning(t("Please select an image file."));
                 return;
             }
             const reader = new FileReader();

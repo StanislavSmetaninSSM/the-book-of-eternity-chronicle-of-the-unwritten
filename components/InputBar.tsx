@@ -27,6 +27,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import LoadingSpinner from './LoadingSpinner';
 import { loadPlayerActionDraft, savePlayerActionDraft, type PlayerActionDraft } from '../utils/fileManager';
 import { createDebouncedDraftSaver } from '../utils/debouncedDraftSaver';
+import { notifyWarning } from '../utils/notifications';
 
 interface InputBarProps {
   onSendMessage: (message: string, image?: { data: string; mimeType: string; } | null) => Promise<boolean>;
@@ -295,16 +296,16 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       const file = e.target.files?.[0];
       if (file) {
           if (!file.type.startsWith('image/')) {
-              alert(t("Please select an image file."));
+              notifyWarning(t("Please select an image file."));
               return;
           }
           // Keep the encoded image plus the large rules prompt below the relay's 12 MiB limit.
           if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'].includes(file.type)) {
-              alert(language === 'ru' ? 'Поддерживаются изображения PNG, JPEG, WebP, GIF и BMP.' : 'Supported images: PNG, JPEG, WebP, GIF and BMP.');
+              notifyWarning(language === 'ru' ? 'Поддерживаются изображения PNG, JPEG, WebP, GIF и BMP.' : 'Supported images: PNG, JPEG, WebP, GIF and BMP.');
               return;
           }
           if (file.size > 4 * 1024 * 1024) {
-              alert(language === 'ru' ? 'Размер изображения не должен превышать 4 МиБ.' : 'The image must be no larger than 4 MiB.');
+              notifyWarning(language === 'ru' ? 'Размер изображения не должен превышать 4 МиБ.' : 'The image must be no larger than 4 MiB.');
               return;
           }
           const reader = new FileReader();

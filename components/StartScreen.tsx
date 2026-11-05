@@ -26,6 +26,7 @@ import { UniverseCustomizer } from './UniverseCustomizer';
 import { weather as weatherTranslations } from '../utils/translations/ui/weather';
 import { PlayerCharacter } from '../types';
 import type { CrashRecoveryMarker, CrashRecoveryMetadata } from '../utils/fileManager';
+import { notifyError, notifyWarning } from '../utils/notifications';
 
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
@@ -719,10 +720,10 @@ const CreationForm: React.FC<CreationFormProps> = ({
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 mt-8">
-                <button type="submit" disabled={isSubmitDisabled} className="flex-1 w-full bg-cyan-600 text-white font-bold py-3 px-4 rounded-md hover:bg-cyan-500 transition-all text-lg shadow-lg shadow-cyan-500/10 disabled:bg-gray-600 disabled:cursor-not-allowed">
+                <button type="submit" data-testid="begin-adventure" disabled={isSubmitDisabled} className="flex-1 w-full bg-cyan-600 text-white font-bold py-3 px-4 rounded-md hover:bg-cyan-500 transition-all text-lg shadow-lg shadow-cyan-500/10 disabled:bg-gray-600 disabled:cursor-not-allowed">
                     {submitButtonText}
                 </button>
-                <button type="button" onClick={onLoadGame} className="flex-1 w-full bg-gray-600 text-white font-bold py-3 px-4 rounded-md hover:bg-gray-500 transition-all text-lg">
+                <button type="button" data-testid="load-from-file" onClick={onLoadGame} className="flex-1 w-full bg-gray-600 text-white font-bold py-3 px-4 rounded-md hover:bg-gray-500 transition-all text-lg">
                     {t("Load from File")}
                 </button>
             </div>
@@ -873,7 +874,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
             setPreparedConfigurationFile(prepareConfigurationFile({ formData: cleanFormData, customGameData }));
         } catch (err) {
             console.error('Error preparing configuration file:', err);
-            alert(t('Could not save the configuration file.'));
+            notifyError(t('Could not save the configuration file.'));
         }
     };
 
@@ -1121,7 +1122,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
 
     const prepareCreationData = () => {
         if (!formData.playerName || !formData.characterDescription || !formData.initialPrompt) {
-            alert(t("Please fill in all required fields."));
+            notifyWarning(t("Please fill in all required fields."));
             return null;
         }
         const finalData = { ...formData, customGameData } as typeof formData & Record<string, unknown>;
@@ -1145,7 +1146,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
     const handleCreateUniverse = () => {
         const name = newUniverseName.trim();
         if (!name) {
-            alert(t('Please enter a name for your custom era/setting.'));
+            notifyWarning(t('Please enter a name for your custom era/setting.'));
             return;
         }
         const key = name.toLowerCase().replace(/\s+/g, '_');
@@ -1181,7 +1182,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
     };
 
     return isStartDraftLoaded ? (
-        <div className="min-h-screen bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div data-testid="start-screen" className="min-h-screen bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="relative w-full max-w-3xl bg-gray-800/80 p-6 md:p-8 rounded-lg shadow-2xl border border-cyan-500/20 ring-1 ring-cyan-500/20">
                 <div className="absolute top-4 right-4 z-20">
                     <button

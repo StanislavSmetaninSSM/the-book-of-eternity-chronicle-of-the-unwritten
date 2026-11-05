@@ -19,6 +19,7 @@ import {
     UserGroupIcon
 } from '@heroicons/react/24/outline';
 import ImageRenderer from '../ImageRenderer';
+import { notifyWarning } from '../../utils/notifications';
 
 interface ProfileViewProps {
     character: PlayerCharacter | NPC;
@@ -177,7 +178,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         const file = e.target.files?.[0];
         if (file) {
             if (!file.type.startsWith('image/')) {
-                alert(t("Please select an image file."));
+                notifyWarning(t("Please select an image file."));
                 return;
             }
             const reader = new FileReader();

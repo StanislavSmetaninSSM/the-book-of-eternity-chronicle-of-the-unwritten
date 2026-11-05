@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import NotificationHost from './components/NotificationHost';
 import ErrorBoundary from './components/ErrorBoundary';
 import { LocalizationProvider } from './context/LocalizationContext';
 import { SpeechProvider } from './context/SpeechContext';
@@ -34,6 +35,7 @@ root.render(
       <LocalizationProvider>
         <SpeechProvider>
           <App />
+          <NotificationHost />
         </SpeechProvider>
       </LocalizationProvider>
     </ErrorBoundary>

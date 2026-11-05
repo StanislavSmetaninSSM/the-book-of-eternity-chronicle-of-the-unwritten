@@ -1309,6 +1309,10 @@ export interface SaveFile {
   lastJsonResponse: string | null;
   sceneImagePrompt: string | null;
   timestamp: string;
+  /** Cached images dropped from this save to keep it within the size budget. */
+  omittedImageCount?: number;
+  /** Set when the storage quota forced the save to be written without any images. */
+  imagesOmittedForQuota?: boolean;
 }
 
 export const isWound = (d: any): d is (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null }) => d && typeof d === 'object' && !Array.isArray(d) && d.type === 'wound';

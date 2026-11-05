@@ -1,6 +1,8 @@
 
 
 import { ChatMessage, GameContext, GameState, SaveFile, DBSaveSlotInfo } from "../types";
+import { isQuotaError, stripImagesForQuota } from './saveImageBudget';
+import { notifyError } from './notifications';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -69,12 +71,12 @@ export function loadGameFromFile(t: TFunction): Promise<SaveFile | null> {
           if (data && data.gameContext && data.gameState) {
             resolve(data as SaveFile);
           } else {
-            alert(t('Invalid save file format.'));
+            notifyError(t('Invalid save file format.'));
             resolve(null);
           }
         } catch (err) {
           console.error('Error parsing save file:', err);
-          alert(t('Could not read or parse the save file.'));
+          notifyError(t('Could not read or parse the save file.'));
           resolve(null);
         } finally {
           cleanup();
@@ -129,12 +131,12 @@ export function loadConfigurationFromFile(t: TFunction): Promise<any | null> {
           if (data && data.formData && !data.gameContext && !data.gameState) {
             resolve(data);
           } else {
-            alert(t('Invalid configuration file format.'));
+            notifyError(t('Invalid configuration file format.'));
             resolve(null);
           }
         } catch (err) {
           console.error('Error parsing configuration file:', err);
-          alert(t('Could not read or parse the configuration file.'));
+          notifyError(t('Could not read or parse the configuration file.'));
           resolve(null);
         } finally {
           cleanup();
@@ -475,26 +477,41 @@ export async function clearStartScreenDraft(): Promise<void> {
 
 // --- Autosave Functions ---
 
-export async function saveToDB(saveData: SaveFile): Promise<void> {
-  try {
-    const db = await openDB();
-    const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
-    const dataToStore = { id: AUTOSAVE_ID, saveData };
-    store.put(dataToStore);
+async function putAutosave(saveData: SaveFile): Promise<void> {
+  const db = await openDB();
+  const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
+  const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
+  const dataToStore = { id: AUTOSAVE_ID, saveData };
+  store.put(dataToStore);
 
-    await new Promise<void>((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => {
-        console.error('IndexedDB save transaction error:', transaction.error);
-        reject(transaction.error);
-      };
-    });
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => {
+      console.error('IndexedDB save transaction error:', transaction.error);
+      reject(transaction.error);
+    };
+  });
+}
+
+export async function saveToDB(saveData: SaveFile): Promise<{ imagesOmittedForQuota: boolean }> {
+  let imagesOmittedForQuota = false;
+  try {
+    try {
+      await putAutosave(saveData);
+    } catch (error) {
+      if (!isQuotaError(error)) throw error;
+      // The cached images are regenerable; losing them is far better than losing the
+      // turn because the browser refused to store the payload.
+      console.warn('Autosave failed because the storage quota is exhausted; retrying without cached images.');
+      await putAutosave(stripImagesForQuota(saveData));
+      imagesOmittedForQuota = true;
+    }
     writeStorageValue(AUTOSAVE_TIMESTAMP_STORAGE_KEY, saveData.timestamp);
   } catch (error) {
     console.error('Failed to save to IndexedDB:', error);
     throw error;
   }
+  return { imagesOmittedForQuota };
 }
 
 export async function loadFromDB(): Promise<SaveFile | null> {
@@ -776,7 +793,7 @@ export async function getAutosaveTimestampFromDB(): Promise<string | null> {
 
 // --- Save Slot Functions ---
 
-export async function saveToDBSlot(slotId: number, saveData: SaveFile): Promise<void> {
+async function putSlot(slotId: number, saveData: SaveFile): Promise<void> {
   const db = await openDB();
   const transaction = db.transaction(SLOTS_STORE_NAME, 'readwrite');
   const store = transaction.objectStore(SLOTS_STORE_NAME);
@@ -786,7 +803,19 @@ export async function saveToDBSlot(slotId: number, saveData: SaveFile): Promise<
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
-  upsertSlotMetadata(buildSlotInfo(slotId, saveData));
+}
+
+export async function saveToDBSlot(slotId: number, saveData: SaveFile): Promise<void> {
+  let stored = saveData;
+  try {
+    await putSlot(slotId, stored);
+  } catch (error) {
+    if (!isQuotaError(error)) throw error;
+    console.warn('Slot save failed because the storage quota is exhausted; retrying without cached images.');
+    stored = stripImagesForQuota(saveData);
+    await putSlot(slotId, stored);
+  }
+  upsertSlotMetadata(buildSlotInfo(slotId, stored));
 }
 
 export async function loadFromDBSlot(slotId: number): Promise<SaveFile | null> {
