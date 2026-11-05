@@ -25,7 +25,8 @@ import { ChatMessage, GameSettings, PlayerCharacter, GameState } from '../types'
 import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import LoadingSpinner from './LoadingSpinner';
-import { loadPlayerActionDraft, savePlayerActionDraft } from '../utils/fileManager';
+import { loadPlayerActionDraft, savePlayerActionDraft, type PlayerActionDraft } from '../utils/fileManager';
+import { createDebouncedDraftSaver } from '../utils/debouncedDraftSaver';
 
 interface InputBarProps {
   onSendMessage: (message: string, image?: { data: string; mimeType: string; } | null) => Promise<boolean>;
@@ -171,8 +172,29 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
   currentDraftRef.current = { content, image: selectedImage, question: isQuestionMode };
   const updateContent = (nextContent: string) => setContent(nextContent);
 
+  // Typing must not open an IndexedDB transaction per keystroke, so writes are
+  // debounced. Every hand-over (character switch, unmount, accepted submit)
+  // flushes or cancels explicitly so no edit is lost.
+  const draftSaverRef = useRef<ReturnType<typeof createDebouncedDraftSaver> | null>(null);
+  if (!draftSaverRef.current) {
+    draftSaverRef.current = createDebouncedDraftSaver((key, draft) => savePlayerActionDraft(key, draft).catch(error => {
+      reportActionDraftError(error);
+      throw error;
+    }));
+  }
+  const draftSaver = draftSaverRef.current;
+  const cancelPendingDraftSave = () => draftSaver.cancel();
+  const flushPendingDraftSave = () => draftSaver.flush();
+
+  useEffect(() => () => {
+    // Leaving the game or switching screens must not drop the last keystrokes.
+    draftSaverRef.current?.flush();
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
+    // Persist edits of the previous character before their slot is replaced.
+    flushPendingDraftSave();
     setIsActionDraftReady(false);
     setLoadedActionDraftKey(null);
     setContent('');
@@ -198,9 +220,10 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
 
   useEffect(() => {
     if (!playerActionDraftKey || !isActionDraftReady || loadedActionDraftKey !== playerActionDraftKey) return;
-    void savePlayerActionDraft(playerActionDraftKey, content.trim() || selectedImage
+    const draft: PlayerActionDraft | null = content.trim() || selectedImage
       ? { content, isQuestionMode, image: selectedImage }
-      : null).catch(reportActionDraftError);
+      : null;
+    draftSaver.schedule(playerActionDraftKey, draft);
   }, [content, selectedImage, isQuestionMode, isActionDraftReady, loadedActionDraftKey, playerActionDraftKey]);
 
   const lastPlayerMessage = useMemo(() =>
@@ -221,6 +244,9 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       const accepted = await (isQuestionMode ? onAskQuestion(content, imagePayload) : onSendMessage(content, imagePayload));
       if (accepted && draftKeyRef.current === submittedKey && currentDraftRef.current?.content === content &&
           currentDraftRef.current?.image === selectedImage && currentDraftRef.current?.question === isQuestionMode) {
+        // The accepted request owns the text now; drop the pending write so it
+        // cannot recreate the draft after it was cleared.
+        cancelPendingDraftSave();
         if (submittedKey) void savePlayerActionDraft(submittedKey, null).catch(reportActionDraftError);
         setContent('');
         setSelectedImage(null);
