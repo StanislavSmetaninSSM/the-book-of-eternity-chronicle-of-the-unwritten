@@ -963,6 +963,7 @@ export interface ItemMove {
 interface LocationUpdate {
     locationId: string;
     newName?: string;
+    newDescription?: string;
     newInternalDifficultyProfile?: Partial<DifficultyProfile>;
     newExternalDifficultyProfile?: Partial<DifficultyProfile>;
     newLastEventsDescription?: string;
