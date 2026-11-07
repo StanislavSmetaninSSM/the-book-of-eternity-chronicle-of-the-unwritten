@@ -222,3 +222,64 @@ test('recovery checkpoints store references and restore readable images', async 
   assert.equal(checkpoint.baseState.imageCache.scene, png(11));
   assert.ok(checkpoint.checkpointId, 'the checkpoint identity survives the rewrite');
 });
+
+test('a save and its images can travel as two separate files', async () => {
+  const vite = await getTestServer();
+  const store = await vite.ssrLoadModule('/utils/imageBlobStore.ts');
+  const fileManager = await vite.ssrLoadModule('/utils/fileManager.ts');
+  const bundleModule = await vite.ssrLoadModule('/utils/saveBundle.ts');
+  await clearImageStore(store);
+
+  const save = makeSave({ scene: png(21), portrait: png(22) });
+  const { saveData: referenced, bundle } = await bundleModule.splitSaveImages(save);
+  assert.ok(bundle, 'the images are exported separately');
+  assert.equal(Object.keys(bundle.images).length, 2);
+  assert.ok(!JSON.stringify(referenced).includes('data:image'), 'the save document keeps references only');
+  assert.equal(bundleModule.isSaveDocument(referenced), true);
+  assert.equal(bundleModule.isImageBundleDocument(bundle), true);
+  assert.equal(bundleModule.isSaveDocument(bundle), false, 'an images file is not mistaken for a save');
+  assert.equal(bundleModule.isImageBundleDocument(referenced), false);
+
+  // The exported filenames tell the player which file is which.
+  const originalCreateObjectURL = URL.createObjectURL;
+  URL.createObjectURL = () => 'blob:export';
+  let prepared;
+  try {
+    prepared = await fileManager.prepareSaveFiles(save);
+  } finally {
+    URL.createObjectURL = originalCreateObjectURL;
+  }
+  assert.ok(prepared.images, 'the pair is offered when the save has images');
+  assert.match(prepared.single.filename, /-save-\d{4}-\d{2}-\d{2}\.json$/);
+  assert.match(prepared.save.filename, /-save\.json$/);
+  assert.match(prepared.images.filename, /-images\.json$/);
+
+  // Losing the local bytes and importing both documents restores the images.
+  await clearImageStore(store);
+  const imported = await bundleModule.applySaveBundleDocuments([bundle, referenced]);
+  assert.equal(imported.imagesImported, 2);
+  assert.equal(imported.missingImages, 0);
+  assert.equal(imported.saveData.gameState.imageCache.scene, png(21));
+  assert.equal(imported.saveData.gameState.imageCache.portrait, png(22));
+  assert.equal((await store.getImageStoreStats()).count, 2, 'the imported images are stored once');
+
+  // Importing the save alone reports what is missing instead of failing.
+  await clearImageStore(store);
+  const withoutImages = await bundleModule.applySaveBundleDocuments([referenced]);
+  assert.equal(withoutImages.missingImages, 2);
+  assert.deepEqual(withoutImages.saveData.gameState.imageCache, {});
+
+  // A bundle whose keys are not content hashes still resolves its images.
+  const aliasBundle = {
+    format: 'book-of-eternity-image-bundle', version: 1, createdAt: new Date().toISOString(),
+    images: { 'blob:ff00ff00': png(23) },
+  };
+  const aliasedSave = makeSave({ scene: 'blob:ff00ff00' });
+  const aliased = await bundleModule.applySaveBundleDocuments([aliasBundle, aliasedSave]);
+  assert.equal(aliased.missingImages, 0);
+  assert.equal(aliased.saveData.gameState.imageCache.scene, png(23));
+
+  // The imported save keeps working through the normal fileManager path.
+  await fileManager.saveToDB(imported.saveData);
+  assert.equal((await fileManager.loadFromDB()).gameState.imageCache.scene, png(21));
+});

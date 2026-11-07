@@ -2,7 +2,7 @@
 import React from 'react';
 // FIX: Imported all necessary types from the newly defined types.ts to resolve multiple import errors.
 import { GameState, GameContext, ChatMessage, SaveFile, DBSaveSlotInfo, Item, Location, NPC, PlayerCharacter, Faction, WorldEvent, Cinematic, Combatant } from '../../types';
-import { prepareSaveGameFile, loadGameFromFile, saveToDB, loadFromDB, getAutosaveTimestampFromDB, saveToDBSlot, loadFromDBSlot, listDBSlots, deleteDBSlot } from '../../utils/fileManager';
+import { prepareSaveFiles, loadSaveBundleFromFiles, saveToDB, loadFromDB, getAutosaveTimestampFromDB, saveToDBSlot, loadFromDBSlot, listDBSlots, deleteDBSlot } from '../../utils/fileManager';
 import { applyImageBudget, MAX_IMAGES_PER_SAVE, MAX_IMAGE_BYTES_PER_SAVE } from '../../utils/saveImageBudget';
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notifications';
 
@@ -39,6 +39,10 @@ export const createSaveLoadManager = (
         setIsSaving: React.Dispatch<React.SetStateAction<boolean>>,
     }
 ) => {
+    const informMissingImages = (count: number) => {
+        notifyWarning(t('Some images were not found: import the images file together with the save ({count}).', { count }));
+    };
+
     const packageSaveData = (gameState: GameState, performGC: boolean = true): SaveFile | null => {
         if (!gameContextRef.current || !gameState) {
             return null;
@@ -247,8 +251,9 @@ export const createSaveLoadManager = (
                 notifyWarning(t('save_images_trimmed', { count: saveData.omittedImageCount }));
             }
             // Do not call showSaveFilePicker here: Arena runs this UI in a
-            // cross-origin iframe. Return a Blob URL for a real clickable link.
-            return prepareSaveGameFile(saveData);
+            // cross-origin iframe. Return Blob URLs for real clickable links: one
+            // portable file and a save/images pair that mirrors the in-app storage.
+            return await prepareSaveFiles(saveData);
         } catch (e) {
             console.error("Save game file preparation failed", e);
             notifyError(t('Failed to save game.') + ` ${e instanceof Error ? e.message : e}`);
@@ -261,9 +266,14 @@ export const createSaveLoadManager = (
     const loadGame = async (): Promise<boolean> => {
         const canCommit = beginLocalLoad();
         if (!canCommit) return false;
-        const data = await loadGameFromFile(t);
-        if (!data || !canCommit()) return false;
-        try { restoreFromSaveData(data); return true; }
+        const result = await loadSaveBundleFromFiles(t);
+        if (!result || !canCommit()) return false;
+        if (result.missingImages > 0) {
+            informMissingImages(result.missingImages);
+        } else if (result.imagesImported > 0) {
+            notifySuccess(t('Imported images: {count}.', { count: result.imagesImported }));
+        }
+        try { restoreFromSaveData(result.saveData); return true; }
         catch (e) { notifyError(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`); return false; }
     };
 

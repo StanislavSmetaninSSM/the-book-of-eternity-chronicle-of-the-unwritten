@@ -4,6 +4,7 @@ import { ChatMessage, GameContext, GameState, SaveFile, DBSaveSlotInfo } from ".
 import { budgetRecoveryState, isQuotaError, stripImagesForQuota } from './saveImageBudget';
 import { dehydrateSaveImages, dehydrateStateImages, hydrateSaveImages, hydrateStateImages, collectImageRefs } from './saveImageRefs';
 import { imageRefId, sweepUnreferencedImages } from './imageBlobStore';
+import { applySaveBundleDocuments, splitSaveImages, type SaveBundleImportResult } from './saveBundle';
 import { notifyError } from './notifications';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
@@ -13,13 +14,44 @@ export interface PreparedSaveFile {
   url: string;
 }
 
+export interface PreparedSaveFiles {
+  /** One self-contained file: images travel inside it as base64. */
+  single: PreparedSaveFile;
+  /** The same save with `blob:` references instead of image payloads. */
+  save: PreparedSaveFile;
+  /** The images `save` needs; null when the save has no cached images. */
+  images: PreparedSaveFile | null;
+}
+
+const saveFileDate = (): string => new Date().toISOString().slice(0, 10);
+
+const prepareJsonFile = (filename: string, data: unknown): PreparedSaveFile => {
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json;charset=utf-8' });
+  return { filename, url: URL.createObjectURL(blob) };
+};
+
 /** Prepare a save as a Blob URL; the UI renders a real user-clickable download link. */
 export function prepareSaveGameFile(saveData: SaveFile): PreparedSaveFile {
-  const blob = new Blob([JSON.stringify(saveData)], { type: 'application/json;charset=utf-8' });
-  return {
-    filename: `gemini-rpg-save-${new Date().toISOString().slice(0, 10)}.json`,
-    url: URL.createObjectURL(blob),
-  };
+  return prepareJsonFile(`gemini-rpg-save-${saveFileDate()}.json`, saveData);
+}
+
+/**
+ * Prepares both export shapes: one portable file and a save/images pair. The pair keeps
+ * the save small and lets the player carry the images separately; the single file stays
+ * available because a lone file cannot be mismatched with its images.
+ */
+export async function prepareSaveFiles(saveData: SaveFile): Promise<PreparedSaveFiles> {
+  const date = saveFileDate();
+  const single = prepareJsonFile(`gemini-rpg-save-${date}.json`, saveData);
+  const { saveData: referenced, bundle } = await splitSaveImages(saveData);
+  const noImages = prepareJsonFile(`gemini-rpg-save-${date}-save.json`, referenced);
+  const images = bundle ? prepareJsonFile(`gemini-rpg-save-${date}-images.json`, bundle) : null;
+  return { single, save: noImages, images };
+}
+
+export function releasePreparedSaveFiles(files: PreparedSaveFiles | null | undefined): void {
+  if (!files) return;
+  [files.single, files.save, files.images].forEach(file => { if (file) releasePreparedSaveFile(file); });
 }
 
 export function releasePreparedSaveFile(saveFile: PreparedSaveFile): void {
@@ -71,7 +103,9 @@ export function loadGameFromFile(t: TFunction): Promise<SaveFile | null> {
           const data = JSON.parse(text);
           
           if (data && data.gameContext && data.gameState) {
-            resolve(data as SaveFile);
+            // A save exported as part of a pair keeps references; resolve them when the
+            // images are already in this browser, otherwise the cache stays empty.
+            resolve(await hydrateSaveImages(data as SaveFile));
           } else {
             notifyError(t('Invalid save file format.'));
             resolve(null);
@@ -93,6 +127,80 @@ export function loadGameFromFile(t: TFunction): Promise<SaveFile | null> {
     document.body.appendChild(input);
     input.click();
   });
+}
+
+/**
+ * Opens the file picker and parses every chosen JSON document. Import accepts a single
+ * save file, a save plus its images file, or just an images file for an already imported
+ * save - so the picker allows several files and the caller decides what it got.
+ */
+export function pickSaveDocuments(t: TFunction): Promise<unknown[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.multiple = true;
+    let fileSelected = false;
+
+    const cleanup = () => {
+      if (document.body.contains(input)) document.body.removeChild(input);
+      window.removeEventListener('focus', handleFocus);
+    };
+
+    const handleFocus = () => {
+      setTimeout(() => {
+        if (!fileSelected) {
+          console.log('Load operation cancelled by user.');
+          cleanup();
+          resolve([]);
+        }
+      }, 500);
+    };
+
+    window.addEventListener('focus', handleFocus, { once: true });
+
+    input.onchange = async (event: Event) => {
+      fileSelected = true;
+      const target = event.target as HTMLInputElement;
+      const files = Array.from(target.files || []);
+      if (files.length === 0) { cleanup(); resolve([]); return; }
+      const documents: unknown[] = [];
+      try {
+        for (const file of files) {
+          const text = await file.text();
+          try {
+            documents.push(JSON.parse(text));
+          } catch (error) {
+            console.error('Error parsing a save document:', error);
+            notifyError(t('Could not read or parse the save file.'));
+          }
+        }
+        resolve(documents);
+      } finally {
+        cleanup();
+      }
+    };
+
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+/**
+ * Imports a save together with its images file (or a lone portable save). Images are put
+ * into the store first, then the save is restored with them; anything that could not be
+ * resolved is counted so the caller can warn the player instead of silently losing art.
+ */
+export async function loadSaveBundleFromFiles(t: TFunction): Promise<SaveBundleImportResult | null> {
+  const documents = await pickSaveDocuments(t);
+  if (documents.length === 0) return null;
+  const result = await applySaveBundleDocuments(documents);
+  if (!result) {
+    notifyError(t('Invalid save file format.'));
+    return null;
+  }
+  return result;
 }
 
 export function loadConfigurationFromFile(t: TFunction): Promise<any | null> {

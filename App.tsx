@@ -26,7 +26,7 @@ import { useGameLogic } from './hooks/useGameLogic';
 import { ChatMessage, Cinematic, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, Project, LocationData, ImageCacheEntry } from './types';
 import TextReaderModal from './components/TextReaderModal';
 import { useSpeech } from './context/SpeechContext';
-import { consumeStartupLoadRequest, migrateInlineImagesToImageStore, releasePreparedSaveFile, type PreparedSaveFile } from './utils/fileManager';
+import { consumeStartupLoadRequest, migrateInlineImagesToImageStore, releasePreparedSaveFiles, type PreparedSaveFiles } from './utils/fileManager';
 import StorageScreen from './components/StorageScreen';
 import CinemaPlayer from './components/CinemaPlayer';
 import CinemaHall from './components/CinemaHall';
@@ -277,7 +277,7 @@ export default function App(): React.ReactNode {
     const [messageModalState, setMessageModalState] = useState<{ title: string; content: string } | null>(null);
     const [textReaderState, setTextReaderState] = useState<{ title: string; content: string } | null>(null);
     const [imageModalInfo, setImageModalInfo] = useState<ImageModalInfo | null>(null);
-    const [preparedSaveFile, setPreparedSaveFile] = useState<PreparedSaveFile | null>(null);
+    const [preparedSaveFiles, setPreparedSaveFiles] = useState<PreparedSaveFiles | null>(null);
     const [detailModalStack, setDetailModalStack] = useState<{ title: string; data: any }[]>([]);
 
     const [isDetailModalFullScreen, setIsDetailModalFullScreen] = useState(false);
@@ -582,17 +582,17 @@ export default function App(): React.ReactNode {
     const handleSaveGame = async () => {
         const prepared = await saveGame();
         if (!prepared) return;
-        if (preparedSaveFile) {
-            window.setTimeout(() => releasePreparedSaveFile(preparedSaveFile), 60_000);
+        if (preparedSaveFiles) {
+            window.setTimeout(() => releasePreparedSaveFiles(preparedSaveFiles), 60_000);
         }
-        setPreparedSaveFile(prepared);
+        setPreparedSaveFiles(prepared);
     };
 
     const closePreparedSaveFile = () => {
-        if (preparedSaveFile) {
-            window.setTimeout(() => releasePreparedSaveFile(preparedSaveFile), 60_000);
+        if (preparedSaveFiles) {
+            window.setTimeout(() => releasePreparedSaveFiles(preparedSaveFiles), 60_000);
         }
-        setPreparedSaveFile(null);
+        setPreparedSaveFiles(null);
     };
 
     const handleLoadGame = async () => {
@@ -1569,19 +1569,38 @@ export default function App(): React.ReactNode {
                 isOpen={isCinemaVisible}
                 onClose={closeCinemaPlayer}
             />
-            {preparedSaveFile && (
+            {preparedSaveFiles && (
                 <Modal isOpen={true} onClose={closePreparedSaveFile} title={t('Save file is ready')}>
                     <div className="space-y-4 text-gray-200">
                         <p>{t('Choose how to save your game file.')}</p>
                         <a
-                            href={preparedSaveFile.url}
-                            download={preparedSaveFile.filename}
+                            href={preparedSaveFiles.single.url}
+                            download={preparedSaveFiles.single.filename}
                             className="flex w-full items-center justify-center rounded-md bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500"
                         >
-                            {t('Download save file')} ({preparedSaveFile.filename})
+                            {t('Download save file')} ({preparedSaveFiles.single.filename})
                         </a>
+                        {preparedSaveFiles.images && (
+                            <div className="space-y-2 rounded-md border border-gray-700 p-3">
+                                <p className="text-sm text-gray-300">{t('Or download the save and its images as two files: keep them together, the save needs the images file.')}</p>
+                                <a
+                                    href={preparedSaveFiles.save.url}
+                                    download={preparedSaveFiles.save.filename}
+                                    className="flex w-full items-center justify-center rounded-md border border-gray-600 px-4 py-3 font-semibold text-cyan-200 hover:bg-gray-700"
+                                >
+                                    {t('Save file without images')} ({preparedSaveFiles.save.filename})
+                                </a>
+                                <a
+                                    href={preparedSaveFiles.images.url}
+                                    download={preparedSaveFiles.images.filename}
+                                    className="flex w-full items-center justify-center rounded-md border border-gray-600 px-4 py-3 font-semibold text-cyan-200 hover:bg-gray-700"
+                                >
+                                    {t('Images file')} ({preparedSaveFiles.images.filename})
+                                </a>
+                            </div>
+                        )}
                         <a
-                            href={preparedSaveFile.url}
+                            href={preparedSaveFiles.single.url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex w-full items-center justify-center rounded-md border border-gray-600 px-4 py-3 font-semibold text-cyan-200 hover:bg-gray-700"
