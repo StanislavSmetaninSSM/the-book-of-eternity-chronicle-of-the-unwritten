@@ -130,3 +130,51 @@ test('a full storage quota falls back to saving without cached images',async()=>
   dom.window.close();await vite.close();
  }
 });
+
+test('recovery checkpoints do not duplicate the whole image cache',async()=>{
+ const vite=await viteModule();
+ const dom=new JSDOM('<div></div>',{url:'http://localhost/'});
+ const old={window:globalThis.window,document:globalThis.document,navigator:globalThis.navigator};
+ globalThis.window=dom.window;globalThis.document=dom.window.document;
+ Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+ try{
+  const budget=await vite.ssrLoadModule('/utils/saveImageBudget.ts');
+  const fileManager=await vite.ssrLoadModule('/utils/fileManager.ts');
+
+  // The helper keeps the scene and the active portrait and leaves the input untouched.
+  const cache={};
+  for(let index=0;index<20;index++) cache[`prompt-${index}`]=dataUrl(index);
+  cache['scene-prompt']=dataUrl('scene');
+  cache['portrait']=dataUrl('portrait');
+  const state={imageCache:cache,playerCharacter:{image_prompt:'portrait'}};
+  const bounded=budget.budgetRecoveryState(state,'scene-prompt');
+  assert.ok(Object.keys(bounded.imageCache).length<=budget.RECOVERY_IMAGE_ENTRIES);
+  assert.ok(bounded.imageCache['scene-prompt'] && bounded.imageCache['portrait'],'scene and portrait survive');
+  assert.equal(Object.keys(state.imageCache).length,22,'the live state is not mutated');
+  assert.ok(bounded.omittedImageCount>0);
+  const untouched=budget.budgetRecoveryState({imageCache:{only:dataUrl('x')}},'missing');
+  assert.equal(untouched.omittedImageCount,undefined);
+  assert.ok(budget.imageCacheBytes(bounded.imageCache)<=budget.RECOVERY_IMAGE_BYTES);
+
+  // Crash recovery keeps a bounded copy even when the source save is at the slot budget.
+  const context={currentTurnNumber:1,gameSettings:{},visitedLocations:[],worldMap:{}};
+  const gameState={playerCharacter:{name:'A',level:1,image_prompt:'portrait'},currentLocationData:{name:'Here'},imageCache:cache};
+  const save={gameContext:context,gameState,gameHistory:[],gameLog:[],combatLog:[],lastJsonResponse:null,sceneImagePrompt:'scene-prompt',timestamp:new Date().toISOString()};
+  await fileManager.saveCrashRecoveryPoint(save,'stable');
+  const restored=await fileManager.loadCrashRecoveryPoint();
+  const restoredKeys=Object.keys(restored.gameState.imageCache);
+  assert.ok(restoredKeys.length<=budget.RECOVERY_IMAGE_ENTRIES,`crash recovery stored ${restoredKeys.length} images`);
+  assert.ok(restoredKeys.includes('scene-prompt')&&restoredKeys.includes('portrait'));
+
+  // Interrupted-turn checkpoints are written before every action: same bound applies.
+  await fileManager.saveInterruptedTurnRecovery({context,baseState:gameState,history:[]});
+  const interrupted=await fileManager.loadInterruptedTurnRecovery();
+  const checkpointKeys=Object.keys(interrupted.baseState.imageCache);
+  assert.ok(checkpointKeys.length<=budget.RECOVERY_IMAGE_ENTRIES,`checkpoint stored ${checkpointKeys.length} images`);
+  assert.ok(budget.imageCacheBytes(interrupted.baseState.imageCache)<=budget.RECOVERY_IMAGE_BYTES);
+ }finally{
+  globalThis.window=old.window;globalThis.document=old.document;
+  Object.defineProperty(globalThis,'navigator',{value:old.navigator,configurable:true});
+  dom.window.close();await vite.close();
+ }
+});

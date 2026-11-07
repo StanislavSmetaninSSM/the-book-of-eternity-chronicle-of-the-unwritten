@@ -1,7 +1,7 @@
 
 
 import { ChatMessage, GameContext, GameState, SaveFile, DBSaveSlotInfo } from "../types";
-import { isQuotaError, stripImagesForQuota } from './saveImageBudget';
+import { budgetRecoveryState, isQuotaError, stripImagesForQuota } from './saveImageBudget';
 import { notifyError } from './notifications';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
@@ -549,6 +549,9 @@ export async function saveInterruptedTurnRecovery(recovery: Omit<InterruptedTurn
   const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
   const checkpoint: InterruptedTurnRecovery = {
     ...recovery,
+    // A checkpoint is written before every turn; keeping the full image cache there
+    // duplicated the whole payload on each action.
+    baseState: budgetRecoveryState(recovery.baseState),
     id: INTERRUPTED_TURN_ID,
     createdAt: new Date().toISOString(),
     checkpointId: newCheckpointId(),
@@ -626,10 +629,16 @@ export async function saveCrashRecoveryPoint(saveData: SaveFile, reason: CrashRe
   const metadata = buildCrashRecoveryMetadata(saveData, reason);
 
   try {
+    // The crash-recovery copy only needs enough images to resume; a full cache here
+    // doubled the storage taken by the autosave it shadows.
+    const recoverySaveData: SaveFile = {
+      ...saveData,
+      gameState: budgetRecoveryState(saveData.gameState, saveData.sceneImagePrompt),
+    };
     const db = await openDB();
     const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
     const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
-    store.put({ id: CRASH_RECOVERY_ID, saveData });
+    store.put({ id: CRASH_RECOVERY_ID, saveData: recoverySaveData });
 
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve();

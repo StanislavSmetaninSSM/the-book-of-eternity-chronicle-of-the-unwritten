@@ -127,3 +127,30 @@ export function isQuotaError(error: unknown): boolean {
         || code === 22
         || /quota/i.test(String((error as any)?.message || ''));
 }
+
+/** Recovery checkpoints are written on every turn and every crash, so they keep far less. */
+export const RECOVERY_IMAGE_ENTRIES = 6;
+export const RECOVERY_IMAGE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Bounds the cached images stored in an interrupted-turn or crash-recovery checkpoint.
+ * The checkpoint exists to resume a turn, not to archive artwork: keeping the scene and
+ * the active portrait avoids duplicating the whole cache on every action while the
+ * restored session still has the images the player was looking at.
+ */
+export function budgetRecoveryState<TState extends { imageCache?: ImageCache; playerCharacter?: { image_prompt?: string } | null }>(
+    state: TState,
+    scenePrompt?: string | null,
+): TState {
+    if (!state || typeof state !== 'object' || !state.imageCache) return state;
+    const budgeted = applyImageBudget(state.imageCache, {
+        maxEntries: RECOVERY_IMAGE_ENTRIES,
+        maxBytes: RECOVERY_IMAGE_BYTES,
+        priorityKeys: [scenePrompt, state.playerCharacter?.image_prompt],
+    });
+    if (budgeted.omittedCount === 0) return state;
+    const next = { ...state, imageCache: budgeted.cache } as TState;
+    (next as { omittedImageCount?: number }).omittedImageCount =
+        (Number((state as { omittedImageCount?: number }).omittedImageCount) || 0) + budgeted.omittedCount;
+    return next;
+}
