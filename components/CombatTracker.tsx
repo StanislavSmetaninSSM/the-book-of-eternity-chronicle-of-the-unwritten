@@ -403,8 +403,9 @@ export default function CombatTracker({ enemies, allies, combatLog, allNpcs, pla
 
     const handleAttack = (enemy: EnemyCombatObject) => {
         if (isLoading) return;
-        const message = `Я атакую ${enemy.name} ${enemy.NPCId || ''}`.trim();
-        onSendMessage(message);
+        // The command travels to the game master, so it must follow the UI language.
+        const target = `${enemy.name}${enemy.NPCId ? ` (${enemy.NPCId})` : ''}`;
+        onSendMessage(t('attack_command', { name: target }).trim());
     };
 
     if (!hasContent) {

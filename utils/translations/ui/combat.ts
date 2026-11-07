@@ -3,6 +3,7 @@ export const combat = {
   en: {
     // Combat UI
     "Not in Combat": "Not in Combat",
+    "attack_command": "I attack {name}",
     "When a battle begins, details on enemies and allies will appear here.": "When a battle begins, details on enemies and allies will appear here.",
     "Enemies": "Enemies",
     "Allies": "Allies",
@@ -63,6 +64,7 @@ export const combat = {
   ru: {
     // Combat UI
     "Not in Combat": "Не в бою",
+    "attack_command": "Я атакую {name}",
     "When a battle begins, details on enemies and allies will appear here.": "Когда начнется битва, здесь появятся детали о врагах и союзниках.",
     "Enemies": "Враги",
     "Allies": "Союзники",

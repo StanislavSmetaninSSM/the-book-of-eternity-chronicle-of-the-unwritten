@@ -20,13 +20,13 @@
         let firstError = '';
         const showError = (message) => {
           firstError = firstError || message;
-          panel.textContent = `Не удалось загрузить приложение.\n${firstError}\nОбновите страницу; если ошибка повторится, пришлите этот текст.`;
+          panel.textContent = `Не удалось загрузить приложение / The app failed to load.\n${firstError}\nОбновите страницу; если ошибка повторится, пришлите этот текст.\nReload the page; if the error repeats, send us this text.`;
           panel.style.display = 'block';
         };
-        window.addEventListener('error', (event) => showError(event.message || 'Ошибка загрузки JavaScript.'));
-        window.addEventListener('unhandledrejection', (event) => showError(event.reason?.message || String(event.reason || 'Ошибка запуска приложения.')));
+        window.addEventListener('error', (event) => showError(event.message || 'Ошибка загрузки JavaScript / JavaScript failed to load.'));
+        window.addEventListener('unhandledrejection', (event) => showError(event.reason?.message || String(event.reason || 'Ошибка запуска приложения / The app failed to start.')));
         new MutationObserver(() => { if (root?.children.length) panel.style.display = 'none'; }).observe(root, { childList: true });
-        setTimeout(() => { if (!root?.children.length) showError(firstError || 'Интерфейс не смонтировался за 8 секунд.'); }, 8000);
+        setTimeout(() => { if (!root?.children.length) showError(firstError || 'Интерфейс не смонтировался за 8 секунд / The interface did not mount within 8 seconds.'); }, 8000);
       })();
     </script>
     <script type="module" src="/index.tsx"></script>

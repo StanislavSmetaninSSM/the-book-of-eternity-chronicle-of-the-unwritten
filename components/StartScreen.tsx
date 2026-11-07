@@ -1250,14 +1250,14 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                             <ExclamationTriangleIcon className="mt-0.5 h-6 w-6 flex-shrink-0 text-yellow-300" />
                             <div className="min-w-0 flex-1">
                                 <p className="font-semibold text-yellow-200">
-                                    Обнаружен сбой прошлой сессии / Previous session crashed
+                                    {t('previous_session_crashed')}
                                 </p>
                                 <p className="mt-1 text-sm text-gray-300">
                                     {crashRecoveryInfo.playerName}, {crashRecoveryInfo.locationName}, {t('Turn')} {crashRecoveryInfo.turnNumber ?? '-'} · {formatTimestamp(crashRecoveryInfo.timestamp, t)}
                                 </p>
                                 {crashRecoveryMarker.recoveryAttemptedAt && (
                                     <p className="mt-2 text-sm text-red-200">
-                                        Восстановление уже пробовали. Если ошибка повторится, загрузите автосохранение или файл.
+                                        {t('previous_session_recovery_attempted')}
                                     </p>
                                 )}
                                 <button
@@ -1265,7 +1265,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                                     onClick={onLoadCrashRecovery}
                                     className="mt-3 w-full rounded-md bg-emerald-700 px-4 py-2 font-semibold text-white transition-colors hover:bg-emerald-600"
                                 >
-                                    Загрузить последнее стабильное состояние / Load last stable state
+                                    {t('load_last_stable_state')}
                                 </button>
                             </div>
                         </div>

@@ -2,6 +2,9 @@
 export const startScreen = {
   en: {
     "An interrupted turn was saved.": "An interrupted turn was saved.",
+    "previous_session_crashed": "Previous session crashed",
+    "previous_session_recovery_attempted": "Recovery was already attempted. If the error repeats, load an autosave or a save file.",
+    "load_last_stable_state": "Load last stable state",
     "Restoring saved setup draft...": "Restoring saved setup draft...",
     "Unfinished setup restored.": "Unfinished setup restored.",
     "Submitted action": "Submitted action",
@@ -136,6 +139,9 @@ export const startScreen = {
   },
   ru: {
     "An interrupted turn was saved.": "Сохранён прерванный ход.",
+    "previous_session_crashed": "Обнаружен сбой прошлой сессии",
+    "previous_session_recovery_attempted": "Восстановление уже пробовали. Если ошибка повторится, загрузите автосохранение или файл.",
+    "load_last_stable_state": "Загрузить последнее стабильное состояние",
     "Restoring saved setup draft...": "Восстанавливаем сохранённую настройку персонажа...",
     "Unfinished setup restored.": "Черновик настройки персонажа восстановлен.",
     "Submitted action": "Отправленное действие",
