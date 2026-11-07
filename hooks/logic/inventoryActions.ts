@@ -17,6 +17,8 @@ import {
     mergeItemStacksForNpc as mergeItemForNpcUtil
 } from '../../utils/inventoryManager';
 import { recalculateDerivedStats } from '../../utils/gameContext';
+import { cloneGameStateForEdit } from '../../utils/gameStateClone';
+import { notifyWarning } from '../../utils/notifications';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
@@ -80,7 +82,7 @@ export const createInventoryActions = (
                 const prospectiveWeight = (npcWithStats.totalWeight || 0) + weightOfMovedItem;
 
                 if (prospectiveWeight > criticalWeight) {
-                    alert(t('npc_overloaded_refusal'));
+                    notifyWarning(t('npc_overloaded_refusal'));
                     return;
                 }
             }
@@ -135,7 +137,7 @@ export const createInventoryActions = (
             const isPenalty = (mainHandIsTwoHander && mainHandId !== offHandId) || (offHandIsTwoHander && mainHandId !== offHandId);
 
             if (isPenalty) {
-                alert(t('two_handed_penalty_warning'));
+                notifyWarning(t('two_handed_penalty_warning'));
             }
             
             let pc = recalculateAllWeights(newPc);
@@ -232,7 +234,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
 
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             let pc = newState.playerCharacter as PlayerCharacter;
             
             let inventory = pc.inventory as Item[];
@@ -306,7 +308,7 @@ export const createInventoryActions = (
         setGameState(prevState => {
             if (!prevState) return null;
 
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             const npcIndex = newState.encounteredNPCs.findIndex((n: NPC) => n.NPCId === npcId);
             if (npcIndex === -1) return prevState;
 
@@ -397,7 +399,7 @@ export const createInventoryActions = (
 
             const prospectiveWeight = prevState.playerCharacter.totalWeight + item.weight * validQuantity;
             if (prospectiveWeight > prevState.playerCharacter.maxWeight + prevState.playerCharacter.criticalExcessWeight) {
-                alert(t('You still cannot carry this item. Drop something else first.'));
+                notifyWarning(t('You still cannot carry this item. Drop something else first.'));
                 return prevState;
             }
 
@@ -429,7 +431,7 @@ export const createInventoryActions = (
     const forgetHealedWound = (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => {
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => w.woundId !== woundId);
@@ -452,7 +454,7 @@ export const createInventoryActions = (
     const forgetActiveWound = (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => {
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             
             let woundToRemove: Wound | undefined;
 
@@ -495,7 +497,7 @@ export const createInventoryActions = (
     const clearAllHealedWounds = (characterType: 'player' | 'npc', characterId: string | null) => {
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => !w.healingState || w.healingState.currentState !== 'Healed');

@@ -4,6 +4,7 @@ import { PlayerCharacter, GameSettings } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import Modal from './Modal';
 import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
+import { notifyWarning } from '../utils/notifications';
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
 
@@ -150,15 +151,15 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
 
         if (!isCharacteristicsLocked) {
             if (isCustomRace && !isLevelSyncedCreation && (attributePoints > 0 || !formData.customRaceName.trim())) {
-                alert(t("Please enter a custom race name and allocate all attribute points."));
+                notifyWarning(t("Please enter a custom race name and allocate all attribute points."));
                 return;
             }
             if (isLevelSyncedCreation && attributePoints > 0) {
-                alert(t("please_spend_all_attribute_points"));
+                notifyWarning(t("please_spend_all_attribute_points"));
                 return;
             }
             if (isCustomClass && (customClassAttributePoints > 0 || !formData.customClassName.trim())) {
-                alert(t("Please enter a custom class name and allocate all 3 bonus points."));
+                notifyWarning(t("Please enter a custom class name and allocate all 3 bonus points."));
                 return;
             }
         }

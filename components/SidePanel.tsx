@@ -26,6 +26,7 @@ import WorldPanel from './WorldPanel';
 import ConfirmationModal from './ConfirmationModal';
 import ImageRenderer from './ImageRenderer';
 import PlayersPanel from './PlayersPanel';
+import { withLiveActivePlayer } from '../utils/partyView';
 import Modal from './Modal';
 import CinemaHall from './CinemaHall';
 import ImageCacheGallery from './ImageCacheGallery';
@@ -487,6 +488,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
             return (
                 <button
                 key={tab.name}
+                data-testid={`side-tab-${tab.name}`}
                 onClick={() => onSetSidePanelView(tab.name)}
                 className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors relative ${
                     isStashTab
@@ -512,7 +514,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
             <ArrowDownTrayIcon className="w-5 h-5" />
             {t("Save to File")}
         </button>
-        <button onClick={onLoadGame} disabled={isLoading} className="flex-1 flex items-center justify-center gap-3 px-4 py-2 text-sm font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+        <button onClick={onLoadGame} disabled={isLoading} title={t('Choose the save file and, if you have it, the images file - both at once is fine.')} className="flex-1 flex items-center justify-center gap-3 px-4 py-2 text-sm font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
              <ArrowUpTrayIcon className="w-5 h-5" />
             {t("Load from File")}
         </button>
@@ -563,7 +565,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
                 onDeleteActiveEffect={deleteActiveEffect}
               />}
               {sidePanelView === 'Quests' && gameState && <QuestLog activeQuests={gameState.activeQuests} completedQuests={gameState.completedQuests} onOpenModal={onOpenDetailModal} lastUpdatedQuestId={lastUpdatedQuestId} allowHistoryManipulation={gameSettings?.allowHistoryManipulation ?? false} forgetQuest={forgetQuest} />}
-              {sidePanelView === 'Characters' && gameState && gameSettings && <PlayersPanel playerCharacter={gameState.playerCharacter} players={gameState.players} gameSettings={gameSettings} onAddPlayer={addPlayer} removePlayer={removePlayer} passTurnToPlayer={passTurnToPlayer} allowHistoryManipulation={gameSettings.allowHistoryManipulation} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} updatePlayerPortrait={updatePlayerPortrait} />}
+              {sidePanelView === 'Characters' && gameState && gameSettings && <PlayersPanel playerCharacter={gameState.playerCharacter} players={withLiveActivePlayer(gameState.players, gameState.playerCharacter)} gameSettings={gameSettings} onAddPlayer={addPlayer} removePlayer={removePlayer} passTurnToPlayer={passTurnToPlayer} allowHistoryManipulation={gameSettings.allowHistoryManipulation} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} updatePlayerPortrait={updatePlayerPortrait} />}
               {sidePanelView === 'World' && <WorldPanel
                 worldState={worldState}
                 worldStateFlags={gameState?.worldStateFlags || null}

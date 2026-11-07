@@ -24,6 +24,10 @@ export interface Calendar {
   dayNames: DayInfo[];
 }
 
+/**
+ * In memory `src` is always a `data:` URL. Stored saves keep a `blob:<sha256>` reference
+ * instead and read the bytes back from the image store on load (see `utils/imageBlobStore`).
+ */
 export type ImageCacheEntry = {
   src: string;
   sourceProvider: 'Nano Banana' | 'Imagen' | 'Arena GM' | 'Custom Upload';
@@ -38,6 +42,8 @@ export interface GameSettings {
     baseInfo: any;
     customInfo: string;
     calendar?: Calendar;
+    /** Universe id; absent in saves written before translations became lazy. */
+    universe?: string;
   };
   adultMode: boolean;
   // FIX: Added missing youtubeApiKey property to GameSettings interface.
@@ -49,7 +55,10 @@ export interface GameSettings {
   keepLatestNpcJournals: boolean;
   latestNpcJournalsCount: number;
   cooperativeGameType: 'None' | 'MultiplePersonalities' | 'FullParty';
-  autoPassTurnInCoop: boolean;
+  /** Hand the turn to the next party member automatically. */
+  autoPassTurn: boolean;
+  /** @deprecated Pre-single-player name, still read from old saves. */
+  autoPassTurnInCoop?: boolean;
   showPartyStatusPanel?: boolean;
   uiControlScale?: number;
   uiFontScale?: number;
@@ -1285,6 +1294,8 @@ export interface DBSaveSlotInfo {
     playerLevel: number;
     locationName: string;
     turnNumber: number;
+    /** The slot had to be written without cached images (size budget or full quota). */
+    imagesOmitted?: boolean;
 }
 
 export interface AdjacencyMapEntry {
@@ -1309,6 +1320,12 @@ export interface SaveFile {
   lastJsonResponse: string | null;
   sceneImagePrompt: string | null;
   timestamp: string;
+  /** Cached images dropped from this save to keep it within the size budget. */
+  omittedImageCount?: number;
+  /** Set when the storage quota forced the save to be written without any images. */
+  imagesOmittedForQuota?: boolean;
+  /** Images this save referenced but the local store could not return when it was loaded. */
+  missingImageCount?: number;
 }
 
 export const isWound = (d: any): d is (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null }) => d && typeof d === 'object' && !Array.isArray(d) && d.type === 'wound';

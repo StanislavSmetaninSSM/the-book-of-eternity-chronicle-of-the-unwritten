@@ -61,7 +61,7 @@ const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, g
 
     return (
         <>
-            <div className="space-y-4">
+            <div className="space-y-4" data-testid="players-panel">
                 <h3 className="text-xl font-bold text-cyan-400 mb-3 narrative-text">{t('Characters')}</h3>
                 <div className="space-y-3">
                     {(players || []).map((player, index) => {
@@ -95,6 +95,7 @@ const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, g
                                 </button>
                                 <div className="mt-2 pt-2 border-t border-gray-700/50 flex flex-wrap gap-2">
                                     <button
+                                        data-testid={`pass-turn-${index}`}
                                         onClick={() => passTurnToPlayer(index)}
                                         disabled={isActive}
                                         className="flex-1 flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-green-600/20 text-green-300 hover:bg-green-600/40 disabled:opacity-50 disabled:cursor-not-allowed"

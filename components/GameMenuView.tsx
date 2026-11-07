@@ -270,7 +270,7 @@ export default function GameMenuView({
         )
     }
 
-    const { adultMode, allowHistoryManipulation, keepLatestNpcJournals, latestNpcJournalsCount, cooperativeGameType, multiplePersonalitiesSettings, autoPassTurnInCoop, showPartyStatusPanel, doNotUseWorldEvents, hardMode, impossibleMode } = gameSettings;
+    const { adultMode, allowHistoryManipulation, keepLatestNpcJournals, latestNpcJournalsCount, cooperativeGameType, multiplePersonalitiesSettings, autoPassTurn: autoPassTurnSetting, autoPassTurnInCoop: legacyAutoPassTurn, showPartyStatusPanel, doNotUseWorldEvents, hardMode, impossibleMode } = gameSettings;
 
     const handleDifficultyChange = (difficulty: 'normal' | 'hard' | 'impossible') => {
         updateGameSettings({
@@ -318,6 +318,11 @@ export default function GameMenuView({
                                     <p className="text-xs text-gray-400">
                                         {slot.locationName} - {t('Turn')} {slot.turnNumber} - {formatTimestamp(slot.timestamp, t)}
                                     </p>
+                                    {slot.imagesOmitted && (
+                                        <p className="text-xs text-yellow-300/90" data-testid={`slot-without-images-${slot.slotId}`}>
+                                            {t('slot_without_images')}
+                                        </p>
+                                    )}
                                 </div>
                                 <button onClick={() => onLoadFromSlot(slot.slotId)} className="p-2 text-cyan-300 bg-cyan-600/20 hover:bg-cyan-600/40 rounded-md transition-colors" title={t('Load')}><CloudArrowDownIcon className="w-5 h-5" /></button>
                                 <button onClick={() => setIsOverwriteConfirmOpen(slot.slotId)} className="p-2 text-yellow-300 bg-yellow-600/20 hover:bg-yellow-600/40 rounded-md transition-colors" title={t('Save')}><ArrowDownTrayIcon className="w-5 h-5" /></button>
@@ -336,11 +341,12 @@ export default function GameMenuView({
                             <ArrowDownTrayIcon className="w-5 h-5" />
                             {t("Save to File")}
                         </button>
-                        <button onClick={onLoad} disabled={isLoading} className="flex-1 w-full flex items-center justify-center gap-3 px-4 py-2 text-base font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button onClick={onLoad} disabled={isLoading} title={t('Choose the save file and, if you have it, the images file - both at once is fine.')} className="flex-1 w-full flex items-center justify-center gap-3 px-4 py-2 text-base font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
                              <ArrowUpTrayIcon className="w-5 h-5" />
                             {t("Load from File")}
                         </button>
                     </div>
+                    <p className="mt-2 text-xs text-gray-400">{t('Choose the save file and, if you have it, the images file - both at once is fine.')}</p>
                     <button onClick={onLoadAutosave} disabled={!autosaveTimestamp || isLoading} className="w-full mt-3 text-cyan-400/80 hover:text-cyan-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 p-2">
                         <ClockIcon className="w-5 h-5" />
                         {t("Autosave")}: {formatTimestamp(autosaveTimestamp, t)}
@@ -555,13 +561,13 @@ export default function GameMenuView({
                                 <label className="font-medium text-gray-300">{t("auto_pass_turn")}</label>
                                 <p className="text-xs text-gray-400">{t("auto_pass_turn_desc")}</p>
                                 </div>
-                                <label htmlFor="autoPassTurnInCoop" className="relative inline-flex items-center cursor-pointer">
+                                <label htmlFor="autoPassTurn" className="relative inline-flex items-center cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    id="autoPassTurnInCoop"
-                                    name="autoPassTurnInCoop"
-                                    checked={autoPassTurnInCoop ?? true}
-                                    onChange={(e) => updateGameSettings({ autoPassTurnInCoop: e.target.checked })}
+                                    id="autoPassTurn"
+                                    name="autoPassTurn"
+                                    checked={autoPassTurnSetting ?? legacyAutoPassTurn ?? true}
+                                    onChange={(e) => updateGameSettings({ autoPassTurn: e.target.checked })}
                                     className="sr-only peer"
                                 />
                                 <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-focus-within:ring-2 peer-focus-within:ring-cyan-500 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>

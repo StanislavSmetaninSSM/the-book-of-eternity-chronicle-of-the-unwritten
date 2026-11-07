@@ -1,7 +1,17 @@
 
+// Fonts ship with the bundle: the game is single-player and must not depend on a CDN.
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
+import '@fontsource/lora/400.css';
+import '@fontsource/lora/400-italic.css';
+import '@fontsource/lora/700.css';
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import NotificationHost from './components/NotificationHost';
 import ErrorBoundary from './components/ErrorBoundary';
 import { LocalizationProvider } from './context/LocalizationContext';
 import { SpeechProvider } from './context/SpeechContext';
@@ -34,6 +44,7 @@ root.render(
       <LocalizationProvider>
         <SpeechProvider>
           <App />
+          <NotificationHost />
         </SpeechProvider>
       </LocalizationProvider>
     </ErrorBoundary>

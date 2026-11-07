@@ -1,9 +1,9 @@
-import { test } from 'node:test';
+import { test, after} from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'vite';
+import { getTestServer, closeTestServer } from './helpers/testServer.mjs';
 
 test('legacy host, player and spectator saves become local without losing party, history, or pending actions', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { localizeLegacySave } = await server.ssrLoadModule('/utils/localizeLegacySave.ts');
     for (const role of ['host', 'player', 'spectator', 'none', undefined]) {
@@ -31,7 +31,7 @@ test('legacy host, player and spectator saves become local without losing party,
 });
 
 test('malformed party indices resolve only unambiguous identity without overwriting characters', async () => {
- const server = await createServer({configFile:false,server:{middlewareMode:true},appType:'custom',logLevel:'error'});
+ const server = await getTestServer();
  try {
   const {localizeLegacySave}=await server.ssrLoadModule('/utils/localizeLegacySave.ts');
   const a={playerId:'a'}, b={playerId:'b'};
@@ -53,5 +53,17 @@ test('malformed party indices resolve only unambiguous identity without overwrit
   assert.deepEqual(restoredEmptyRoster.gameState.players.map(p=>p.playerId),['b']);
   assert.equal(restoredEmptyRoster.gameState.activePlayerIndex,0);
   assert.deepEqual(emptyRoster.gameState.players,[]);
+  // A roster that lost the separate displayed character is healed from the index.
+  const healed=localizeLegacySave({gameState:{players:[a,b],activePlayerIndex:1},gameContext:{}});
+  assert.equal(healed.gameState.playerCharacter.playerId,'b');
+  assert.equal(healed.gameState.activePlayerIndex,1);
+  const healedSingle=localizeLegacySave({gameState:{players:[a],activePlayerIndex:7},gameContext:{}});
+  assert.equal(healedSingle.gameState.playerCharacter.playerId,'a');
+  assert.equal(healedSingle.gameState.activePlayerIndex,0);
+  assert.throws(()=>localizeLegacySave({gameState:{players:[a,b],activePlayerIndex:-1},gameContext:{}}),/active character cannot be identified/);
+  // An empty roster entry would load as a character without identity or stats.
+  assert.throws(()=>localizeLegacySave({gameState:{players:[a,{}],playerCharacter:a,activePlayerIndex:0},gameContext:{}}),/ambiguous/);
  } finally {await server.close()}
 });
+
+after(async () => { await closeTestServer(); });

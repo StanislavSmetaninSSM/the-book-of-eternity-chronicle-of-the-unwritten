@@ -1,10 +1,10 @@
 import 'fake-indexeddb/auto';
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'vite';
+import { getTestServer, closeTestServer } from './helpers/testServer.mjs';
 
 test('new off-screen location and NPC share one resolved ID through the next context', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -34,7 +34,7 @@ test('normal turns and GM questions build context from the resolved response', a
 });
 
 test('implicit scene presence reflects NPC changes from the same turn', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -53,7 +53,7 @@ test('implicit scene presence reflects NPC changes from the same turn', async ()
 });
 
 test('a temporary location tag cannot pull a departed NPC back on later turns', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -72,7 +72,7 @@ test('a temporary location tag cannot pull a departed NPC back on later turns', 
 });
 
 test('threat completion archives a real activity once and permits a later new activity', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -111,7 +111,7 @@ test('threat completion archives a real activity once and permits a later new ac
 });
 
 test('turn manager preserves NPC location and applies item journal commands once', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   const packets = [], storage = new Map();
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k,v) => storage.set(k,v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
@@ -159,7 +159,7 @@ test('turn manager preserves NPC location and applies item journal commands once
 });
 
 test('same-coordinate vertical location retains its own ID and NPC and threat links', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -182,7 +182,7 @@ test('same-coordinate vertical location retains its own ID and NPC and threat li
 });
 
 test('new location missing coordinates cannot silently commit dangling NPC links', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -213,7 +213,7 @@ test('threat completion contract requires current activity identity', async () =
 });
 
 test('location links use ID and refuse ambiguous legacy coordinate operations', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { resolveLinkTarget } = await import('../utils/locationLinks.js');
@@ -241,7 +241,7 @@ test('location links use ID and refuse ambiguous legacy coordinate operations', 
 
 test('legacy threat activities gain stable IDs and survive save/load', async () => {
   await import('fake-indexeddb/auto');
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { ensureThreatActivityIds, updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { saveToDBSlot, loadFromDBSlot } = await server.ssrLoadModule('/utils/fileManager.ts');
@@ -262,7 +262,7 @@ test('legacy threat activities gain stable IDs and survive save/load', async () 
 });
 
 test('link merges preserve distinct destination IDs at the same coordinates', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { deepMergeResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const a = { targetLocationId: 'a', targetCoordinates: { x: 0, y: 0 }, name: 'Upper' };
@@ -273,7 +273,7 @@ test('link merges preserve distinct destination IDs at the same coordinates', as
 });
 
 test('skipped unsafe commands are reported without changing target state', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { translate } = await server.ssrLoadModule('/utils/localization.ts');
@@ -299,7 +299,7 @@ test('skipped unsafe commands are reported without changing target state', async
 });
 
 test('turn warnings enter visible history and context together with unchanged world state', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   const packets = [], storage = new Map();
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k,v) => storage.set(k,v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
@@ -340,7 +340,7 @@ test('turn warnings enter visible history and context together with unchanged wo
 });
 
 test('completing one threat activity and starting another in the same response archives the old one', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const here = { locationId: 'here', coordinates: { x: 1, y: 0 }, activeThreats: [{ threatId: 'wolves', name: 'Wolves', currentActivity: { activityId: 'raid', activityName: 'Raid', timeSpentMinutes: 20 }, completedActivities: [] }] };
@@ -371,7 +371,7 @@ test('completing one threat activity and starting another in the same response a
 });
 
 test('temporary location and cross-entity ID collisions are rejected instead of misdirecting NPCs', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -409,7 +409,7 @@ test('temporary location and cross-entity ID collisions are rejected instead of 
 });
 
 test('ID-only links acquire valid target coordinates and legacy malformed links do not crash the map', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const home = { locationId: 'home', name: 'Home', coordinates: { x: 0, y: 0 }, adjacencyMap: [] };
@@ -435,7 +435,7 @@ test('ID-only links acquire valid target coordinates and legacy malformed links 
 });
 
 test('stale activity updates cannot rewrite another activity identity', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const here = { locationId: 'here', coordinates: { x: 0, y: 0 }, activeThreats: [{ threatId: 'wolf', intensity: 1, currentActivity: { activityId: 'new', activityName: 'Raid', timeSpentMinutes: 5 } }] };
@@ -450,7 +450,7 @@ test('stale activity updates cannot rewrite another activity identity', async ()
 });
 
 test('entering a newly declared location preserves full declaration and current overrides', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -475,7 +475,7 @@ test('entering a newly declared location preserves full declaration and current 
 });
 
 test('stale identified activity cannot restart an idle threat', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const home = { locationId: 'home', coordinates: { x: 0, y: 0 }, activeThreats: [{ threatId: 'wolf', name: 'Wolves', currentActivity: null, completedActivities: [{ activityId: 'old', activityName: 'Raid', completionTurn: 1 }] }] };
@@ -490,7 +490,7 @@ test('stale identified activity cannot restart an idle threat', async () => {
 });
 
 test('embedded location threat activity changes use identity and completion checks', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const home = { locationId: 'home', coordinates: { x: 0, y: 0 }, activeThreats: [{ threatId: 'wolf', name: 'Wolves', intensity: 1, currentActivity: { activityId: 'new', activityName: 'Raid', timeSpentMinutes: 5 }, completedActivities: [] }] };
@@ -506,7 +506,7 @@ test('embedded location threat activity changes use identity and completion chec
 });
 
 test('null legacy links do not interrupt remote link operations', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const home = { locationId: 'home', coordinates: { x: 0, y: 0 } };
@@ -523,7 +523,7 @@ test('null legacy links do not interrupt remote link operations', async () => {
 });
 
 test('current location threat updates cannot bypass activity identity checks', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -542,7 +542,7 @@ test('current location threat updates cannot bypass activity identity checks', a
 });
 
 test('embedded threat updates reject conflicting IDs and ambiguous names', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap, createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -575,7 +575,7 @@ test('embedded threat updates reject conflicting IDs and ambiguous names', async
 });
 
 test('stage merge preserves distinct same-name locations and their NPC references', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse, mergeStageResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -612,7 +612,7 @@ test('stage merge preserves distinct same-name locations and their NPC reference
 });
 
 test('name-only updates of off-screen threats are resolved before assigning new IDs', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -635,7 +635,7 @@ test('name-only updates of off-screen threats are resolved before assigning new 
 });
 
 test('same-name threats in one location remain distinct through updates and save/load', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext, updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse, mergeStageResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -673,7 +673,7 @@ test('same-name threats in one location remain distinct through updates and save
 });
 
 test('temporary references reject tags of the wrong entity type before changing state', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -722,7 +722,7 @@ test('temporary references reject tags of the wrong entity type before changing 
 });
 
 test('turn-local tags cannot redirect resolved NPC relationships or old factions', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -756,7 +756,7 @@ test('turn-local tags cannot redirect resolved NPC relationships or old factions
 });
 
 test('stale location tag does not override an explicit threat destination', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { updateWorldMap } = await server.ssrLoadModule('/utils/gameContext.ts');
     const home = { locationId: 'home', coordinates: { x: 0, y: 0 }, activeThreats: [] };
@@ -768,7 +768,7 @@ test('stale location tag does not override an explicit threat destination', asyn
 });
 
 test('mixed, invalid and repeated transfers reject the whole turn, preserve history, stash and player loading state', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   const packets = [], storage = new Map();
   let scenario = 'mixed';
@@ -827,3 +827,5 @@ test('mixed, invalid and repeated transfers reject the whole turn, preserve hist
     }
   } finally { globalThis.fetch = oldFetch; if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; await server.close(); }
 });
+
+after(async () => { await closeTestServer(); });

@@ -19,6 +19,9 @@ import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
 import { processAndApplyResponse } from '../utils/responseProcessor';
 import { restorePlayerStats } from '../utils/restorePlayer';
+import { cloneGameStateForEdit } from '../utils/gameStateClone';
+import { migrateGameSettings } from '../utils/settingsMigration';
+import { withLiveActivePlayer } from '../utils/partyView';
 import { recalculateAllWeights } from '../utils/inventoryManager';
 import { recalculateDerivedStats, buildNextContext, createInitialContext, calculateDate, calculateTotalMinutes, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
 import {
@@ -32,6 +35,8 @@ import {
     saveCrashRecoveryPoint,
     loadInterruptedTurnRecovery,
     clearInterruptedTurnRecoveryIfUnchanged,
+    listDBSlots,
+    sweepUnusedImages,
 } from '../utils/fileManager';
 import type { CrashRecoveryMarker, CrashRecoveryMetadata, CrashRecoveryReason, InterruptedTurnRecovery } from '../utils/fileManager';
 import { initializeAndPreviewSound, playNotificationSound } from '../utils/soundManager';
@@ -42,6 +47,7 @@ import { deepStripModerationSymbols } from '../utils/textUtils';
 import { gameData } from '../utils/localizationGameData';
 import { translate } from '../utils/localization';
 import { cancelInterruptedArenaGmRequest, requestArenaGmImage } from '../utils/arenaGmRelay';
+import { notifyError } from '../utils/notifications';
 
 
 
@@ -78,6 +84,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // in one React update. Independent setters are still exposed to the rest of
     // the lifecycle, but share one ordered state queue.
     const [core, setCore] = useState<{ gameState: GameState | null; gameHistory: ChatMessage[]; turnNumber: number | null; partyRevision: number }>({ gameState: null, gameHistory: [], turnNumber: null, partyRevision: 0 });
+    // Mirrors the committed core so a transition can be evaluated eagerly to learn
+    // whether it would actually change anything.
+    const coreRef = useRef(core);
+    coreRef.current = core;
     const { gameState, gameHistory, turnNumber } = core;
     const _setGameState = useCallback((action: React.SetStateAction<GameState | null>) => setCore(previous => {
         const next = typeof action === 'function' ? action(previous.gameState) : action;
@@ -306,17 +316,25 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // Unlike separate history/turn setters, this callback is pure inside the
     // React queue. A hold is acquired before scheduling and released only
     // after the matching composite update has committed.
-    // Returns whether the transition was accepted. Callers that own user input
-    // must not discard it when the transition is refused.
+    // Returns whether the transition produced a result that is now queued for commit.
+    // Callers that own user input must not discard it when the transition is refused.
+    // The transition is evaluated eagerly against the committed core so a no-op (an
+    // invalid target, a stale index) reports `false` instead of claiming success.
     const setPartyTransition = useCallback((transition: (state: GameState | null, turn: number | null) => { gameState: GameState; turnNumber: number | null; message: ChatMessage } | null): boolean => {
         if (pendingPartyTransitionRef.current) { setError(mutationMessageRef.current.delivery); return false; }
+        const base = coreRef.current;
+        const outcome = transition(base.gameState, base.turnNumber);
+        if (!outcome) return false;
         const revision = beginGameplayMutation(gameplayMutationRevisionRef, gameplayMutationPendingRef);
         if (revision === null) { setError(mutationMessageRef.current.delivery); return false; }
         stateMutationRevisionRef.current = revision;
         historyMutationRevisionRef.current = revision;
         pendingPartyTransitionRef.current = { revision };
         setCore(previous => {
-            const result = transition(previous.gameState, previous.turnNumber);
+            // Reuse the eager result unless the committed core moved underneath us.
+            const result = previous.gameState === base.gameState && previous.turnNumber === base.turnNumber
+                ? outcome
+                : transition(previous.gameState, previous.turnNumber);
             if (!result) return { ...previous, partyRevision: revision };
             const state = sanitizeGameState(result.gameState);
             return { ...previous, gameState: state, gameHistory: [...previous.gameHistory, result.message], turnNumber: result.turnNumber, partyRevision: revision };
@@ -441,7 +459,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (gameContextRef.current) {
             if (gameState) {
                 gameContextRef.current.playerCharacter = gameState.playerCharacter;
-                gameContextRef.current.players = gameState.players;
+                // The roster slot of the active character lags behind playerCharacter
+                // between turns; the GM prompt treats `players` as the party snapshot.
+                gameContextRef.current.players = withLiveActivePlayer(gameState.players, gameState.playerCharacter);
                 gameContextRef.current.encounteredNPCs = gameState.encounteredNPCs;
                 gameContextRef.current.encounteredFactions = gameState.encounteredFactions;
                 gameContextRef.current.activeQuests = gameState.activeQuests;
@@ -459,11 +479,20 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (worldState) {
                 gameContextRef.current.worldState = worldState;
             }
+            // Manual party passes advance the turn counter without a GM turn, so
+            // the persisted/GM-visible counter must follow the displayed one.
+            if (typeof turnNumber === 'number') {
+                gameContextRef.current.currentTurnNumber = turnNumber;
+            }
         }
-    }, [gameState, gameSettings, superInstructions, worldState]);
+    }, [gameState, gameSettings, superInstructions, worldState, turnNumber]);
 
     const restoreFromSaveData = useCallback((source: SaveFile) => {
         const data = localizeLegacySave(source);
+        // Old saves keep the pre-single-player settings key; rename it before it is used.
+        if (data.gameContext?.gameSettings) {
+            data.gameContext.gameSettings = migrateGameSettings(data.gameContext.gameSettings);
+        }
         syncRevisionRef.current += 1;
         clearPendingContextEdits();
         if (activeTurnRef.current) abortControllerRef.current?.abort();
@@ -895,6 +924,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setCrashRecoveryMarker(getCrashRecoveryMarker());
                 const interruptedTurn = await loadInterruptedTurnRecovery();
                 if (interruptedTurn) setInterruptedTurnRecovery(interruptedTurn);
+                // Database slots are offered on the start screen, so read them before
+                // the game begins instead of only after the first save or delete.
+                setDbSaveSlots(await listDBSlots());
             } catch (e) {
                 console.error("Failed to fetch initial save data from DB", e);
             }
@@ -975,7 +1007,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 playerIds.add(player.playerId);
             }
 
-            const nextGameState = JSON.parse(JSON.stringify(prevState));
+            const nextGameState = cloneGameStateForEdit(prevState);
 
             const currentActivePlayerIndex = nextGameState.activePlayerIndex;
             const outgoingPlayerSnapshot = nextGameState.players[currentActivePlayerIndex];
@@ -1328,6 +1360,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     : 'The game state changed while recovery was loading. Retry if you want to load the checkpoint.');
                 return false;
             }
+            if (data.missingImageCount) {
+                console.warn(`Crash recovery restored ${data.missingImageCount} image(s) fewer than it references.`);
+            }
             restoreFromSaveData(data);
             return true;
         } catch (e: any) {
@@ -1547,6 +1582,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (!prev) return null;
             return { ...prev, imageCache: {} };
         });
+        // Every image is gone from the game state here, so the blobs that no autosave or
+        // slot still points at can go right away instead of waiting for the next save.
+        // A single deletion does not sweep: images generated during the current turn are
+        // not in any stored record yet, and the sweep would delete them.
+        void sweepUnusedImages({ force: true }).catch(() => undefined);
     }, [setPresentationState]);
 
     const regenerateLastResponse = useCallback(async (): Promise<boolean> => {
@@ -1607,7 +1647,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
 
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
@@ -1639,7 +1679,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => w.woundId !== woundId);
@@ -1663,7 +1703,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
 
             let woundToRemove: Wound | undefined;
 
@@ -1707,7 +1747,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             if (characterType === 'player') {
                 const pc = newState.playerCharacter as PlayerCharacter;
                 pc.playerWounds = pc.playerWounds.filter((w: Wound) => !w.healingState || w.healingState.currentState !== 'Healed');
@@ -2275,7 +2315,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                                 if (!prev) return null;
                                 const existing = (prev.cinematics || []).find(c => c.id === cinematic.id);
                                 if (existing) {
-                                    alert('A cinematic with this ID already exists.');
+                                    notifyError('A cinematic with this ID already exists.');
                                     return prev;
                                 }
                                 const cinematics = [...(prev.cinematics || []), cinematic];

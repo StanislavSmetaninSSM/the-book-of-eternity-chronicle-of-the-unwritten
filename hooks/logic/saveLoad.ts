@@ -2,7 +2,9 @@
 import React from 'react';
 // FIX: Imported all necessary types from the newly defined types.ts to resolve multiple import errors.
 import { GameState, GameContext, ChatMessage, SaveFile, DBSaveSlotInfo, Item, Location, NPC, PlayerCharacter, Faction, WorldEvent, Cinematic, Combatant } from '../../types';
-import { prepareSaveGameFile, loadGameFromFile, saveToDB, loadFromDB, getAutosaveTimestampFromDB, saveToDBSlot, loadFromDBSlot, listDBSlots, deleteDBSlot } from '../../utils/fileManager';
+import { prepareSaveFiles, loadSaveBundleFromFiles, saveToDB, loadFromDB, getAutosaveTimestampFromDB, saveToDBSlot, loadFromDBSlot, listDBSlots, deleteDBSlot } from '../../utils/fileManager';
+import { applyImageBudget, MAX_IMAGES_PER_SAVE, MAX_IMAGE_BYTES_PER_SAVE } from '../../utils/saveImageBudget';
+import { notifyError, notifySuccess, notifyWarning } from '../../utils/notifications';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -37,6 +39,14 @@ export const createSaveLoadManager = (
         setIsSaving: React.Dispatch<React.SetStateAction<boolean>>,
     }
 ) => {
+    const warnMissingImages = (count: number) => {
+        notifyWarning(t('Some images were missing and were skipped ({count}).', { count }));
+    };
+
+    const informMissingImages = (count: number) => {
+        notifyWarning(t('Some images were not found: import the images file together with the save ({count}).', { count }));
+    };
+
     const packageSaveData = (gameState: GameState, performGC: boolean = true): SaveFile | null => {
         if (!gameContextRef.current || !gameState) {
             return null;
@@ -196,6 +206,22 @@ export const createSaveLoadManager = (
             };
             
             console.log(`Image Cache GC: Kept ${keptCount}, Removed ${removedCount} unused images.`);
+
+            // Even the surviving images are base64 payloads that every slot copy and
+            // checkpoint duplicates, so a single save is kept within a hard budget.
+            const budgeted = applyImageBudget(cleanedCache, {
+                maxEntries: MAX_IMAGES_PER_SAVE,
+                maxBytes: MAX_IMAGE_BYTES_PER_SAVE,
+                priorityKeys: [sceneImagePrompt, gameState.playerCharacter?.image_prompt],
+            });
+            if (budgeted.omittedCount > 0) {
+                console.warn(`Save image budget: kept ${budgeted.keptKeys.length} images, omitted ${budgeted.omittedCount} (${Math.round(budgeted.bytes / 1024)} KB).`);
+                rawSaveData.gameState = {
+                    ...rawSaveData.gameState,
+                    imageCache: budgeted.cache as typeof cleanedCache
+                };
+                rawSaveData.omittedImageCount = budgeted.omittedCount;
+            }
         }
 
         return rawSaveData;
@@ -204,10 +230,14 @@ export const createSaveLoadManager = (
     const autosave = async (saveData: SaveFile) => {
         if (saveData) {
             try {
-                await saveToDB(saveData);
+                const result = await saveToDB(saveData);
                 setAutosaveTimestamp(saveData.timestamp);
+                if (result?.imagesOmittedForQuota) {
+                    notifyWarning(t('autosave_images_dropped'));
+                }
             } catch (e) {
                 console.error("Autosave to DB failed", e);
+                notifyWarning(t('Failed to save game.'));
             }
         }
     };
@@ -221,12 +251,16 @@ export const createSaveLoadManager = (
             // Manual save - Perform GC (true).
             const saveData = packageSaveData(currentGameState, true);
             if (!saveData) throw new Error('The game context is not ready to save.');
+            if (saveData.omittedImageCount) {
+                notifyWarning(t('save_images_trimmed', { count: saveData.omittedImageCount }));
+            }
             // Do not call showSaveFilePicker here: Arena runs this UI in a
-            // cross-origin iframe. Return a Blob URL for a real clickable link.
-            return prepareSaveGameFile(saveData);
+            // cross-origin iframe. Return Blob URLs for real clickable links: one
+            // portable file and a save/images pair that mirrors the in-app storage.
+            return await prepareSaveFiles(saveData);
         } catch (e) {
             console.error("Save game file preparation failed", e);
-            alert(t('Failed to save game.') + ` ${e instanceof Error ? e.message : e}`);
+            notifyError(t('Failed to save game.') + ` ${e instanceof Error ? e.message : e}`);
             return null;
         } finally {
             setIsSaving(false);
@@ -236,20 +270,31 @@ export const createSaveLoadManager = (
     const loadGame = async (): Promise<boolean> => {
         const canCommit = beginLocalLoad();
         if (!canCommit) return false;
-        const data = await loadGameFromFile(t);
-        if (!data || !canCommit()) return false;
-        try { restoreFromSaveData(data); return true; }
-        catch (e) { alert(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`); return false; }
+        const result = await loadSaveBundleFromFiles(t);
+        if (!result || !canCommit()) return false;
+        if (!result.saveData) {
+            // Only the images file was picked: the bytes are stored, the save is next.
+            notifySuccess(t('Images were added: {count}. Now load the save file.', { count: result.imagesImported }));
+            return false;
+        }
+        if (result.missingImages > 0) {
+            informMissingImages(result.missingImages);
+        } else if (result.imagesImported > 0) {
+            notifySuccess(t('Imported images: {count}.', { count: result.imagesImported }));
+        }
+        try { restoreFromSaveData(result.saveData); return true; }
+        catch (e) { notifyError(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`); return false; }
     };
 
     const loadAutosave = async (): Promise<boolean> => {
         const canCommit = beginLocalLoad();
         if (!canCommit) return false;
         const data = await loadFromDB();
-        if (!data) { alert(t("No autosave data found.")); return false; }
+        if (!data) { notifyWarning(t("No autosave data found.")); return false; }
         if (!canCommit()) return false;
+        if (data.missingImageCount) warnMissingImages(data.missingImageCount);
         try { restoreFromSaveData(data); return true; }
-        catch (e) { alert(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`); return false; }
+        catch (e) { notifyError(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`); return false; }
     };
 
     const refreshDbSaveSlots = async () => {
@@ -267,13 +312,16 @@ export const createSaveLoadManager = (
             // Manual save to slot - Perform GC (true)
             const saveData = packageSaveData(gameStateRef.current!, true);
             if (saveData) {
+                if (saveData.omittedImageCount) {
+                    notifyWarning(t('save_images_trimmed', { count: saveData.omittedImageCount }));
+                }
                 await saveToDBSlot(slotId, saveData);
                 await refreshDbSaveSlots();
-                alert(t('Game saved to slot {slotId}.', { slotId }));
+                notifySuccess(t('Game saved to slot {slotId}.', { slotId }));
             }
         } catch(e) {
             console.error("Save to slot failed", e);
-            alert(t('Failed to save game.'));
+            notifyError(t('Failed to save game.'));
         } finally {
             setIsSaving(false);
         }
@@ -284,13 +332,14 @@ export const createSaveLoadManager = (
         if (!canCommit) return false;
         try {
             const data = await loadFromDBSlot(slotId);
-            if (!data) { alert(t('No data found in this slot.')); return false; }
+            if (!data) { notifyWarning(t('No data found in this slot.')); return false; }
             if (!canCommit()) return false;
+            if (data.missingImageCount) warnMissingImages(data.missingImageCount);
             restoreFromSaveData(data);
             return true;
         } catch (e) {
             console.error("Load from slot failed", e);
-            alert(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`);
+            notifyError(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`);
             return false;
         }
     };
@@ -299,10 +348,10 @@ export const createSaveLoadManager = (
         try {
             await deleteDBSlot(slotId);
             await refreshDbSaveSlots();
-            alert(t('Save slot {slotId} deleted.', { slotId }));
+            notifySuccess(t('Save slot {slotId} deleted.', { slotId }));
         } catch(e) {
             console.error("Delete slot failed", e);
-            alert(t('Failed to delete save slot.'));
+            notifyError(t('Failed to delete save slot.'));
         }
     };
 

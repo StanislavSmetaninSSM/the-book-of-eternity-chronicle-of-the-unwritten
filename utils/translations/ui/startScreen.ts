@@ -2,6 +2,9 @@
 export const startScreen = {
   en: {
     "An interrupted turn was saved.": "An interrupted turn was saved.",
+    "previous_session_crashed": "Previous session crashed",
+    "previous_session_recovery_attempted": "Recovery was already attempted. If the error repeats, load an autosave or a save file.",
+    "load_last_stable_state": "Load last stable state",
     "Restoring saved setup draft...": "Restoring saved setup draft...",
     "Unfinished setup restored.": "Unfinished setup restored.",
     "Submitted action": "Submitted action",
@@ -54,7 +57,8 @@ export const startScreen = {
     "Failed to load game file. It might be corrupted or in an invalid format.": "Failed to load game file. It might be corrupted or in an invalid format.",
     "Failed to load autosave data. It may be corrupted.": "Failed to load autosave data. It may be corrupted.",
     "Or continue your journey": "Or continue your journey",
-    "Load from File": "Load from File",
+    "Load from File": "Load from File",    "Choose the save file and, if you have it, the images file - both at once is fine.": "Choose the save file and, if you have it, the images file - both at once is fine.",
+
     "Load Autosave": "Load Autosave",
     // Custom class/race
     "Create Custom Class": "Create Custom Class",
@@ -122,15 +126,9 @@ export const startScreen = {
     "Please enter a Host ID.": "Please enter a Host ID.",
     // Network status
     "Connecting to host {hostId}...": "Connecting to host {hostId}...",
-    "connected_to_host": "[System] Connected to host {hostId}.",
-    "connection_lost": "[System] Connection to host lost.",
-    "game_state_synced": "[System] Game state synchronized with host.",
     "creating_character": "Creating Your Character",
     "creating_character_desc": "Please wait while the host sets up the world. Once synchronized, you will create your character.",
     "submit_character": "Submit Character",
-    "start_hosting_button": "Start Hosting",
-    "hosting_disabled_coop_none": "Hosting is only available for cooperative game types. Please change the game mode in the 'System' tab first.",
-    "hosting_started_message": "[System] Hosting started. Your Host ID is {hostId}. Share it with other players.",
     "Custom": "Custom",
     "Create your own world from scratch...": "Create your own world from scratch...",
     "custom_universe_required_warning": "To start a game in a custom universe, please create one first.",
@@ -141,6 +139,9 @@ export const startScreen = {
   },
   ru: {
     "An interrupted turn was saved.": "Сохранён прерванный ход.",
+    "previous_session_crashed": "Обнаружен сбой прошлой сессии",
+    "previous_session_recovery_attempted": "Восстановление уже пробовали. Если ошибка повторится, загрузите автосохранение или файл.",
+    "load_last_stable_state": "Загрузить последнее стабильное состояние",
     "Restoring saved setup draft...": "Восстанавливаем сохранённую настройку персонажа...",
     "Unfinished setup restored.": "Черновик настройки персонажа восстановлен.",
     "Submitted action": "Отправленное действие",
@@ -193,7 +194,8 @@ export const startScreen = {
     "Failed to load game file. It might be corrupted or in an invalid format.": "Не удалось загрузить файл сохранения. Он может быть поврежден или иметь неверный формат.",
     "Failed to load autosave data. It may be corrupted.": "Не удалось загрузить автосохранение. Оно может быть повреждено.",
     "Or continue your journey": "Или продолжите свое путешествие",
-    "Load from File": "Загрузить из файла",
+    "Load from File": "Загрузить из файла",    "Выберите файл сохранения и, если есть, файл с картинками — можно сразу оба.": "Выберите файл сохранения и, если есть, файл с картинками — можно сразу оба.",
+
     "Load Autosave": "Загрузить автосохранение",
     // Custom class/race
     "Create Custom Class": "Создать свой класс",
@@ -261,15 +263,9 @@ export const startScreen = {
     "Please enter a Host ID.": "Пожалуйста, введите ID хоста.",
     // Network status
     "Connecting to host {hostId}...": "Подключение к хосту {hostId}...",
-    "connected_to_host": "[Система] Подключено к хосту {hostId}.",
-    "connection_lost": "[Система] Соединение с хостом потеряно.",
-    "game_state_synced": "[Система] Состояние игры синхронизировано с хостом.",
     "creating_character": "Создание вашего персонажа",
     "creating_character_desc": "Пожалуйста, подождите, пока хост настраивает мир. После синхронизации вы сможете создать своего персонажа.",
     "submit_character": "Подтвердить персонажа",
-    "start_hosting_button": "Начать хостинг",
-    "hosting_disabled_coop_none": "Хостинг доступен только для кооперативных режимов. Пожалуйста, сначала измените режим игры во вкладке 'Система'.",
-    "hosting_started_message": "[Система] Хостинг запущен. Ваш ID хоста: {hostId}. Поделитесь им с другими игроками.",
     "Custom": "Своя",
     "Create your own world from scratch...": "Создайте свой собственный мир с нуля...",
     "custom_universe_required_warning": "Для начала игры в своей вселенной, пожалуйста, сначала создайте её.",

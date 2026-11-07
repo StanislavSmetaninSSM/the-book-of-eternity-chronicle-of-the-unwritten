@@ -1,6 +1,7 @@
 
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { useLocalization } from './LocalizationContext';
+import { notifyWarning } from '../utils/notifications';
 
 interface SpeechContextType {
     speak: (text: string) => void;
@@ -26,7 +27,7 @@ export const SpeechProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const speak = useCallback((text: string) => {
         if (!('speechSynthesis' in window)) {
             console.error("Speech Synthesis not supported by this browser.");
-            alert("Speech Synthesis not supported by this browser.");
+            notifyWarning("Speech Synthesis not supported by this browser.");
             return;
         }
 

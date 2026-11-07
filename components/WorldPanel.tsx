@@ -48,6 +48,7 @@ import {
 import ConfirmationModal from './ConfirmationModal';
 import { PencilSquareIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import Modal from './Modal';
+import { notifyWarning } from '../utils/notifications';
 
 interface WorldPanelProps {
     worldState: WorldState | null;
@@ -555,7 +556,7 @@ const WorldPanel = (props: WorldPanelProps) => {
         if (!isNaN(start) && !isNaN(end) && start <= end) {
             setIsRangeDeleteConfirmOpen(true);
         } else {
-            alert(t('invalid_turn_range'));
+            notifyWarning(t('invalid_turn_range'));
         }
     };
     

@@ -1,6 +1,6 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {createServer} from 'vite';
+import {test, after} from 'node:test';import assert from 'node:assert/strict';import { getTestServer, closeTestServer } from './helpers/testServer.mjs';
 test('companion transfers do not merge merely by name or erase distinct item metadata',async()=>{
- const server=await createServer({configFile:false,optimizeDeps:{noDiscovery:true,include:[]},server:{middlewareMode:true},appType:'custom',logLevel:'silent'});
+ const server = await getTestServer();
  try{
   const {transferItemBetweenCharacters}=await server.ssrLoadModule('/utils/inventoryManager.ts');
   const source={existedId:'a',name:'Potion',count:2,weight:1,description:'rare',equipmentSlot:null,contentsPath:null},target={...source,existedId:'b',count:3,description:'common'};
@@ -12,7 +12,7 @@ test('companion transfers do not merge merely by name or erase distinct item met
 });
 
 test('only equivalent ordinary root stacks merge; sentient and container stacks remain separate',async()=>{
- const server=await createServer({configFile:false,optimizeDeps:{noDiscovery:true,include:[]},server:{middlewareMode:true},appType:'custom',logLevel:'silent'});
+ const server = await getTestServer();
  try{
   const {transferItemBetweenCharacters}=await server.ssrLoadModule('/utils/inventoryManager.ts');
   const original={existedId:'a',name:'Potion',count:2,weight:1,description:'same',equipmentSlot:null,contentsPath:null};
@@ -26,3 +26,5 @@ test('only equivalent ordinary root stacks merge; sentient and container stacks 
   const nested=run(original,{...same,contentsPath:['bag']});assert.equal(nested.length,2);
  }finally{await server.close()}
 });
+
+after(async () => { await closeTestServer(); });

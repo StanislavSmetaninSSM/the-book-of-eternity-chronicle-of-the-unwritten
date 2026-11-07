@@ -1,6 +1,11 @@
 
 
 import { ChatMessage, GameContext, GameState, SaveFile, DBSaveSlotInfo } from "../types";
+import { budgetRecoveryState, isQuotaError, stripImagesForQuota } from './saveImageBudget';
+import { dehydrateSaveImages, dehydrateStateImages, hydrateSaveImages, hydrateStateImages, collectImageRefs } from './saveImageRefs';
+import { imageRefId, sweepUnreferencedImages } from './imageBlobStore';
+import { applySaveBundleDocuments, splitSaveImages, type SaveBundleImportResult } from './saveBundle';
+import { notifyError } from './notifications';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -9,13 +14,44 @@ export interface PreparedSaveFile {
   url: string;
 }
 
+export interface PreparedSaveFiles {
+  /** One self-contained file: images travel inside it as base64. */
+  single: PreparedSaveFile;
+  /** The same save with `blob:` references instead of image payloads. */
+  save: PreparedSaveFile;
+  /** The images `save` needs; null when the save has no cached images. */
+  images: PreparedSaveFile | null;
+}
+
+const saveFileDate = (): string => new Date().toISOString().slice(0, 10);
+
+const prepareJsonFile = (filename: string, data: unknown): PreparedSaveFile => {
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json;charset=utf-8' });
+  return { filename, url: URL.createObjectURL(blob) };
+};
+
 /** Prepare a save as a Blob URL; the UI renders a real user-clickable download link. */
 export function prepareSaveGameFile(saveData: SaveFile): PreparedSaveFile {
-  const blob = new Blob([JSON.stringify(saveData)], { type: 'application/json;charset=utf-8' });
-  return {
-    filename: `gemini-rpg-save-${new Date().toISOString().slice(0, 10)}.json`,
-    url: URL.createObjectURL(blob),
-  };
+  return prepareJsonFile(`gemini-rpg-save-${saveFileDate()}.json`, saveData);
+}
+
+/**
+ * Prepares both export shapes: one portable file and a save/images pair. The pair keeps
+ * the save small and lets the player carry the images separately; the single file stays
+ * available because a lone file cannot be mismatched with its images.
+ */
+export async function prepareSaveFiles(saveData: SaveFile): Promise<PreparedSaveFiles> {
+  const date = saveFileDate();
+  const single = prepareJsonFile(`gemini-rpg-save-${date}.json`, saveData);
+  const { saveData: referenced, bundle } = await splitSaveImages(saveData);
+  const noImages = prepareJsonFile(`gemini-rpg-save-${date}-save.json`, referenced);
+  const images = bundle ? prepareJsonFile(`gemini-rpg-save-${date}-images.json`, bundle) : null;
+  return { single, save: noImages, images };
+}
+
+export function releasePreparedSaveFiles(files: PreparedSaveFiles | null | undefined): void {
+  if (!files) return;
+  [files.single, files.save, files.images].forEach(file => { if (file) releasePreparedSaveFile(file); });
 }
 
 export function releasePreparedSaveFile(saveFile: PreparedSaveFile): void {
@@ -67,14 +103,16 @@ export function loadGameFromFile(t: TFunction): Promise<SaveFile | null> {
           const data = JSON.parse(text);
           
           if (data && data.gameContext && data.gameState) {
-            resolve(data as SaveFile);
+            // A save exported as part of a pair keeps references; resolve them when the
+            // images are already in this browser, otherwise the cache stays empty.
+            resolve(await hydrateSaveImages(data as SaveFile));
           } else {
-            alert(t('Invalid save file format.'));
+            notifyError(t('Invalid save file format.'));
             resolve(null);
           }
         } catch (err) {
           console.error('Error parsing save file:', err);
-          alert(t('Could not read or parse the save file.'));
+          notifyError(t('Could not read or parse the save file.'));
           resolve(null);
         } finally {
           cleanup();
@@ -89,6 +127,80 @@ export function loadGameFromFile(t: TFunction): Promise<SaveFile | null> {
     document.body.appendChild(input);
     input.click();
   });
+}
+
+/**
+ * Opens the file picker and parses every chosen JSON document. Import accepts a single
+ * save file, a save plus its images file, or just an images file for an already imported
+ * save - so the picker allows several files and the caller decides what it got.
+ */
+export function pickSaveDocuments(t: TFunction): Promise<unknown[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.multiple = true;
+    let fileSelected = false;
+
+    const cleanup = () => {
+      if (document.body.contains(input)) document.body.removeChild(input);
+      window.removeEventListener('focus', handleFocus);
+    };
+
+    const handleFocus = () => {
+      setTimeout(() => {
+        if (!fileSelected) {
+          console.log('Load operation cancelled by user.');
+          cleanup();
+          resolve([]);
+        }
+      }, 500);
+    };
+
+    window.addEventListener('focus', handleFocus, { once: true });
+
+    input.onchange = async (event: Event) => {
+      fileSelected = true;
+      const target = event.target as HTMLInputElement;
+      const files = Array.from(target.files || []);
+      if (files.length === 0) { cleanup(); resolve([]); return; }
+      const documents: unknown[] = [];
+      try {
+        for (const file of files) {
+          const text = await file.text();
+          try {
+            documents.push(JSON.parse(text));
+          } catch (error) {
+            console.error('Error parsing a save document:', error);
+            notifyError(t('Could not read or parse the save file.'));
+          }
+        }
+        resolve(documents);
+      } finally {
+        cleanup();
+      }
+    };
+
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+/**
+ * Imports a save together with its images file (or a lone portable save). Images are put
+ * into the store first, then the save is restored with them; anything that could not be
+ * resolved is counted so the caller can warn the player instead of silently losing art.
+ */
+export async function loadSaveBundleFromFiles(t: TFunction): Promise<SaveBundleImportResult | null> {
+  const documents = await pickSaveDocuments(t);
+  if (documents.length === 0) return null;
+  const result = await applySaveBundleDocuments(documents);
+  if (!result) {
+    notifyError(t('Invalid save file format.'));
+    return null;
+  }
+  return result;
 }
 
 export function loadConfigurationFromFile(t: TFunction): Promise<any | null> {
@@ -129,12 +241,12 @@ export function loadConfigurationFromFile(t: TFunction): Promise<any | null> {
           if (data && data.formData && !data.gameContext && !data.gameState) {
             resolve(data);
           } else {
-            alert(t('Invalid configuration file format.'));
+            notifyError(t('Invalid configuration file format.'));
             resolve(null);
           }
         } catch (err) {
           console.error('Error parsing configuration file:', err);
-          alert(t('Could not read or parse the configuration file.'));
+          notifyError(t('Could not read or parse the configuration file.'));
           resolve(null);
         } finally {
           cleanup();
@@ -240,6 +352,7 @@ function buildSlotInfo(slotId: number, saveData: SaveFile): DBSaveSlotInfo {
     playerLevel: saveData.gameState.playerCharacter.level,
     locationName: saveData.gameState.currentLocationData.name,
     turnNumber: saveData.gameContext.currentTurnNumber,
+    imagesOmitted: Boolean(saveData.imagesOmittedForQuota || saveData.omittedImageCount),
   };
 }
 
@@ -475,26 +588,160 @@ export async function clearStartScreenDraft(): Promise<void> {
 
 // --- Autosave Functions ---
 
-export async function saveToDB(saveData: SaveFile): Promise<void> {
+async function putAutosave(saveData: SaveFile): Promise<void> {
+  const db = await openDB();
+  const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
+  const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
+  const dataToStore = { id: AUTOSAVE_ID, saveData };
+  store.put(dataToStore);
+
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => {
+      console.error('IndexedDB save transaction error:', transaction.error);
+      reject(transaction.error);
+    };
+  });
+}
+
+/**
+ * Every sweep reads all stored saves to learn which images are still referenced, and the
+ * autosave path runs on each turn, so a routine sweep is throttled. Player actions that
+ * should reclaim space immediately (slot deletion, migration) ask for a forced sweep.
+ */
+const SWEEP_INTERVAL_MS = 3 * 60_000;
+let lastSweepAt = 0;
+
+/**
+ * Deletes stored images that no autosave, crash-recovery point, checkpoint or slot refers
+ * to any more. Failures are logged and never propagated: cleanup must not break saving.
+ */
+export async function sweepUnusedImages(options: { force?: boolean } = {}): Promise<number> {
+  const now = Date.now();
+  if (!options.force && now - lastSweepAt < SWEEP_INTERVAL_MS) return 0;
+  lastSweepAt = now;
   try {
     const db = await openDB();
-    const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
-    const dataToStore = { id: AUTOSAVE_ID, saveData };
-    store.put(dataToStore);
-
-    await new Promise<void>((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => {
-        console.error('IndexedDB save transaction error:', transaction.error);
-        reject(transaction.error);
+    const records = await new Promise<unknown[]>((resolve, reject) => {
+      const transaction = db.transaction([AUTOSAVE_STORE_NAME, SLOTS_STORE_NAME, INTERRUPTED_TURNS_STORE_NAME], 'readonly');
+      const pending: unknown[] = [];
+      let remaining = 3;
+      const collect = (request: IDBRequest) => {
+        request.onsuccess = () => {
+          pending.push(request.result);
+          remaining -= 1;
+          if (remaining === 0) resolve(pending);
+        };
+        request.onerror = () => reject(request.error);
       };
+      collect(transaction.objectStore(AUTOSAVE_STORE_NAME).getAll());
+      collect(transaction.objectStore(SLOTS_STORE_NAME).getAll());
+      collect(transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).getAll());
     });
+    const referenced: string[] = [];
+    collectImageRefs(records, new Set()).forEach(ref => referenced.push(imageRefId(ref)));
+    return await sweepUnreferencedImages(referenced);
+  } catch (error) {
+    console.warn('Could not sweep unreferenced images', error);
+    return 0;
+  }
+}
+
+/**
+ * Moves images that older saves still hold as base64 into the image store. Runs once at
+ * startup; saves that already use references are left untouched.
+ */
+export async function migrateInlineImagesToImageStore(): Promise<{ records: number; images: number }> {
+  try {
+    const db = await openDB();
+    const stores = [AUTOSAVE_STORE_NAME, SLOTS_STORE_NAME, INTERRUPTED_TURNS_STORE_NAME];
+    const [autosaves, slots, checkpoints] = await new Promise<unknown[][]>((resolve, reject) => {
+      const transaction = db.transaction(stores, 'readonly');
+      const results: unknown[][] = [[], [], []];
+      let remaining = stores.length;
+      const collect = (index: number, request: IDBRequest) => {
+        request.onsuccess = () => {
+          results[index] = request.result || [];
+          remaining -= 1;
+          if (remaining === 0) resolve(results);
+        };
+        request.onerror = () => reject(request.error);
+      };
+      stores.forEach((name, index) => collect(index, transaction.objectStore(name).getAll()));
+    });
+
+    const pending: Array<{ store: string; key: string | number; value: any; stamp: string | undefined }> = [];
+    for (const record of autosaves as any[]) {
+      if (!record?.saveData) continue;
+      const saveData = await dehydrateSaveImages(record.saveData);
+      if (saveData !== record.saveData) pending.push({ store: AUTOSAVE_STORE_NAME, key: record.id, value: { ...record, saveData }, stamp: record.saveData.timestamp });
+    }
+    for (const record of slots as any[]) {
+      if (!record?.saveData) continue;
+      const saveData = await dehydrateSaveImages(record.saveData);
+      if (saveData !== record.saveData) pending.push({ store: SLOTS_STORE_NAME, key: record.slotId, value: { ...record, saveData }, stamp: record.saveData.timestamp });
+    }
+    for (const record of checkpoints as any[]) {
+      if (!record?.baseState) continue;
+      const baseState = await dehydrateStateImages(record.baseState);
+      if (baseState !== record.baseState) pending.push({ store: INTERRUPTED_TURNS_STORE_NAME, key: record.id, value: { ...record, baseState }, stamp: record.createdAt });
+    }
+
+    let written = 0;
+    if (pending.length) {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(Array.from(new Set(pending.map(item => item.store))), 'readwrite');
+        for (const item of pending) {
+          const store = transaction.objectStore(item.store);
+          // Re-read before writing: a save made while we were reading must not be
+          // overwritten with the older payload we just migrated.
+          const current = store.get(item.key);
+          current.onsuccess = () => {
+            const existing = current.result;
+            if (!existing) return;
+            const currentStamp = existing.saveData?.timestamp ?? existing.createdAt;
+            if (currentStamp !== item.stamp) return;
+            store.put(item.value);
+            written += 1;
+          };
+        }
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('Image migration was aborted.'));
+      });
+      if (written) console.info(`Moved inline images of ${written} stored save(s) into the image store.`);
+      await sweepUnusedImages({ force: true });
+    }
+    const images = collectImageRefs(pending.map(item => item.value)).size;
+    return { records: written, images };
+  } catch (error) {
+    console.warn('Could not migrate inline images into the image store', error);
+    return { records: 0, images: 0 };
+  }
+}
+
+export async function saveToDB(saveData: SaveFile): Promise<{ imagesOmittedForQuota: boolean }> {
+  let imagesOmittedForQuota = false;
+  try {
+    // Image bytes go to the image store; the record only keeps references to them.
+    const dehydrated = await dehydrateSaveImages(saveData);
+    try {
+      await putAutosave(dehydrated);
+    } catch (error) {
+      if (!isQuotaError(error)) throw error;
+      // The cached images are regenerable; losing them is far better than losing the
+      // turn because the browser refused to store the payload.
+      console.warn('Autosave failed because the storage quota is exhausted; retrying without cached images.');
+      await putAutosave(stripImagesForQuota(dehydrated));
+      imagesOmittedForQuota = true;
+    }
     writeStorageValue(AUTOSAVE_TIMESTAMP_STORAGE_KEY, saveData.timestamp);
+    await sweepUnusedImages();
   } catch (error) {
     console.error('Failed to save to IndexedDB:', error);
     throw error;
   }
+  return { imagesOmittedForQuota };
 }
 
 export async function loadFromDB(): Promise<SaveFile | null> {
@@ -504,19 +751,16 @@ export async function loadFromDB(): Promise<SaveFile | null> {
     const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
     const request = store.get(AUTOSAVE_ID);
 
-    return new Promise((resolve, reject) => {
+    const stored = await new Promise<SaveFile | null>((resolve, reject) => {
       request.onsuccess = () => {
-        if (request.result) {
-          resolve(request.result.saveData);
-        } else {
-          resolve(null);
-        }
+        resolve(request.result?.saveData ?? null);
       };
       request.onerror = () => {
         console.error('Failed to load from IndexedDB:', request.error);
         reject(request.error);
       };
     });
+    return stored ? await hydrateSaveImages(stored) : null;
   } catch (error) {
     console.error('Failed to load from IndexedDB:', error);
     return null;
@@ -527,14 +771,17 @@ let checkpointSequence = 0;
 const newCheckpointId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${++checkpointSequence}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 
 export async function saveInterruptedTurnRecovery(recovery: Omit<InterruptedTurnRecovery, 'id' | 'createdAt' | 'checkpointId'>): Promise<InterruptedTurnRecovery> {
-  const db = await openDB();
-  const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
   const checkpoint: InterruptedTurnRecovery = {
     ...recovery,
+    // A checkpoint is written before every turn; keeping the full image cache there
+    // duplicated the whole payload on each action.
+    baseState: await dehydrateStateImages(budgetRecoveryState(recovery.baseState)),
     id: INTERRUPTED_TURN_ID,
     createdAt: new Date().toISOString(),
     checkpointId: newCheckpointId(),
   };
+  const db = await openDB();
+  const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
   transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).put(checkpoint);
   await new Promise<void>((resolve, reject) => {
     transaction.oncomplete = () => resolve();
@@ -560,11 +807,13 @@ export async function loadInterruptedTurnRecovery(): Promise<InterruptedTurnReco
         store.put(recovery);
       }
     };
-    return await new Promise((resolve, reject) => {
+    const stored = await new Promise<InterruptedTurnRecovery | null>((resolve, reject) => {
       transaction.oncomplete = () => resolve(recovery);
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error || new Error('Interrupted-turn checkpoint read was aborted.'));
     });
+    if (!stored?.baseState) return stored;
+    return { ...stored, baseState: await hydrateStateImages(stored.baseState) };
   } catch (error) {
     console.error('Failed to load interrupted-turn checkpoint:', error);
     return null;
@@ -608,10 +857,16 @@ export async function saveCrashRecoveryPoint(saveData: SaveFile, reason: CrashRe
   const metadata = buildCrashRecoveryMetadata(saveData, reason);
 
   try {
+    // The crash-recovery copy only needs enough images to resume; a full cache here
+    // doubled the storage taken by the autosave it shadows.
+    const recoverySaveData: SaveFile = await dehydrateSaveImages({
+      ...saveData,
+      gameState: budgetRecoveryState(saveData.gameState, saveData.sceneImagePrompt),
+    });
     const db = await openDB();
     const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
     const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
-    store.put({ id: CRASH_RECOVERY_ID, saveData });
+    store.put({ id: CRASH_RECOVERY_ID, saveData: recoverySaveData });
 
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve();
@@ -636,7 +891,7 @@ export async function loadCrashRecoveryPoint(): Promise<SaveFile | null> {
     const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
     const request = store.get(CRASH_RECOVERY_ID);
 
-    return new Promise((resolve, reject) => {
+    const stored = await new Promise<SaveFile | null>((resolve, reject) => {
       request.onsuccess = () => {
         resolve(request.result?.saveData ?? null);
       };
@@ -645,6 +900,7 @@ export async function loadCrashRecoveryPoint(): Promise<SaveFile | null> {
         reject(request.error);
       };
     });
+    return stored ? await hydrateSaveImages(stored) : null;
   } catch (error) {
     console.error('Failed to load crash recovery point:', error);
     return null;
@@ -776,7 +1032,7 @@ export async function getAutosaveTimestampFromDB(): Promise<string | null> {
 
 // --- Save Slot Functions ---
 
-export async function saveToDBSlot(slotId: number, saveData: SaveFile): Promise<void> {
+async function putSlot(slotId: number, saveData: SaveFile): Promise<void> {
   const db = await openDB();
   const transaction = db.transaction(SLOTS_STORE_NAME, 'readwrite');
   const store = transaction.objectStore(SLOTS_STORE_NAME);
@@ -786,7 +1042,20 @@ export async function saveToDBSlot(slotId: number, saveData: SaveFile): Promise<
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
-  upsertSlotMetadata(buildSlotInfo(slotId, saveData));
+}
+
+export async function saveToDBSlot(slotId: number, saveData: SaveFile): Promise<void> {
+  let stored = await dehydrateSaveImages(saveData);
+  try {
+    await putSlot(slotId, stored);
+  } catch (error) {
+    if (!isQuotaError(error)) throw error;
+    console.warn('Slot save failed because the storage quota is exhausted; retrying without cached images.');
+    stored = stripImagesForQuota(stored);
+    await putSlot(slotId, stored);
+  }
+  upsertSlotMetadata(buildSlotInfo(slotId, stored));
+  await sweepUnusedImages();
 }
 
 export async function loadFromDBSlot(slotId: number): Promise<SaveFile | null> {
@@ -795,10 +1064,11 @@ export async function loadFromDBSlot(slotId: number): Promise<SaveFile | null> {
   const store = transaction.objectStore(SLOTS_STORE_NAME);
   const request = store.get(slotId);
 
-  return new Promise((resolve, reject) => {
+  const stored = await new Promise<SaveFile | null>((resolve, reject) => {
     request.onsuccess = () => resolve(request.result?.saveData || null);
     request.onerror = () => reject(request.error);
   });
+  return stored ? await hydrateSaveImages(stored) : null;
 }
 
 export async function deleteDBSlot(slotId: number): Promise<void> {
@@ -811,6 +1081,7 @@ export async function deleteDBSlot(slotId: number): Promise<void> {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
+  await sweepUnusedImages({ force: true });
   const existingSlots = readSlotMetadataFromStorage();
   if (existingSlots) {
     writeSlotMetadataToStorage(existingSlots.filter(slot => slot.slotId !== slotId));

@@ -1,5 +1,6 @@
 // @ts-ignore -- shared JS helpers
 import { coordinateKey, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
+import { withLiveActivePlayer } from './partyView';
 import { GameState, GameResponse, PlayerCharacter, Characteristics, Location, Faction, Language, LootTemplate, UnlockedMemory, Recipe, Item, WorldStateFlag, SkillMastery, GameSettings, WorldState, NPC, Effect, WorldEvent, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Project, CompletedProject, AdjacencyMapEntry, Calendar, CompleteThreatActivity, Month, NPCInventoryAdd, DayInfo, GameContext, ChatMessage } from '../types';
 import { gameData } from './localizationGameData';
 import { generateLootTemplates } from './lootGenerator';
@@ -778,7 +779,8 @@ export function buildNextContext(
 
     if (advanceTurn) {
         const isManualPass = currentContext.message === '[System Action] Pass turn';
-        const isAutoPass = currentContext.gameSettings.autoPassTurnInCoop ?? true;
+        const isAutoPass = currentContext.gameSettings.autoPassTurn
+            ?? currentContext.gameSettings.autoPassTurnInCoop ?? true;
         const isCoop = currentContext.gameSettings.cooperativeGameType === 'FullParty' || currentContext.gameSettings.cooperativeGameType === 'MultiplePersonalities';
 
         if (isCoop && (isAutoPass || isManualPass)) {
@@ -943,7 +945,7 @@ export function buildNextContext(
         gameSettings: currentContext.gameSettings,
         worldState: newWorldState,
         worldStateFlags: newState.worldStateFlags,
-        players: newState.players,
+        players: withLiveActivePlayer(newState.players, newState.playerCharacter),
         playerCharacter: newState.players[newActivePlayerIndex],
         currentLocation: newState.currentLocationData,
         visitedLocations: newVisitedLocations,
@@ -1013,7 +1015,8 @@ export const createInitialContext = (creationData: any, language: Language): Gam
             baseInfo: worldForContext,
             customInfo: worldInformation,
             currencyName: creationData.currencyName || currentWorld.currencyName || 'Gold',
-            calendar: localizedCalendar
+            calendar: localizedCalendar,
+            universe
         },
         nonMagicMode: creationData.nonMagicMode,
         adultMode: creationData.adultMode,
@@ -1025,7 +1028,7 @@ export const createInitialContext = (creationData: any, language: Language): Gam
         keepLatestNpcJournals: creationData.keepLatestNpcJournals,
         latestNpcJournalsCount: creationData.latestNpcJournalsCount,
         cooperativeGameType: creationData.cooperativeGameType,
-        autoPassTurnInCoop: creationData.autoPassTurnInCoop,
+        autoPassTurn: creationData.autoPassTurn ?? creationData.autoPassTurnInCoop ?? true,
         showPartyStatusPanel: creationData.showPartyStatusPanel,
         uiControlScale: creationData.uiControlScale ?? 1,
         uiFontScale: creationData.uiFontScale ?? 1,

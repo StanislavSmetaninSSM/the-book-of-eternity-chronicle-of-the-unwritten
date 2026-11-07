@@ -9,6 +9,8 @@ import { GameState, ChatMessage, NPC, Faction, PlayerCharacter, Location, Quest,
 import { deleteMessage as deleteMessageUtil, clearHalfHistory as clearHalfHistoryUtil, deleteLogs as deleteLogsUtil, forgetNpc as forgetNpcUtil, forgetFaction as forgetFactionUtil } from '../../utils/uiManager';
 import { recalculateDerivedStats, calculateDate, calculateTotalMinutes, calculateJourneyDay } from '../../utils/gameContext';
 import { recalculateAllWeights } from '../../utils/inventoryManager';
+import { cloneGameStateForEdit } from '../../utils/gameStateClone';
+import { notifyWarning } from '../../utils/notifications';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -475,7 +477,7 @@ export const createPlayerActionsManager = (
         const updateLogic = (prevState: GameState | null) => {
             if (!prevState) return null;
 
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             let wasUpdated = false;
 
             const findAndUpdateByIdOrName = (items: any[], idField: string, nameField: string) => {
@@ -748,7 +750,7 @@ export const createPlayerActionsManager = (
             const sourceItems = prevState.playerCharacter.inventory.filter(entry => entry.existedId === item.existedId);
             if (sourceItems.length !== 1 || !Number.isSafeInteger(sourceItems[0].count) || sourceItems[0].count <= 0) return prevState;
 
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             let pc = newState.playerCharacter as PlayerCharacter;
             let location = newState.currentLocationData as Location;
     
@@ -803,7 +805,7 @@ export const createPlayerActionsManager = (
             const sourceItems = priorStorage.contents.filter(entry => entry.existedId === item.existedId);
             if (sourceItems.length !== 1 || !Number.isSafeInteger(sourceItems[0].count) || sourceItems[0].count <= 0) return prevState;
 
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             let pc = newState.playerCharacter as PlayerCharacter;
             let location = newState.currentLocationData as Location;
     
@@ -818,7 +820,7 @@ export const createPlayerActionsManager = (
 
             const weightToTake = sourceItem.weight * validQuantity;
             if (pc.totalWeight + weightToTake > pc.maxWeight + pc.criticalExcessWeight) {
-                alert(t('You are carrying too much to take this item.'));
+                notifyWarning(t('You are carrying too much to take this item.'));
                 return prevState;
             }
 
@@ -857,7 +859,7 @@ export const createPlayerActionsManager = (
         setGameState(prevState => {
             if (!prevState || !prevState.currentLocationData || prevState.currentLocationData.locationId !== locationId) return prevState;
     
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             const pc = newState.playerCharacter as PlayerCharacter;
             const location = newState.currentLocationData as Location;
             const storage = location.locationStorages?.find(s => s.storageId === storageId);
@@ -884,7 +886,7 @@ export const createPlayerActionsManager = (
          setGameState(prevState => {
             if (!prevState || !prevState.currentLocationData || prevState.currentLocationData.locationId !== locationId) return prevState;
     
-            const newState = JSON.parse(JSON.stringify(prevState));
+            const newState = cloneGameStateForEdit(prevState);
             const pc = newState.playerCharacter as PlayerCharacter;
             const location = newState.currentLocationData as Location;
             const storage = location.locationStorages?.find(s => s.storageId === storageId);

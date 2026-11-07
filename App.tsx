@@ -18,13 +18,15 @@ import { PartyStatus } from './components/PartyStatus';
 import SidePanel from './components/SidePanel';
 // FIX: Changed import to named import as per error message indicating no default export.
 import StartScreen  from './components/StartScreen';
+import { useWorldTranslations } from './hooks/useWorldTranslations';
+import { withLiveActivePlayer } from './utils/partyView';
 import TurnIndicator from './components/TurnIndicator';
 import { useLocalization } from './context/LocalizationContext';
 import { useGameLogic } from './hooks/useGameLogic';
 import { ChatMessage, Cinematic, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, Project, LocationData, ImageCacheEntry } from './types';
 import TextReaderModal from './components/TextReaderModal';
 import { useSpeech } from './context/SpeechContext';
-import { consumeStartupLoadRequest, releasePreparedSaveFile, type PreparedSaveFile } from './utils/fileManager';
+import { consumeStartupLoadRequest, migrateInlineImagesToImageStore, releasePreparedSaveFiles, type PreparedSaveFiles } from './utils/fileManager';
 import StorageScreen from './components/StorageScreen';
 import CinemaPlayer from './components/CinemaPlayer';
 import CinemaHall from './components/CinemaHall';
@@ -231,7 +233,7 @@ export default function App(): React.ReactNode {
         addPrompt(sceneImagePrompt);
         addPrompt(gameState.playerCharacter?.image_prompt);
         addPrompt(gameState.currentLocationData?.image_prompt);
-        (gameState.players || []).forEach(player => {
+        withLiveActivePlayer(gameState.players, gameState.playerCharacter).forEach(player => {
             addPrompt(player.image_prompt);
             (player.inventory || []).forEach(item => addPrompt(item.image_prompt));
         });
@@ -245,6 +247,12 @@ export default function App(): React.ReactNode {
         }
         return Array.from(prompts).filter(prompt => !gameState.imageCache?.[prompt]);
     }, [gameState, sceneImagePrompt, gameSettings?.generateWorldEventImages, gameSettings?.disableImageGeneration]);
+
+    useEffect(() => {
+        // Older saves still carry base64 images inside the stored payload; move them
+        // into the image store once so later saves only keep references.
+        void migrateInlineImagesToImageStore();
+    }, []);
 
     useEffect(() => {
         const controlScale = clampUiScale(gameSettings?.uiControlScale);
@@ -269,7 +277,7 @@ export default function App(): React.ReactNode {
     const [messageModalState, setMessageModalState] = useState<{ title: string; content: string } | null>(null);
     const [textReaderState, setTextReaderState] = useState<{ title: string; content: string } | null>(null);
     const [imageModalInfo, setImageModalInfo] = useState<ImageModalInfo | null>(null);
-    const [preparedSaveFile, setPreparedSaveFile] = useState<PreparedSaveFile | null>(null);
+    const [preparedSaveFiles, setPreparedSaveFiles] = useState<PreparedSaveFiles | null>(null);
     const [detailModalStack, setDetailModalStack] = useState<{ title: string; data: any }[]>([]);
 
     const [isDetailModalFullScreen, setIsDetailModalFullScreen] = useState(false);
@@ -345,7 +353,9 @@ export default function App(): React.ReactNode {
     useEffect(() => {
         if (viewingCharacter && gameState) {
             if ('playerId' in viewingCharacter) { // It's a PlayerCharacter
-                const freshCharacter = gameState.players.find(p => p.playerId === viewingCharacter.playerId);
+                const freshCharacter = gameState.playerCharacter?.playerId === viewingCharacter.playerId
+                    ? gameState.playerCharacter
+                    : gameState.players.find(p => p.playerId === viewingCharacter.playerId);
                 if (freshCharacter && JSON.stringify(freshCharacter) !== JSON.stringify(viewingCharacter)) {
                     setViewingCharacter(freshCharacter);
                 }
@@ -398,7 +408,9 @@ export default function App(): React.ReactNode {
             }
         } else if (isPlayerCharacter(data)) {
             const pcData = data as PlayerCharacter & { type: 'playerCharacter' };
-            const foundPlayer = gameState.players.find((p: PlayerCharacter) => p.playerId === pcData.playerId);
+            const foundPlayer = gameState.playerCharacter?.playerId === pcData.playerId
+                ? gameState.playerCharacter
+                : gameState.players.find((p: PlayerCharacter) => p.playerId === pcData.playerId);
             if (foundPlayer) {
                 updatedData = Object.assign({}, data, foundPlayer);
             }
@@ -455,7 +467,7 @@ export default function App(): React.ReactNode {
         }
     }, [gameState, currentDetailModal, visitedLocations, worldMap]);
 
-    const activePlayerName = gameSettings?.cooperativeGameType !== 'None' ? gameState?.players[gameState.activePlayerIndex]?.name || null : null;
+    const activePlayerName = gameSettings?.cooperativeGameType !== 'None' ? gameState?.playerCharacter?.name || null : null;
 
     const npcsInScene = useMemo(() => {
         if (!gameState) return [];
@@ -570,17 +582,17 @@ export default function App(): React.ReactNode {
     const handleSaveGame = async () => {
         const prepared = await saveGame();
         if (!prepared) return;
-        if (preparedSaveFile) {
-            window.setTimeout(() => releasePreparedSaveFile(preparedSaveFile), 60_000);
+        if (preparedSaveFiles) {
+            window.setTimeout(() => releasePreparedSaveFiles(preparedSaveFiles), 60_000);
         }
-        setPreparedSaveFile(prepared);
+        setPreparedSaveFiles(prepared);
     };
 
     const closePreparedSaveFile = () => {
-        if (preparedSaveFile) {
-            window.setTimeout(() => releasePreparedSaveFile(preparedSaveFile), 60_000);
+        if (preparedSaveFiles) {
+            window.setTimeout(() => releasePreparedSaveFiles(preparedSaveFiles), 60_000);
         }
-        setPreparedSaveFile(null);
+        setPreparedSaveFiles(null);
     };
 
     const handleLoadGame = async () => {
@@ -808,6 +820,12 @@ export default function App(): React.ReactNode {
         }
     }, [isRegenerating, sendMessage, askQuestion]);
 
+    // The per-universe dictionary (races, classes, skills, months) is loaded on demand.
+    // A save written before the universe was recorded gets every dictionary.
+    const activeUniverse = gameSettings?.gameWorldInformation?.universe
+        ?? (gameState ? null : undefined);
+    const worldTranslationsReady = useWorldTranslations(activeUniverse);
+
     if (!hasStarted) {
         return <>
             <ArenaGmRelayPanel />
@@ -829,7 +847,15 @@ export default function App(): React.ReactNode {
     }
 
 
+        if (!worldTranslationsReady) {
         return (
+            <div className="min-h-screen bg-gray-900 flex items-center justify-center" data-testid="translations-loading">
+                <p className="text-gray-300">{t('Loading Settings...')}</p>
+            </div>
+        );
+    }
+
+    return (
         <>
             <ArenaGmRelayPanel />
             {gameState && imageWarmupPrompts.length > 0 && (
@@ -895,7 +921,7 @@ export default function App(): React.ReactNode {
                                 <>
                                 {gameState && gameSettings?.showPartyStatusPanel && gameState.players.length > 1 && (
                                     <PartyStatus
-                                        players={gameState.players}
+                                        players={withLiveActivePlayer(gameState.players, gameState.playerCharacter)}
                                         activePlayerIndex={gameState.activePlayerIndex}
                                         onPassTurn={passTurnManually}
                                         gameSettings={gameSettings}
@@ -1354,7 +1380,7 @@ export default function App(): React.ReactNode {
                 >
                     <div className="flex-1 flex flex-col h-full bg-gray-900 -m-6 p-4">
                         <PartyStatus
-                            players={gameState.players}
+                            players={withLiveActivePlayer(gameState.players, gameState.playerCharacter)}
                             activePlayerIndex={gameState.activePlayerIndex}
                             onPassTurn={passTurnManually}
                             gameSettings={gameSettings}
@@ -1543,19 +1569,38 @@ export default function App(): React.ReactNode {
                 isOpen={isCinemaVisible}
                 onClose={closeCinemaPlayer}
             />
-            {preparedSaveFile && (
+            {preparedSaveFiles && (
                 <Modal isOpen={true} onClose={closePreparedSaveFile} title={t('Save file is ready')}>
                     <div className="space-y-4 text-gray-200">
                         <p>{t('Choose how to save your game file.')}</p>
                         <a
-                            href={preparedSaveFile.url}
-                            download={preparedSaveFile.filename}
+                            href={preparedSaveFiles.single.url}
+                            download={preparedSaveFiles.single.filename}
                             className="flex w-full items-center justify-center rounded-md bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500"
                         >
-                            {t('Download save file')} ({preparedSaveFile.filename})
+                            {t('Download save file')} ({preparedSaveFiles.single.filename})
                         </a>
+                        {preparedSaveFiles.images && (
+                            <div className="space-y-2 rounded-md border border-gray-700 p-3">
+                                <p className="text-sm text-gray-300">{t('Or download the save and its images as two files: keep them together, the save needs the images file.')}</p>
+                                <a
+                                    href={preparedSaveFiles.save.url}
+                                    download={preparedSaveFiles.save.filename}
+                                    className="flex w-full items-center justify-center rounded-md border border-gray-600 px-4 py-3 font-semibold text-cyan-200 hover:bg-gray-700"
+                                >
+                                    {t('Save file without images')} ({preparedSaveFiles.save.filename})
+                                </a>
+                                <a
+                                    href={preparedSaveFiles.images.url}
+                                    download={preparedSaveFiles.images.filename}
+                                    className="flex w-full items-center justify-center rounded-md border border-gray-600 px-4 py-3 font-semibold text-cyan-200 hover:bg-gray-700"
+                                >
+                                    {t('Images file')} ({preparedSaveFiles.images.filename})
+                                </a>
+                            </div>
+                        )}
                         <a
-                            href={preparedSaveFile.url}
+                            href={preparedSaveFiles.single.url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex w-full items-center justify-center rounded-md border border-gray-600 px-4 py-3 font-semibold text-cyan-200 hover:bg-gray-700"

@@ -9,6 +9,7 @@ import { PlusIcon, MinusIcon, CheckIcon } from '@heroicons/react/24/solid';
 import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, StarIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import ConfirmationModal from './ConfirmationModal';
 import { Month, Calendar, DayInfo } from '../types';
+import { notifyError, notifySuccess, notifyWarning } from '../utils/notifications';
 
 interface UniverseCustomizerProps {
   isOpen: boolean;
@@ -89,7 +90,7 @@ const RaceEditModal: React.FC<{
 
     const handleSave = () => {
         if (!localRace.name.trim()) {
-            alert(t('Race Name cannot be empty.'));
+            notifyWarning(t('Race Name cannot be empty.'));
             return;
         }
         onSave({ ...localRace, attributePoints: points });
@@ -322,7 +323,7 @@ const ClassEditModal: React.FC<{
 
     const handleSave = () => {
         if (!localClass.name.trim()) {
-            alert(t('Class Name cannot be empty.'));
+            notifyWarning(t('Class Name cannot be empty.'));
             return;
         }
         onSave({ ...localClass, attributePoints: points });
@@ -762,7 +763,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
 
     const handleExport = useCallback((dataType: 'races' | 'classes' | 'calendar' | 'currencies', targetUniverseKey: string) => {
         if (!targetUniverseKey || !currentWorldData) {
-            alert(t('No target selected or source data missing.'));
+            notifyWarning(t('No target selected or source data missing.'));
             return;
         }
 
@@ -779,7 +780,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         const newLocalData = JSON.parse(JSON.stringify(localData));
         const targetWorld = (newLocalData.custom as Record<string, any>)[targetUniverseKey];
         if (!targetWorld) {
-            alert(t('Target universe not found.'));
+            notifyError(t('Target universe not found.'));
             return;
         }
 
@@ -802,7 +803,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         }
 
         setLocalData(newLocalData);
-        alert(t('{itemName} exported to {universeName}.', { itemName: exportedItemName, universeName: targetWorld.name }));
+        notifySuccess(t('{itemName} exported to {universeName}.', { itemName: exportedItemName, universeName: targetWorld.name }));
 
     }, [localData, currentWorldData, t]);
 

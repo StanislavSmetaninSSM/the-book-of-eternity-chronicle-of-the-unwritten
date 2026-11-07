@@ -126,6 +126,10 @@ export const ui = {
     'disable_image_generation_desc': 'When enabled, no image generation requests are sent and image generation spinners are hidden. Existing cached images remain visible.',
     "Saving game...": "Saving game...",
     "Failed to save game.": "Failed to save game.",
+
+    "save_images_trimmed": "The save was kept within its size budget: {count} cached images were left out.",
+    "autosave_images_dropped": "Storage is almost full, so the autosave was written without cached images. Free some space or delete old slots.",
+    "slot_without_images": "Saved without cached images (size limit or full storage).",
     "Day of Journey": "Day of Journey",
     "Load Standard Calendar": "Load Standard Calendar",
     "Confirm Load Standard Calendar": "Confirm Load Standard Calendar",
@@ -355,6 +359,10 @@ export const ui = {
     'disable_image_generation_desc': 'При включении запросы на генерацию изображений не отправляются, а индикаторы загрузки изображений скрываются. Уже сохранённые изображения остаются видимыми.',
     "Saving game...": "Сохранение игры...",
     "Failed to save game.": "Не удалось сохранить игру.",
+
+    "save_images_trimmed": "Сохранение уложено в лимит размера: {count} изображений из кеша не вошли в него.",
+    "autosave_images_dropped": "Хранилище почти заполнено, поэтому автосохранение записано без изображений из кеша. Освободите место или удалите старые слоты.",
+    "slot_without_images": "Сохранено без изображений из кеша (лимит размера или заполненное хранилище).",
     "Day of Journey": "День путешествия",
     "Load Standard Calendar": "Загрузить стандартный календарь",
     "Confirm Load Standard Calendar": "Подтвердите загрузку стандартного календаря",

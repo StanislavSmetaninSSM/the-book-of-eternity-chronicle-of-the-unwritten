@@ -3,6 +3,7 @@ export const quest = {
   en: {
     // Quest Details
     "Giver": "Giver",
+    "questBackground": "Background",
     "Objectives": "Objectives",
     "Rewards": "Rewards",
     "Failure Consequences": "Failure Consequences",
@@ -21,6 +22,7 @@ export const quest = {
   ru: {
     // Quest Details
     "Giver": "Выдал",
+    "questBackground": "Предыстория",
     "Objectives": "Цели",
     "Rewards": "Награды",
     "Failure Consequences": "Последствия провала",

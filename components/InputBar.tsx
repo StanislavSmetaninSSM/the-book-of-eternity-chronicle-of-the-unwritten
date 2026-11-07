@@ -25,7 +25,9 @@ import { ChatMessage, GameSettings, PlayerCharacter, GameState } from '../types'
 import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import LoadingSpinner from './LoadingSpinner';
-import { loadPlayerActionDraft, savePlayerActionDraft } from '../utils/fileManager';
+import { loadPlayerActionDraft, savePlayerActionDraft, type PlayerActionDraft } from '../utils/fileManager';
+import { createDebouncedDraftSaver } from '../utils/debouncedDraftSaver';
+import { notifyWarning } from '../utils/notifications';
 
 interface InputBarProps {
   onSendMessage: (message: string, image?: { data: string; mimeType: string; } | null) => Promise<boolean>;
@@ -171,8 +173,29 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
   currentDraftRef.current = { content, image: selectedImage, question: isQuestionMode };
   const updateContent = (nextContent: string) => setContent(nextContent);
 
+  // Typing must not open an IndexedDB transaction per keystroke, so writes are
+  // debounced. Every hand-over (character switch, unmount, accepted submit)
+  // flushes or cancels explicitly so no edit is lost.
+  const draftSaverRef = useRef<ReturnType<typeof createDebouncedDraftSaver> | null>(null);
+  if (!draftSaverRef.current) {
+    draftSaverRef.current = createDebouncedDraftSaver((key, draft) => savePlayerActionDraft(key, draft).catch(error => {
+      reportActionDraftError(error);
+      throw error;
+    }));
+  }
+  const draftSaver = draftSaverRef.current;
+  const cancelPendingDraftSave = () => draftSaver.cancel();
+  const flushPendingDraftSave = () => draftSaver.flush();
+
+  useEffect(() => () => {
+    // Leaving the game or switching screens must not drop the last keystrokes.
+    draftSaverRef.current?.flush();
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
+    // Persist edits of the previous character before their slot is replaced.
+    flushPendingDraftSave();
     setIsActionDraftReady(false);
     setLoadedActionDraftKey(null);
     setContent('');
@@ -198,9 +221,10 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
 
   useEffect(() => {
     if (!playerActionDraftKey || !isActionDraftReady || loadedActionDraftKey !== playerActionDraftKey) return;
-    void savePlayerActionDraft(playerActionDraftKey, content.trim() || selectedImage
+    const draft: PlayerActionDraft | null = content.trim() || selectedImage
       ? { content, isQuestionMode, image: selectedImage }
-      : null).catch(reportActionDraftError);
+      : null;
+    draftSaver.schedule(playerActionDraftKey, draft);
   }, [content, selectedImage, isQuestionMode, isActionDraftReady, loadedActionDraftKey, playerActionDraftKey]);
 
   const lastPlayerMessage = useMemo(() =>
@@ -221,6 +245,9 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       const accepted = await (isQuestionMode ? onAskQuestion(content, imagePayload) : onSendMessage(content, imagePayload));
       if (accepted && draftKeyRef.current === submittedKey && currentDraftRef.current?.content === content &&
           currentDraftRef.current?.image === selectedImage && currentDraftRef.current?.question === isQuestionMode) {
+        // The accepted request owns the text now; drop the pending write so it
+        // cannot recreate the draft after it was cleared.
+        cancelPendingDraftSave();
         if (submittedKey) void savePlayerActionDraft(submittedKey, null).catch(reportActionDraftError);
         setContent('');
         setSelectedImage(null);
@@ -269,16 +296,16 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
       const file = e.target.files?.[0];
       if (file) {
           if (!file.type.startsWith('image/')) {
-              alert(t("Please select an image file."));
+              notifyWarning(t("Please select an image file."));
               return;
           }
           // Keep the encoded image plus the large rules prompt below the relay's 12 MiB limit.
           if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'].includes(file.type)) {
-              alert(language === 'ru' ? 'Поддерживаются изображения PNG, JPEG, WebP, GIF и BMP.' : 'Supported images: PNG, JPEG, WebP, GIF and BMP.');
+              notifyWarning(language === 'ru' ? 'Поддерживаются изображения PNG, JPEG, WebP, GIF и BMP.' : 'Supported images: PNG, JPEG, WebP, GIF and BMP.');
               return;
           }
           if (file.size > 4 * 1024 * 1024) {
-              alert(language === 'ru' ? 'Размер изображения не должен превышать 4 МиБ.' : 'The image must be no larger than 4 MiB.');
+              notifyWarning(language === 'ru' ? 'Размер изображения не должен превышать 4 МиБ.' : 'The image must be no larger than 4 MiB.');
               return;
           }
           const reader = new FileReader();

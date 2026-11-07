@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
-import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, ExclamationTriangleIcon, CloudArrowDownIcon } from '@heroicons/react/24/outline';
 import Modal from './Modal';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, loadStartScreenDraft, saveStartScreenFormDraft, saveStartScreenWorldDraft, clearStartScreenDraft, type PreparedSaveFile } from '../utils/fileManager';
 import ConfirmationModal from './ConfirmationModal';
 import { useLocalization } from '../context/LocalizationContext';
+import { useWorldTranslations } from '../hooks/useWorldTranslations';
 import { gameData } from '../utils/localizationGameData';
 import AboutContent from './AboutContent';
 import { DBSaveSlotInfo, Calendar, Month, DayInfo } from '../types';
@@ -26,6 +27,7 @@ import { UniverseCustomizer } from './UniverseCustomizer';
 import { weather as weatherTranslations } from '../utils/translations/ui/weather';
 import { PlayerCharacter } from '../types';
 import type { CrashRecoveryMarker, CrashRecoveryMetadata } from '../utils/fileManager';
+import { notifyError, notifyWarning } from '../utils/notifications';
 
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
@@ -86,7 +88,7 @@ const initialFormData = {
     keepLatestNpcJournals: false,
     latestNpcJournalsCount: 20,
     cooperativeGameType: 'None' as 'None' | 'MultiplePersonalities' | 'FullParty',
-    autoPassTurnInCoop: true,
+    autoPassTurn: true,
     multiplePersonalitiesSettings: {
         shareCharacteristics: false,
         shareSkills: false,
@@ -719,13 +721,14 @@ const CreationForm: React.FC<CreationFormProps> = ({
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 mt-8">
-                <button type="submit" disabled={isSubmitDisabled} className="flex-1 w-full bg-cyan-600 text-white font-bold py-3 px-4 rounded-md hover:bg-cyan-500 transition-all text-lg shadow-lg shadow-cyan-500/10 disabled:bg-gray-600 disabled:cursor-not-allowed">
+                <button type="submit" data-testid="begin-adventure" disabled={isSubmitDisabled} className="flex-1 w-full bg-cyan-600 text-white font-bold py-3 px-4 rounded-md hover:bg-cyan-500 transition-all text-lg shadow-lg shadow-cyan-500/10 disabled:bg-gray-600 disabled:cursor-not-allowed">
                     {submitButtonText}
                 </button>
-                <button type="button" onClick={onLoadGame} className="flex-1 w-full bg-gray-600 text-white font-bold py-3 px-4 rounded-md hover:bg-gray-500 transition-all text-lg">
+                <button type="button" data-testid="load-from-file" onClick={onLoadGame} title={t('Choose the save file and, if you have it, the images file - both at once is fine.')} className="flex-1 w-full bg-gray-600 text-white font-bold py-3 px-4 rounded-md hover:bg-gray-500 transition-all text-lg">
                     {t("Load from File")}
                 </button>
             </div>
+            <p className="text-center text-xs text-gray-400 mt-2">{t('Choose the save file and, if you have it, the images file - both at once is fine.')}</p>
             {isSubmitDisabled && (
                 <p className="text-center text-yellow-400 text-sm mt-2">{t('custom_universe_required_warning')}</p>
             )}
@@ -754,6 +757,8 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
     const draftSaveWarningShownRef = useRef(false);
     const [isStartDraftLoaded, setIsStartDraftLoaded] = useState(false);
     const [wasStartDraftRestored, setWasStartDraftRestored] = useState(false);
+    // Race and class names come from the universe dictionary, which is loaded on demand.
+    const worldTranslationsReady = useWorldTranslations(formData.universe);
 
     const reportDraftSaveError = (error: unknown) => {
         if (!draftSaveWarningShownRef.current) {
@@ -873,7 +878,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
             setPreparedConfigurationFile(prepareConfigurationFile({ formData: cleanFormData, customGameData }));
         } catch (err) {
             console.error('Error preparing configuration file:', err);
-            alert(t('Could not save the configuration file.'));
+            notifyError(t('Could not save the configuration file.'));
         }
     };
 
@@ -1121,7 +1126,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
 
     const prepareCreationData = () => {
         if (!formData.playerName || !formData.characterDescription || !formData.initialPrompt) {
-            alert(t("Please fill in all required fields."));
+            notifyWarning(t("Please fill in all required fields."));
             return null;
         }
         const finalData = { ...formData, customGameData } as typeof formData & Record<string, unknown>;
@@ -1145,7 +1150,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
     const handleCreateUniverse = () => {
         const name = newUniverseName.trim();
         if (!name) {
-            alert(t('Please enter a name for your custom era/setting.'));
+            notifyWarning(t('Please enter a name for your custom era/setting.'));
             return;
         }
         const key = name.toLowerCase().replace(/\s+/g, '_');
@@ -1181,7 +1186,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
     };
 
     return isStartDraftLoaded ? (
-        <div className="min-h-screen bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div data-testid="start-screen" className="min-h-screen bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="relative w-full max-w-3xl bg-gray-800/80 p-6 md:p-8 rounded-lg shadow-2xl border border-cyan-500/20 ring-1 ring-cyan-500/20">
                 <div className="absolute top-4 right-4 z-20">
                     <button
@@ -1216,7 +1221,10 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
 
                 <div className="max-h-[65vh] overflow-y-auto pr-4 -mr-4">
                         <div className="animate-fade-in-down">
-                            <CreationForm
+                            {!worldTranslationsReady && (
+                                <p className="py-8 text-center text-gray-400" data-testid="start-translations-loading">{t('Loading Settings...')}</p>
+                            )}
+                            {worldTranslationsReady && <CreationForm
                                 formData={formData}
                                 handleInputChange={handleInputChange}
                                 handleCheckboxChange={handleCheckboxChange}
@@ -1232,7 +1240,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                                 customGameData={customGameData}
                                 setIsCreatingUniverse={setIsCreatingUniverse}
                                 setFormData={setFormData}
-                            />
+                            />}
                         </div>
                 </div>
 
@@ -1242,14 +1250,14 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                             <ExclamationTriangleIcon className="mt-0.5 h-6 w-6 flex-shrink-0 text-yellow-300" />
                             <div className="min-w-0 flex-1">
                                 <p className="font-semibold text-yellow-200">
-                                    Обнаружен сбой прошлой сессии / Previous session crashed
+                                    {t('previous_session_crashed')}
                                 </p>
                                 <p className="mt-1 text-sm text-gray-300">
                                     {crashRecoveryInfo.playerName}, {crashRecoveryInfo.locationName}, {t('Turn')} {crashRecoveryInfo.turnNumber ?? '-'} · {formatTimestamp(crashRecoveryInfo.timestamp, t)}
                                 </p>
                                 {crashRecoveryMarker.recoveryAttemptedAt && (
                                     <p className="mt-2 text-sm text-red-200">
-                                        Восстановление уже пробовали. Если ошибка повторится, загрузите автосохранение или файл.
+                                        {t('previous_session_recovery_attempted')}
                                     </p>
                                 )}
                                 <button
@@ -1257,7 +1265,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                                     onClick={onLoadCrashRecovery}
                                     className="mt-3 w-full rounded-md bg-emerald-700 px-4 py-2 font-semibold text-white transition-colors hover:bg-emerald-600"
                                 >
-                                    Загрузить последнее стабильное состояние / Load last stable state
+                                    {t('load_last_stable_state')}
                                 </button>
                             </div>
                         </div>
@@ -1274,6 +1282,40 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                         {t("Load Autosave")} ({formatTimestamp(autosaveTimestamp, t) || t('Never')})
                     </button>
                 </div>
+                {dbSaveSlots.length > 0 && (
+                    <div className="mt-4 rounded-md border border-gray-700 bg-gray-900/40 p-4 text-left" data-testid="start-screen-slots">
+                        <h4 className="mb-3 font-semibold text-gray-300">{t('Database Saves')}</h4>
+                        <div className="max-h-48 space-y-2 overflow-y-auto pr-2">
+                            {dbSaveSlots.map(slot => (
+                                <div key={slot.slotId} className="flex items-center gap-2 rounded-md bg-gray-800/50 p-2">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate font-semibold text-white">
+                                            {t('Slot')} {slot.slotId}: {slot.playerName} ({t('Lvl {level}', { level: slot.playerLevel })})
+                                        </p>
+                                        <p className="truncate text-xs text-gray-400">
+                                            {slot.locationName} - {t('Turn')} {slot.turnNumber} - {formatTimestamp(slot.timestamp, t)}
+                                        </p>
+                                        {slot.imagesOmitted && (
+                                            <p className="text-xs text-yellow-300/90" data-testid={`start-screen-slot-without-images-${slot.slotId}`}>
+                                                {t('slot_without_images')}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => onLoadFromSlot(slot.slotId)}
+                                        className="rounded-md bg-cyan-600/20 p-2 text-cyan-300 transition-colors hover:bg-cyan-600/40"
+                                        title={t('Load')}
+                                        aria-label={`${t('Load')}: ${t('Slot')} ${slot.slotId}`}
+                                        data-testid={`start-screen-load-slot-${slot.slotId}`}
+                                    >
+                                        <CloudArrowDownIcon className="h-5 w-5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 <div className="mt-4 border-t border-gray-700 pt-4 space-y-4">
                     <div className="flex flex-col sm:flex-row gap-4">
                         <button type="button" onClick={handleSaveConfiguration} className="flex-1 bg-gray-700/60 text-gray-300 font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-colors">{t("Save Configuration")}</button>

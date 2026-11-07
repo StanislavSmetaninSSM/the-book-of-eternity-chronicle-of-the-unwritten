@@ -4,6 +4,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import { GoogleGenAI, LiveMusicSession } from '@google/genai';
 import { decode, decodeAudioData } from '../utils/audioUtils';
 import LoadingSpinner from './LoadingSpinner';
+import { notifyWarning } from '../utils/notifications';
 
 const getAi = () => {
     if (!process.env.API_KEY) throw new Error("API_KEY environment variable not set");
@@ -346,7 +347,7 @@ const LyriaMusicPlayer: React.FC<LyriaMusicPlayerProps> = ({
 
     const handleDownload = () => {
         if (accumulatedAudioChunks.current.length === 0) {
-            alert(t("No audio data to download."));
+            notifyWarning(t("No audio data to download."));
             return;
         }
 
