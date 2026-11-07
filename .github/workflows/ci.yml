@@ -34,8 +34,7 @@ jobs:
         if: failure()
         run: |
           if [ -f /tmp/unit-tests.log ]; then
-            grep -E "^not ok" /tmp/unit-tests.log | head -20 | sed 's/^/::error::/' || true
-            tail -25 /tmp/unit-tests.log | sed 's/^/::error::log: /' || true
+            grep -A 30 -E "^not ok" /tmp/unit-tests.log | head -80 | sed 's/^/::error::/' || true
           fi
       - name: Production build
         run: npm run build
