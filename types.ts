@@ -24,6 +24,10 @@ export interface Calendar {
   dayNames: DayInfo[];
 }
 
+/**
+ * In memory `src` is always a `data:` URL. Stored saves keep a `blob:<sha256>` reference
+ * instead and read the bytes back from the image store on load (see `utils/imageBlobStore`).
+ */
 export type ImageCacheEntry = {
   src: string;
   sourceProvider: 'Nano Banana' | 'Imagen' | 'Arena GM' | 'Custom Upload';

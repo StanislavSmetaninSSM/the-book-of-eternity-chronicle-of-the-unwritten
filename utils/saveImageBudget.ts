@@ -1,16 +1,19 @@
 
 /**
- * Saves embed generated images as base64 data URLs inside `gameState.imageCache`.
- * A long session can accumulate tens of megabytes, and every slot copy and
- * pre-action checkpoint duplicates that payload, which quickly exhausts the
- * IndexedDB quota. These helpers keep a save bounded and let callers shed the
- * cache entirely when the browser reports that the quota is exhausted.
+ * Generated images live in their own content-addressed store (see `utils/imageBlobStore`),
+ * so a save keeps `blob:` references instead of base64 payloads and no longer duplicates
+ * image bytes into every slot and checkpoint. These helpers still bound how many images a
+ * single save may reference, measure inline base64 of legacy/imported payloads, and let
+ * callers shed the cache entirely when the browser reports an exhausted quota.
  */
 
 /** Maximum number of cached images kept in a single save. */
-export const MAX_IMAGES_PER_SAVE = 20;
-/** Maximum estimated base64 payload of cached images kept in a single save. */
-export const MAX_IMAGE_BYTES_PER_SAVE = 6 * 1024 * 1024;
+export const MAX_IMAGES_PER_SAVE = 60;
+/**
+ * Maximum estimated inline base64 payload kept in a single save. Images are stored as
+ * references, so this only binds for payloads that never reached the image store.
+ */
+export const MAX_IMAGE_BYTES_PER_SAVE = 24 * 1024 * 1024;
 
 type ImageCacheEntry = string | { src?: string; [key: string]: unknown };
 type ImageCache = Record<string, ImageCacheEntry>;

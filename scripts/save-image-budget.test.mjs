@@ -62,7 +62,7 @@ test('the packaged save respects the image budget',async()=>{
   const {MAX_IMAGES_PER_SAVE}=await vite.ssrLoadModule('/utils/saveImageBudget.ts');
   const imageCache={};
   const inventory=[];
-  for(let index=0;index<28;index++){
+  for(let index=0;index<MAX_IMAGES_PER_SAVE+8;index++){
    const prompt=`item-${index}`;
    imageCache[prompt]=dataUrl(index);
    inventory.push({id:`item-${index}`,name:`Item ${index}`,image_prompt:prompt});
@@ -106,7 +106,9 @@ test('a full storage quota falls back to saving without cached images',async()=>
  let putAttempts=0;
  try{
   const fileManager=await vite.ssrLoadModule('/utils/fileManager.ts');
+  // Images now go to their own store, so only autosave writes count here.
   globalThis.IDBObjectStore.prototype.put=function(...args){
+   if(this.name!=='autosaves') return originalPut.apply(this,args);
    putAttempts+=1;
    if(putAttempts===1){
     const error=new Error('The quota has been exceeded.');

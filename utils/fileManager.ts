@@ -2,6 +2,8 @@
 
 import { ChatMessage, GameContext, GameState, SaveFile, DBSaveSlotInfo } from "../types";
 import { budgetRecoveryState, isQuotaError, stripImagesForQuota } from './saveImageBudget';
+import { dehydrateSaveImages, dehydrateStateImages, hydrateSaveImages, hydrateStateImages, collectImageRefs } from './saveImageRefs';
+import { imageRefId, sweepUnreferencedImages } from './imageBlobStore';
 import { notifyError } from './notifications';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
@@ -494,20 +496,128 @@ async function putAutosave(saveData: SaveFile): Promise<void> {
   });
 }
 
+/**
+ * Deletes stored images that no autosave, crash-recovery point, checkpoint or slot refers
+ * to any more. Failures are logged and never propagated: cleanup must not break saving.
+ */
+export async function sweepUnusedImages(): Promise<number> {
+  try {
+    const db = await openDB();
+    const records = await new Promise<unknown[]>((resolve, reject) => {
+      const transaction = db.transaction([AUTOSAVE_STORE_NAME, SLOTS_STORE_NAME, INTERRUPTED_TURNS_STORE_NAME], 'readonly');
+      const pending: unknown[] = [];
+      let remaining = 3;
+      const collect = (request: IDBRequest) => {
+        request.onsuccess = () => {
+          pending.push(request.result);
+          remaining -= 1;
+          if (remaining === 0) resolve(pending);
+        };
+        request.onerror = () => reject(request.error);
+      };
+      collect(transaction.objectStore(AUTOSAVE_STORE_NAME).getAll());
+      collect(transaction.objectStore(SLOTS_STORE_NAME).getAll());
+      collect(transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).getAll());
+    });
+    const referenced: string[] = [];
+    collectImageRefs(records, new Set()).forEach(ref => referenced.push(imageRefId(ref)));
+    return await sweepUnreferencedImages(referenced);
+  } catch (error) {
+    console.warn('Could not sweep unreferenced images', error);
+    return 0;
+  }
+}
+
+/**
+ * Moves images that older saves still hold as base64 into the image store. Runs once at
+ * startup; saves that already use references are left untouched.
+ */
+export async function migrateInlineImagesToImageStore(): Promise<{ records: number; images: number }> {
+  try {
+    const db = await openDB();
+    const stores = [AUTOSAVE_STORE_NAME, SLOTS_STORE_NAME, INTERRUPTED_TURNS_STORE_NAME];
+    const [autosaves, slots, checkpoints] = await new Promise<unknown[][]>((resolve, reject) => {
+      const transaction = db.transaction(stores, 'readonly');
+      const results: unknown[][] = [[], [], []];
+      let remaining = stores.length;
+      const collect = (index: number, request: IDBRequest) => {
+        request.onsuccess = () => {
+          results[index] = request.result || [];
+          remaining -= 1;
+          if (remaining === 0) resolve(results);
+        };
+        request.onerror = () => reject(request.error);
+      };
+      stores.forEach((name, index) => collect(index, transaction.objectStore(name).getAll()));
+    });
+
+    const pending: Array<{ store: string; key: string | number; value: any; stamp: string | undefined }> = [];
+    for (const record of autosaves as any[]) {
+      if (!record?.saveData) continue;
+      const saveData = await dehydrateSaveImages(record.saveData);
+      if (saveData !== record.saveData) pending.push({ store: AUTOSAVE_STORE_NAME, key: record.id, value: { ...record, saveData }, stamp: record.saveData.timestamp });
+    }
+    for (const record of slots as any[]) {
+      if (!record?.saveData) continue;
+      const saveData = await dehydrateSaveImages(record.saveData);
+      if (saveData !== record.saveData) pending.push({ store: SLOTS_STORE_NAME, key: record.slotId, value: { ...record, saveData }, stamp: record.saveData.timestamp });
+    }
+    for (const record of checkpoints as any[]) {
+      if (!record?.baseState) continue;
+      const baseState = await dehydrateStateImages(record.baseState);
+      if (baseState !== record.baseState) pending.push({ store: INTERRUPTED_TURNS_STORE_NAME, key: record.id, value: { ...record, baseState }, stamp: record.createdAt });
+    }
+
+    let written = 0;
+    if (pending.length) {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(Array.from(new Set(pending.map(item => item.store))), 'readwrite');
+        for (const item of pending) {
+          const store = transaction.objectStore(item.store);
+          // Re-read before writing: a save made while we were reading must not be
+          // overwritten with the older payload we just migrated.
+          const current = store.get(item.key);
+          current.onsuccess = () => {
+            const existing = current.result;
+            if (!existing) return;
+            const currentStamp = existing.saveData?.timestamp ?? existing.createdAt;
+            if (currentStamp !== item.stamp) return;
+            store.put(item.value);
+            written += 1;
+          };
+        }
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('Image migration was aborted.'));
+      });
+      if (written) console.info(`Moved inline images of ${written} stored save(s) into the image store.`);
+      await sweepUnusedImages();
+    }
+    const images = collectImageRefs(pending.map(item => item.value)).size;
+    return { records: written, images };
+  } catch (error) {
+    console.warn('Could not migrate inline images into the image store', error);
+    return { records: 0, images: 0 };
+  }
+}
+
 export async function saveToDB(saveData: SaveFile): Promise<{ imagesOmittedForQuota: boolean }> {
   let imagesOmittedForQuota = false;
   try {
+    // Image bytes go to the image store; the record only keeps references to them.
+    const dehydrated = await dehydrateSaveImages(saveData);
     try {
-      await putAutosave(saveData);
+      await putAutosave(dehydrated);
     } catch (error) {
       if (!isQuotaError(error)) throw error;
       // The cached images are regenerable; losing them is far better than losing the
       // turn because the browser refused to store the payload.
       console.warn('Autosave failed because the storage quota is exhausted; retrying without cached images.');
-      await putAutosave(stripImagesForQuota(saveData));
+      await putAutosave(stripImagesForQuota(dehydrated));
       imagesOmittedForQuota = true;
     }
     writeStorageValue(AUTOSAVE_TIMESTAMP_STORAGE_KEY, saveData.timestamp);
+    await sweepUnusedImages();
   } catch (error) {
     console.error('Failed to save to IndexedDB:', error);
     throw error;
@@ -522,19 +632,16 @@ export async function loadFromDB(): Promise<SaveFile | null> {
     const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
     const request = store.get(AUTOSAVE_ID);
 
-    return new Promise((resolve, reject) => {
+    const stored = await new Promise<SaveFile | null>((resolve, reject) => {
       request.onsuccess = () => {
-        if (request.result) {
-          resolve(request.result.saveData);
-        } else {
-          resolve(null);
-        }
+        resolve(request.result?.saveData ?? null);
       };
       request.onerror = () => {
         console.error('Failed to load from IndexedDB:', request.error);
         reject(request.error);
       };
     });
+    return stored ? await hydrateSaveImages(stored) : null;
   } catch (error) {
     console.error('Failed to load from IndexedDB:', error);
     return null;
@@ -545,17 +652,17 @@ let checkpointSequence = 0;
 const newCheckpointId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${++checkpointSequence}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 
 export async function saveInterruptedTurnRecovery(recovery: Omit<InterruptedTurnRecovery, 'id' | 'createdAt' | 'checkpointId'>): Promise<InterruptedTurnRecovery> {
-  const db = await openDB();
-  const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
   const checkpoint: InterruptedTurnRecovery = {
     ...recovery,
     // A checkpoint is written before every turn; keeping the full image cache there
     // duplicated the whole payload on each action.
-    baseState: budgetRecoveryState(recovery.baseState),
+    baseState: await dehydrateStateImages(budgetRecoveryState(recovery.baseState)),
     id: INTERRUPTED_TURN_ID,
     createdAt: new Date().toISOString(),
     checkpointId: newCheckpointId(),
   };
+  const db = await openDB();
+  const transaction = db.transaction(INTERRUPTED_TURNS_STORE_NAME, 'readwrite');
   transaction.objectStore(INTERRUPTED_TURNS_STORE_NAME).put(checkpoint);
   await new Promise<void>((resolve, reject) => {
     transaction.oncomplete = () => resolve();
@@ -581,11 +688,13 @@ export async function loadInterruptedTurnRecovery(): Promise<InterruptedTurnReco
         store.put(recovery);
       }
     };
-    return await new Promise((resolve, reject) => {
+    const stored = await new Promise<InterruptedTurnRecovery | null>((resolve, reject) => {
       transaction.oncomplete = () => resolve(recovery);
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error || new Error('Interrupted-turn checkpoint read was aborted.'));
     });
+    if (!stored?.baseState) return stored;
+    return { ...stored, baseState: await hydrateStateImages(stored.baseState) };
   } catch (error) {
     console.error('Failed to load interrupted-turn checkpoint:', error);
     return null;
@@ -631,10 +740,10 @@ export async function saveCrashRecoveryPoint(saveData: SaveFile, reason: CrashRe
   try {
     // The crash-recovery copy only needs enough images to resume; a full cache here
     // doubled the storage taken by the autosave it shadows.
-    const recoverySaveData: SaveFile = {
+    const recoverySaveData: SaveFile = await dehydrateSaveImages({
       ...saveData,
       gameState: budgetRecoveryState(saveData.gameState, saveData.sceneImagePrompt),
-    };
+    });
     const db = await openDB();
     const transaction = db.transaction(AUTOSAVE_STORE_NAME, 'readwrite');
     const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
@@ -663,7 +772,7 @@ export async function loadCrashRecoveryPoint(): Promise<SaveFile | null> {
     const store = transaction.objectStore(AUTOSAVE_STORE_NAME);
     const request = store.get(CRASH_RECOVERY_ID);
 
-    return new Promise((resolve, reject) => {
+    const stored = await new Promise<SaveFile | null>((resolve, reject) => {
       request.onsuccess = () => {
         resolve(request.result?.saveData ?? null);
       };
@@ -672,6 +781,7 @@ export async function loadCrashRecoveryPoint(): Promise<SaveFile | null> {
         reject(request.error);
       };
     });
+    return stored ? await hydrateSaveImages(stored) : null;
   } catch (error) {
     console.error('Failed to load crash recovery point:', error);
     return null;
@@ -816,16 +926,17 @@ async function putSlot(slotId: number, saveData: SaveFile): Promise<void> {
 }
 
 export async function saveToDBSlot(slotId: number, saveData: SaveFile): Promise<void> {
-  let stored = saveData;
+  let stored = await dehydrateSaveImages(saveData);
   try {
     await putSlot(slotId, stored);
   } catch (error) {
     if (!isQuotaError(error)) throw error;
     console.warn('Slot save failed because the storage quota is exhausted; retrying without cached images.');
-    stored = stripImagesForQuota(saveData);
+    stored = stripImagesForQuota(stored);
     await putSlot(slotId, stored);
   }
   upsertSlotMetadata(buildSlotInfo(slotId, stored));
+  await sweepUnusedImages();
 }
 
 export async function loadFromDBSlot(slotId: number): Promise<SaveFile | null> {
@@ -834,10 +945,11 @@ export async function loadFromDBSlot(slotId: number): Promise<SaveFile | null> {
   const store = transaction.objectStore(SLOTS_STORE_NAME);
   const request = store.get(slotId);
 
-  return new Promise((resolve, reject) => {
+  const stored = await new Promise<SaveFile | null>((resolve, reject) => {
     request.onsuccess = () => resolve(request.result?.saveData || null);
     request.onerror = () => reject(request.error);
   });
+  return stored ? await hydrateSaveImages(stored) : null;
 }
 
 export async function deleteDBSlot(slotId: number): Promise<void> {
@@ -850,6 +962,7 @@ export async function deleteDBSlot(slotId: number): Promise<void> {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
+  await sweepUnusedImages();
   const existingSlots = readSlotMetadataFromStorage();
   if (existingSlots) {
     writeSlotMetadataToStorage(existingSlots.filter(slot => slot.slotId !== slotId));

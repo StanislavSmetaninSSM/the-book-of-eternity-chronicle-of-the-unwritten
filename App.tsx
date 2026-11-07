@@ -26,7 +26,7 @@ import { useGameLogic } from './hooks/useGameLogic';
 import { ChatMessage, Cinematic, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, Project, LocationData, ImageCacheEntry } from './types';
 import TextReaderModal from './components/TextReaderModal';
 import { useSpeech } from './context/SpeechContext';
-import { consumeStartupLoadRequest, releasePreparedSaveFile, type PreparedSaveFile } from './utils/fileManager';
+import { consumeStartupLoadRequest, migrateInlineImagesToImageStore, releasePreparedSaveFile, type PreparedSaveFile } from './utils/fileManager';
 import StorageScreen from './components/StorageScreen';
 import CinemaPlayer from './components/CinemaPlayer';
 import CinemaHall from './components/CinemaHall';
@@ -247,6 +247,12 @@ export default function App(): React.ReactNode {
         }
         return Array.from(prompts).filter(prompt => !gameState.imageCache?.[prompt]);
     }, [gameState, sceneImagePrompt, gameSettings?.generateWorldEventImages, gameSettings?.disableImageGeneration]);
+
+    useEffect(() => {
+        // Older saves still carry base64 images inside the stored payload; move them
+        // into the image store once so later saves only keep references.
+        void migrateInlineImagesToImageStore();
+    }, []);
 
     useEffect(() => {
         const controlScale = clampUiScale(gameSettings?.uiControlScale);
