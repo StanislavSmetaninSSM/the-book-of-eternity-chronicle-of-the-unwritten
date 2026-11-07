@@ -242,7 +242,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
 
         const calendar = currentWorld.calendar as Calendar;
         const selectedMonth = calendar.months.find(m => m.name === formData.startingMonth);
-        const monthDescription = selectedMonth?.description ? t(selectedMonth.description as any) : '';
+        const monthDescription = selectedMonth?.description ? t(selectedMonth.description) : '';
 
         const monthIndex = calendar.months.findIndex(m => m.name === formData.startingMonth);
         if (monthIndex === -1) return { monthDescription, dayOfWeekName: null, dayOfWeekDescription: null };
@@ -273,9 +273,9 @@ const CreationForm: React.FC<CreationFormProps> = ({
         let dayOfWeekName = '';
         let dayOfWeekDescription = '';
         if (dayOfWeek) {
-            dayOfWeekName = typeof dayOfWeek === 'string' ? t(dayOfWeek as any) : t(dayOfWeek.name as any);
+            dayOfWeekName = typeof dayOfWeek === 'string' ? t(dayOfWeek) : t(dayOfWeek.name);
             if (typeof dayOfWeek === 'object' && dayOfWeek.description) {
-                dayOfWeekDescription = t(dayOfWeek.description as any);
+                dayOfWeekDescription = t(dayOfWeek.description);
             }
         }
 
@@ -306,7 +306,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 <p className="text-xs text-gray-400 mt-2">
                     {formData.universe === 'custom' && !formData.selectedEra
                         ? t('Create your own world from scratch...')
-                        : t(currentWorld.description as any)}
+                        : t(currentWorld.description)}
                 </p>
             </div>
 
@@ -369,7 +369,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                         <label htmlFor="startingMonth" className="block text-sm font-medium text-gray-300 mb-2">{t("Starting Month")}</label>
                         <select id="startingMonth" name="startingMonth" onChange={handleInputChange} value={formData.startingMonth} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition dark-select">
                             {currentWorld.calendar?.months.map((month: any) => (
-                                <option key={month.name} value={month.name}>{t(month.name as any)}</option>
+                                <option key={month.name} value={month.name}>{t(month.name)}</option>
                             ))}
                         </select>
                     </div>
@@ -385,7 +385,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 {(selectedDateInfo.monthDescription || selectedDateInfo.dayOfWeekName) && (
                     <div className="pt-4 border-t border-gray-700/50 space-y-2 text-sm text-gray-400">
                         {selectedDateInfo.monthDescription && (
-                            <p><span className="font-semibold text-gray-300">{t(formData.startingMonth as any)}</span> - {selectedDateInfo.monthDescription}</p>
+                            <p><span className="font-semibold text-gray-300">{t(formData.startingMonth)}</span> - {selectedDateInfo.monthDescription}</p>
                         )}
                         {selectedDateInfo.dayOfWeekName && (
                             <p><span className="font-semibold text-gray-300">{selectedDateInfo.dayOfWeekName}</span>{selectedDateInfo.dayOfWeekDescription ? ` - ${selectedDateInfo.dayOfWeekDescription}` : ''}</p>
@@ -416,7 +416,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                         className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition"
                     >
                         <option value="Random">{t("Random")}</option>
-                        {FULL_WEATHER_OPTIONS.map(w => <option key={w} value={w}>{t(w as any)}</option>)}
+                        {FULL_WEATHER_OPTIONS.map(w => <option key={w} value={w}>{t(w)}</option>)}
                     </select>
                 </div>
             </div>
@@ -443,10 +443,10 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 >
                     {currentWorld.currencyOptions && currentWorld.currencyOptions.length > 0 ? (
                         currentWorld.currencyOptions.map((currency: string) => (
-                            <option key={currency} value={currency}>{t(currency as any)}</option>
+                            <option key={currency} value={currency}>{t(currency)}</option>
                         ))
                     ) : (
-                        <option value={currentWorld.currencyName || 'Gold'}>{t((currentWorld.currencyName || 'Gold') as any)}</option>
+                        <option value={currentWorld.currencyName || 'Gold'}>{t((currentWorld.currencyName || 'Gold'))}</option>
                     )}
                 </select>
             </div>
@@ -455,17 +455,17 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 <div>
                     <label htmlFor="race" className="block text-sm font-medium text-gray-300 mb-2">{formData.universe === 'history' || formData.universe === 'myths' ? t("People") : t("Race")}</label>
                     <select id="race" name="race" onChange={handleInputChange} value={race} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition">
-                        {raceOptions.map(r => <option key={r} value={r}>{t(r as any)}</option>)}
+                        {raceOptions.map(r => <option key={r} value={r}>{t(r)}</option>)}
                     </select>
-                    {selectedRaceInfo && <p className="text-xs text-cyan-300/80 mt-2">{t(selectedRaceInfo.description as any)}</p>}
+                    {selectedRaceInfo && <p className="text-xs text-cyan-300/80 mt-2">{t(selectedRaceInfo.description)}</p>}
                 </div>
 
                 <div>
                     <label htmlFor="charClass" className="block text-sm font-medium text-gray-300 mb-2">{t("Class")}</label>
                     <select id="charClass" name="charClass" onChange={handleInputChange} value={charClass} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition">
-                        {classOptions.map(c => <option key={c} value={c}>{t(c as any)}</option>)}
+                        {classOptions.map(c => <option key={c} value={c}>{t(c)}</option>)}
                     </select>
-                    {selectedClassInfo && <p className="text-xs text-cyan-300/80 mt-2">{t(selectedClassInfo.description as any)}</p>}
+                    {selectedClassInfo && <p className="text-xs text-cyan-300/80 mt-2">{t(selectedClassInfo.description)}</p>}
                 </div>
             </div>
 
@@ -514,7 +514,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                             <button type="button" onClick={() => handleDifficultyChange('hard')} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${currentDifficulty === 'hard' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('Hard')}</button>
                             <button type="button" onClick={() => handleDifficultyChange('impossible')} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${currentDifficulty === 'impossible' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('Impossible')}</button>
                         </div>
-                        <p className="text-xs text-gray-400 mt-2 text-center">{t(`${currentDifficulty}_mode_description` as any)}</p>
+                        <p className="text-xs text-gray-400 mt-2 text-center">{t(`${currentDifficulty}_mode_description`)}</p>
                     </div>
                     <ToggleSwitch label={t('Disable World Events')} description={t('disable_world_events_desc')} name="doNotUseWorldEvents" checked={formData.doNotUseWorldEvents} onChange={handleCheckboxChange} />
                     <ToggleSwitch label={t('Allow History Manipulation')} description={t('allowHistoryManipulationDescription')} name="allowHistoryManipulation" checked={formData.allowHistoryManipulation} onChange={handleCheckboxChange} />
@@ -673,7 +673,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {(['shareCharacteristics', 'shareSkills', 'shareNpcReputation', 'shareFactionReputation', 'shareInventory'] as const).map(key => (
                                 <div key={key} className="flex items-center justify-between p-2 bg-gray-900/30 rounded-lg">
-                                        <label className="font-medium text-gray-300 text-sm">{t(key as any)}</label>
+                                        <label className="font-medium text-gray-300 text-sm">{t(key)}</label>
                                         <label htmlFor={key} className="relative inline-flex items-center cursor-pointer">
                                             <input
                                             type="checkbox"

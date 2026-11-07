@@ -46,9 +46,9 @@ export const parseAndTranslateTargetType = (targetType: string, t: TFunction): s
     if (match) {
         const mainType = match[1];
         const subType = match[2];
-        return `${t(mainType as any)} (${t(subType as any)})`;
+        return `${t(mainType)} (${t(subType)})`;
     }
-    return t(targetType as any);
+    return t(targetType);
 };
 
 export const generateEffectDescription = (effect: CombatActionEffect, t: TFunction): string => {
@@ -87,7 +87,7 @@ export const generateEffectDescription = (effect: CombatActionEffect, t: TFuncti
     }
 
     // Generic fallback for unknown types
-    let desc = `${t(effect.effectType as any)}: ${value}`;
+    let desc = `${t(effect.effectType)}: ${value}`;
     if (target) desc += ` ${target}`;
     if (duration) desc += ` (${t('{duration} turns', { duration })})`;
     return desc;

@@ -463,7 +463,7 @@ const LyriaMusicPlayer: React.FC<LyriaMusicPlayerProps> = ({
                     />
                 </div>
             </div>
-            <div className="text-center text-xs text-gray-500 mt-2 capitalize">{t(musicStatus as any)}</div>
+            <div className="text-center text-xs text-gray-500 mt-2 capitalize">{t(musicStatus)}</div>
         </div>
       </div>
       <div 

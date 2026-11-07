@@ -274,7 +274,7 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                 
                 {/* Sub-info */}
                 <div className="text-gray-400 text-sm mt-2 flex items-center gap-1 flex-wrap">
-                    <span>{t(character.race as any)} {t(character.class as any)},&nbsp;</span>
+                    <span>{t(character.race)} {t(character.class)},&nbsp;</span>
                     {isAdminEditable && !isViewOnly ? (
                         isEditingAge ? (
                             <input
@@ -342,7 +342,7 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                                     <span className="text-sm font-medium text-gray-300">{t('Money')}</span>
                                 </div>
                                 <span className="text-sm font-mono text-gray-200 font-semibold">
-                                    {character.money} {t(gameSettings.gameWorldInformation.currencyName as any)}
+                                    {character.money} {t(gameSettings.gameWorldInformation.currencyName)}
                                 </span>
                             </div>
                             {/* Spacer to align with other stat bars that have a progress bar */}

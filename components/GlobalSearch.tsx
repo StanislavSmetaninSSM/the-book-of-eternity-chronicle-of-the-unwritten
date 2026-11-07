@@ -170,7 +170,7 @@ export default function GlobalSearch({ gameState, visitedLocations, onOpenDetail
                                 if ((items as any).length === 0) return null;
                                 return (
                                     <div key={category} className="mb-2 last:mb-0">
-                                        <h4 className="text-xs font-bold uppercase text-gray-500 px-2 py-1">{t(category as any)}</h4>
+                                        <h4 className="text-xs font-bold uppercase text-gray-500 px-2 py-1">{t(category)}</h4>
                                         <ul className="space-y-1">
                                             {(items as any).map((item: any, index: number) => (
                                                 <li key={index}>

@@ -121,15 +121,15 @@ const NpcItem: React.FC<{
                 </div>
                 <div className="flex-1 text-left">
                     <p className="font-semibold text-gray-200">{npc.name} <span className="text-sm font-mono text-cyan-400">({t('Lvl {level}', { level: npc.level || '?' })})</span></p>
-                    <p className="text-sm text-gray-400">{t(npc.race as any)} {t(npc.class as any)}</p>
+                    <p className="text-sm text-gray-400">{t(npc.race)} {t(npc.class)}</p>
                     {npc.relationshipLevel !== undefined ? (
                         <div title={getRelationshipTooltip(npc.relationshipLevel)}>
                             <p className={`text-xs mt-1 font-semibold ${attitudeColorMap[npc.attitude || ''] || 'text-gray-400'}`}>
-                                {t('Relationship')}: {npc.relationshipLevel} {npc.attitude ? `(${t(npc.attitude as any)})` : ''}
+                                {t('Relationship')}: {npc.relationshipLevel} {npc.attitude ? `(${t(npc.attitude)})` : ''}
                             </p>
                         </div>
                     ) : npc.attitude && (
-                        <p className={`text-xs mt-1 font-semibold ${attitudeColorMap[npc.attitude] || 'text-gray-400'}`}>{t('Attitude')}: {t(npc.attitude as any)}</p>
+                        <p className={`text-xs mt-1 font-semibold ${attitudeColorMap[npc.attitude] || 'text-gray-400'}`}>{t('Attitude')}: {t(npc.attitude)}</p>
                     )}
                     {primaryAffiliation && (
                         <div className="text-xs text-yellow-300/70 mt-1 flex items-center gap-1.5">

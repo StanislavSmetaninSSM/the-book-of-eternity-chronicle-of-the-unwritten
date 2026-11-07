@@ -30,7 +30,7 @@ const LocationItem: React.FC<{
 }> = ({ loc, onOpenModal, imageCache, onImageGenerated, isCurrentLocation, allowHistoryManipulation, onDelete, gameSettings }) => {
   const { t } = useLocalization();
   
-  const displayType = t((loc.indoorType || loc.biome || loc.locationType) as any);
+  const displayType = t((loc.indoorType || loc.biome || loc.locationType));
   
   const { eventType, eventText } = useMemo(() => {
     const fullEventText = loc.eventDescriptions && loc.eventDescriptions.length > 0 ? loc.eventDescriptions[0].trim() : '';
@@ -107,7 +107,7 @@ const LocationItem: React.FC<{
                     {loc.factionControl.map(fc => (
                         <div key={fc.factionId || fc.factionName} className="text-xs">
                             <div className="flex justify-between items-center text-gray-300 mb-1">
-                                <span className="font-semibold">{fc.factionName} ({t(fc.controlType as any)})</span>
+                                <span className="font-semibold">{fc.factionName} ({t(fc.controlType)})</span>
                                 <span className="font-mono">{fc.controlLevel}%</span>
                             </div>
                             <div className="w-full bg-gray-700/70 rounded-full h-2 overflow-hidden">
@@ -151,7 +151,7 @@ const LocationItem: React.FC<{
         {eventText && (
             <div className="border-t border-gray-700/50 pt-3 mt-3 space-y-2">
                 <p className="text-xs font-semibold text-gray-400">
-                    {t('Last Event')}: {eventType && <span className="text-cyan-300 font-medium">{t(eventType as any)}</span>}
+                    {t('Last Event')}: {eventType && <span className="text-cyan-300 font-medium">{t(eventType)}</span>}
                 </p>
                 <div className="text-sm italic text-gray-400 line-clamp-2">
                     <MarkdownRenderer content={eventText} />

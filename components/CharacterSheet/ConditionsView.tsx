@@ -169,7 +169,7 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
                                     <div className="flex-1">
                                         <div className="flex justify-between items-baseline">
                                              <span className="font-semibold text-red-400">{wound.woundName}</span>
-                                             <span className="text-xs text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t(wound.severity as any)}</span>
+                                             <span className="text-xs text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t(wound.severity)}</span>
                                         </div>
                                          <p className="text-sm text-gray-400 italic mt-1 line-clamp-2">{wound.descriptionOfEffects}</p>
                                     </div>
@@ -230,7 +230,7 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
                                     max={state.maxValue}
                                     min={state.minValue}
                                     color="bg-purple-500"
-                                    label={t(state.stateName as any)}
+                                    label={t(state.stateName)}
                                     icon={ExclamationTriangleIcon}
                                     onClick={() => onOpenDetailModal(t("CustomState: {name}", { name: state.stateName }), { ...state, type: 'customState' })}
                                 />

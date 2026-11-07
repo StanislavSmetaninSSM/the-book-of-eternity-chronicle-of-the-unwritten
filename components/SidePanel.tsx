@@ -461,7 +461,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
                 }`}
                 >
                 <Icon className={`w-6 h-6 flex-shrink-0 ${isStashTab ? 'text-red-400' : 'text-cyan-400/80'}`} />
-                <span className="font-semibold text-base">{t(tab.name as any)}</span>
+                <span className="font-semibold text-base">{t(tab.name)}</span>
                 {isStashTab && showStash && (
                     <span className="absolute top-2 right-2 flex h-4 w-4">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>

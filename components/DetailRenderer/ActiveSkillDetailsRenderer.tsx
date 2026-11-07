@@ -124,7 +124,7 @@ const ActiveSkillDetailsRenderer: React.FC<ActiveSkillDetailsProps> = ({ skill, 
             </Section>
         )}
         <Section title={t("Scaling")} icon={ArrowPathIcon}>
-            <DetailRow label={t("Scales With")} value={skill.scalingCharacteristic ? t(skill.scalingCharacteristic as any) : t('None')} icon={LinkIcon} />
+            <DetailRow label={t("Scales With")} value={skill.scalingCharacteristic ? t(skill.scalingCharacteristic) : t('None')} icon={LinkIcon} />
             <DetailRow label={t("Scales Value")} value={skill.scalesValue ? t('Yes') : t('No')} icon={WrenchScrewdriverIcon} />
             <DetailRow label={t("Scales Duration")} value={skill.scalesDuration ? t('Yes') : t('No')} icon={WrenchScrewdriverIcon} />
             <DetailRow label={t("Scales Chance")} value={skill.scalesChance ? t('Yes') : t('No')} icon={WrenchScrewdriverIcon} />

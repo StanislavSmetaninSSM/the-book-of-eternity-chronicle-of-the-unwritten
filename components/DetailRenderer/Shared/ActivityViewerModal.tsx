@@ -102,7 +102,7 @@ const ActivityViewerModal: React.FC<ActivityViewerModalProps> = ({ isOpen, onClo
                         <div key={`${activity.activityName}-${index}`} className={`bg-gray-800/60 p-3 rounded-lg border-l-4 ${isSuccess ? 'border-green-600' : 'border-red-600'} group relative`}>
                             <div>
                             <h4 className={`font-semibold ${isSuccess ? 'text-green-300' : 'text-red-300'}`}>{activity.activityName}</h4>
-                            <p className="text-xs text-gray-400">{t('Completed on turn {turn}', { turn: activity.completionTurn })} - {t(activity.finalOutcome as any)}</p>
+                            <p className="text-xs text-gray-400">{t('Completed on turn {turn}', { turn: activity.completionTurn })} - {t(activity.finalOutcome)}</p>
                             <p className="text-sm text-gray-300 mt-1"><MarkdownRenderer content={activity.narrativeSummary} /></p>
                             </div>
                             {allowHistoryManipulation && onDeleteCompletedActivity && (

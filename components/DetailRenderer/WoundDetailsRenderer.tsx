@@ -31,7 +31,7 @@ const WoundDetailsRenderer: React.FC<WoundDetailsProps> = ({ wound }) => {
                 <div className="italic text-gray-400"><MarkdownRenderer content={wound.descriptionOfEffects} /></div>
 
                 <Section title={t("Properties")} icon={InformationCircleIcon}>
-                    <DetailRow label={t("Severity")} value={t(wound.severity as any)} icon={ExclamationTriangleIcon} />
+                    <DetailRow label={t("Severity")} value={t(wound.severity)} icon={ExclamationTriangleIcon} />
                 </Section>
 
                 {healing && (
@@ -39,7 +39,7 @@ const WoundDetailsRenderer: React.FC<WoundDetailsProps> = ({ wound }) => {
                         <div className="bg-gray-900/30 p-4 rounded-lg space-y-4 border border-gray-700/50">
                             <DetailRow 
                                 label={t("Current State")} 
-                                value={<span className="font-bold text-cyan-300">{t(healing.currentState as any)}</span>} 
+                                value={<span className="font-bold text-cyan-300">{t(healing.currentState)}</span>} 
                             />
                             <div className="text-sm text-gray-400 italic border-l-2 border-cyan-500/30 pl-3">
                                 <MarkdownRenderer content={healing.description} />
@@ -48,7 +48,7 @@ const WoundDetailsRenderer: React.FC<WoundDetailsProps> = ({ wound }) => {
                             {healing.currentState !== 'Healed' && healing.nextState && (
                                 <div>
                                     <div className="flex justify-between items-center mb-1 text-sm">
-                                        <span className="font-medium text-gray-300">{t("Progress to")} <span className="font-bold text-green-400">{t(healing.nextState as any)}</span></span>
+                                        <span className="font-medium text-gray-300">{t("Progress to")} <span className="font-bold text-green-400">{t(healing.nextState)}</span></span>
                                         <span className="font-mono text-gray-400">{healing.treatmentProgress} / {healing.progressNeeded}</span>
                                     </div>
                                     <div className="w-full bg-gray-700/50 rounded-full h-2.5">

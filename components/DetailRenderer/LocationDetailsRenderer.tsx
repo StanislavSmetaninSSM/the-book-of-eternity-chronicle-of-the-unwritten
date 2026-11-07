@@ -68,7 +68,7 @@ const ChallengeAssessment: React.FC<{
 
         return {
             baseDifficulty,
-            label: t(levelInfo.labelKey as any),
+            label: t(levelInfo.labelKey),
             color: levelInfo.color,
             textColor: levelInfo.textColor,
             percentage: levelInfo.percentage
@@ -94,9 +94,9 @@ const ChallengeAssessment: React.FC<{
                 return (
                     <div key={facet.key} className="bg-gray-700/30 p-3 rounded-lg">
                         <div className="flex justify-between items-center mb-2">
-                            <span className="font-semibold text-gray-300 flex items-center gap-2" title={t(facet.tooltipKey as any)}>
+                            <span className="font-semibold text-gray-300 flex items-center gap-2" title={t(facet.tooltipKey)}>
                                 <Icon className="w-5 h-5 text-cyan-400" />
-                                {t(facet.labelKey as any)} <span className="text-gray-500 text-xs">({difficultyValue})</span>
+                                {t(facet.labelKey)} <span className="text-gray-500 text-xs">({difficultyValue})</span>
                             </span>
                             <span className="font-mono text-lg text-white" title={t('Effective Difficulty')}>{baseDifficulty}</span>
                         </div>
@@ -421,9 +421,9 @@ const LocationDetailsRenderer: React.FC<LocationDetailsProps> = (props) => {
                 <Section title={t("Information")} icon={InformationCircleIcon}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
                         <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2"><MapPinIcon className="w-4 h-4" />{t("Coordinates")}</span><div className="text-right text-sm text-gray-200">{`(${location.coordinates?.x}, ${location.coordinates?.y})`}</div></div>
-                        <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2">{location.locationType === 'outdoor' ? <SunIcon className="w-4 h-4" /> : <BuildingOfficeIcon className="w-4 h-4" />}{t("Location Type")}</span><div className="text-right text-sm text-gray-200">{t(location.locationType as any)}</div></div>
-                        {location.biome && <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2"><GlobeAltIcon className="w-4 h-4" />{t("Biome")}</span><div className="text-right text-sm text-gray-200">{t(location.biome as any)}</div></div>}
-                        {location.indoorType && <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2"><HomeModernIcon className="w-4 h-4" />{t("Indoor Type")}</span><div className="text-right text-sm text-gray-200">{t(location.indoorType as any)}</div></div>}
+                        <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2">{location.locationType === 'outdoor' ? <SunIcon className="w-4 h-4" /> : <BuildingOfficeIcon className="w-4 h-4" />}{t("Location Type")}</span><div className="text-right text-sm text-gray-200">{t(location.locationType)}</div></div>
+                        {location.biome && <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2"><GlobeAltIcon className="w-4 h-4" />{t("Biome")}</span><div className="text-right text-sm text-gray-200">{t(location.biome)}</div></div>}
+                        {location.indoorType && <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2"><HomeModernIcon className="w-4 h-4" />{t("Indoor Type")}</span><div className="text-right text-sm text-gray-200">{t(location.indoorType)}</div></div>}
                     </div>
                 </Section>
             );
@@ -447,8 +447,8 @@ const LocationDetailsRenderer: React.FC<LocationDetailsProps> = (props) => {
                                 {isExpanded && (
                                     <div className="p-3 border-t border-gray-700/50 space-y-3">
                                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
-                                            <span><strong className="text-gray-500">{t("Type")}:</strong> {t(link.linkType as any)}</span>
-                                            <span><strong className="text-gray-500">{t("State")}:</strong> {t(link.linkState as any)}</span>
+                                            <span><strong className="text-gray-500">{t("Type")}:</strong> {t(link.linkType)}</span>
+                                            <span><strong className="text-gray-500">{t("State")}:</strong> {t(link.linkState)}</span>
                                             <span><strong className="text-gray-500">{t("Coordinates")}:</strong> ({link.targetCoordinates.x}, {link.targetCoordinates.y})</span>
                                         </div>
                                         {(link.estimatedInternalDifficultyProfile || link.estimatedExternalDifficultyProfile) && playerCharacter && (
@@ -498,7 +498,7 @@ const LocationDetailsRenderer: React.FC<LocationDetailsProps> = (props) => {
                                         ) : (
                                             <span className="font-bold text-lg text-white">{fc.factionName}</span>
                                         )}
-                                        <span className="text-xs bg-gray-600 px-2 py-1 rounded-full">{t(fc.controlType as any)}</span>
+                                        <span className="text-xs bg-gray-600 px-2 py-1 rounded-full">{t(fc.controlType)}</span>
                                     </div>
                                     <div className="mt-2">
                                         <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
@@ -617,7 +617,7 @@ const LocationDetailsRenderer: React.FC<LocationDetailsProps> = (props) => {
                                     className="bg-slate-800/70 hover:bg-slate-700/90 rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-center transition-all duration-200 transform hover:scale-105 border border-slate-700 hover:border-cyan-500"
                                 >
                                     <tab.icon className="w-7 h-7 text-cyan-400" />
-                                    <span className="font-semibold text-gray-200 text-sm">{t(tab.key as any)}</span>
+                                    <span className="font-semibold text-gray-200 text-sm">{t(tab.key)}</span>
                                 </button>
                             ))}
                         </div>
@@ -630,7 +630,7 @@ const LocationDetailsRenderer: React.FC<LocationDetailsProps> = (props) => {
                                 {t('Back to Menu')}
                             </button>
                             <div className="w-px h-6 bg-gray-700"></div>
-                            <h3 className="text-xl font-bold text-cyan-400 narrative-text flex-1">{t(activeView as any)}</h3>
+                            <h3 className="text-xl font-bold text-cyan-400 narrative-text flex-1">{t(activeView)}</h3>
                             <button onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)} title={t(isHeaderCollapsed ? 'Expand Header' : 'Collapse Header')} className="p-2 text-gray-400 rounded-full hover:bg-gray-700/50 transition-colors">
                                 {isHeaderCollapsed ? <ChevronDownIcon className="w-5 h-5" /> : <ChevronUpIcon className="w-5 h-5" />}
                             </button>

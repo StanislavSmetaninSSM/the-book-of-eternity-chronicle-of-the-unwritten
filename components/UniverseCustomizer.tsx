@@ -36,8 +36,8 @@ const RaceEditModal: React.FC<{
         const initialBonuses = CHARACTERISTICS_LIST.reduce((acc, char) => ({ ...acc, [char]: 0 }), {});
         return {
             ...race,
-            name: race.name ? t(race.name as any) : '',
-            description: race.description ? t(race.description as any) : '',
+            name: race.name ? t(race.name) : '',
+            description: race.description ? t(race.description) : '',
             bonuses: { ...initialBonuses, ...race.bonuses },
             availableClasses: race.availableClasses || []
         };
@@ -47,8 +47,8 @@ const RaceEditModal: React.FC<{
         const initialBonuses = CHARACTERISTICS_LIST.reduce((acc, char) => ({ ...acc, [char]: 0 }), {});
         setLocalRace({
             ...race,
-            name: race.name ? t(race.name as any) : '',
-            description: race.description ? t(race.description as any) : '',
+            name: race.name ? t(race.name) : '',
+            description: race.description ? t(race.description) : '',
             bonuses: { ...initialBonuses, ...race.bonuses },
             availableClasses: race.availableClasses || []
         });
@@ -119,7 +119,7 @@ const RaceEditModal: React.FC<{
                     <div className="grid grid-cols-2 gap-2">
                         {CHARACTERISTICS_LIST.map(attr => (
                             <div key={attr} className="flex justify-between items-center bg-gray-800 p-2 rounded-md">
-                                <span className="capitalize text-sm">{t(attr as any)}</span>
+                                <span className="capitalize text-sm">{t(attr)}</span>
                                 <div className="flex items-center gap-2">
                                     <button type="button" onClick={() => handleAttributeChange(attr, -1)} disabled={(localRace.bonuses[attr] || 0) <= -1} className="p-1 rounded-full bg-red-600/50 hover:bg-red-500 disabled:bg-gray-600 text-white"><MinusIcon className="w-4 h-4" /></button>
                                     <span className="w-6 text-center font-mono">{1 + (localRace.bonuses[attr] || 0)}</span>
@@ -135,7 +135,7 @@ const RaceEditModal: React.FC<{
                         {allClasses.map(className => (
                             <div key={className} className="flex items-center">
                                 <input id={`class-${className}`} type="checkbox" checked={(localRace.availableClasses || []).includes(className)} onChange={() => handleClassToggle(className)} className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-cyan-600 focus:ring-cyan-500" />
-                                <label htmlFor={`class-${className}`} className="ml-2 text-sm text-gray-300">{t(className as any)}</label>
+                                <label htmlFor={`class-${className}`} className="ml-2 text-sm text-gray-300">{t(className)}</label>
                             </div>
                         ))}
                     </div>
@@ -214,7 +214,7 @@ const RaceEditor: React.FC<RaceEditorProps> = ({ world, onFieldChange, customUni
     }, [world.races]);
 
     const filteredRaces = useMemo(() => {
-        return Object.keys(races).filter(raceName => t(raceName as any).toLowerCase().includes(search.toLowerCase()));
+        return Object.keys(races).filter(raceName => t(raceName).toLowerCase().includes(search.toLowerCase()));
     }, [races, search, t]);
 
     const handleSaveRace = (race: any) => {
@@ -254,7 +254,7 @@ const RaceEditor: React.FC<RaceEditorProps> = ({ world, onFieldChange, customUni
             <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                 {filteredRaces.map(raceName => (
                     <div key={raceName} className="flex items-center justify-between p-2 bg-gray-900/40 rounded-md">
-                        <span className="text-gray-200">{t(raceName as any)}</span>
+                        <span className="text-gray-200">{t(raceName)}</span>
                         <div className="flex items-center gap-2">
                             <button onClick={() => setEditingRace({ ...races[raceName], name: raceName, originalName: raceName })} className="p-1 text-cyan-400 hover:text-white"><PencilSquareIcon className="w-5 h-5" /></button>
                             <button onClick={() => setRaceToDelete(raceName)} className="p-1 text-red-400 hover:text-white"><TrashIcon className="w-5 h-5" /></button>
@@ -284,8 +284,8 @@ const ClassEditModal: React.FC<{
         const initialBonuses = CHARACTERISTICS_LIST.reduce((acc, char) => ({ ...acc, [char]: 0 }), {});
         return {
             ...classData,
-            name: classData.name ? t(classData.name as any) : '',
-            description: classData.description ? t(classData.description as any) : '',
+            name: classData.name ? t(classData.name) : '',
+            description: classData.description ? t(classData.description) : '',
             bonuses: { ...initialBonuses, ...classData.bonuses },
         };
     });
@@ -294,8 +294,8 @@ const ClassEditModal: React.FC<{
         const initialBonuses = CHARACTERISTICS_LIST.reduce((acc, char) => ({ ...acc, [char]: 0 }), {});
         setLocalClass({
             ...classData,
-            name: classData.name ? t(classData.name as any) : '',
-            description: classData.description ? t(classData.description as any) : '',
+            name: classData.name ? t(classData.name) : '',
+            description: classData.description ? t(classData.description) : '',
             bonuses: { ...initialBonuses, ...classData.bonuses },
         });
     }, [classData, t]);
@@ -352,7 +352,7 @@ const ClassEditModal: React.FC<{
                     <div className="grid grid-cols-2 gap-2">
                         {CHARACTERISTICS_LIST.map(attr => (
                             <div key={attr} className="flex justify-between items-center bg-gray-800 p-2 rounded-md">
-                                <span className="capitalize text-sm">{t(attr as any)}</span>
+                                <span className="capitalize text-sm">{t(attr)}</span>
                                 <div className="flex items-center gap-2">
                                     <button type="button" onClick={() => handleAttributeChange(attr, -1)} disabled={(localClass.bonuses[attr] || 0) <= 0} className="p-1 rounded-full bg-red-600/50 hover:bg-red-500 disabled:bg-gray-600 text-white"><MinusIcon className="w-4 h-4" /></button>
                                     <span className="w-6 text-center font-mono">{(localClass.bonuses[attr] || 0)}</span>
@@ -391,7 +391,7 @@ const ClassEditor: React.FC<ClassEditorProps> = ({ world, onFieldChange, customU
     }, [world.classes]);
 
     const filteredClasses = useMemo(() => {
-        return Object.keys(classes).filter(className => t(className as any).toLowerCase().includes(search.toLowerCase()));
+        return Object.keys(classes).filter(className => t(className).toLowerCase().includes(search.toLowerCase()));
     }, [classes, search, t]);
 
     const handleSaveClass = (classData: any) => {
@@ -429,7 +429,7 @@ const ClassEditor: React.FC<ClassEditorProps> = ({ world, onFieldChange, customU
             <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                 {filteredClasses.map(className => (
                     <div key={className} className="flex items-center justify-between p-2 bg-gray-900/40 rounded-md">
-                        <span className="text-gray-200">{t(className as any)}</span>
+                        <span className="text-gray-200">{t(className)}</span>
                         <div className="flex items-center gap-2">
                             <button onClick={() => setEditingClass({ ...classes[className], name: className, originalName: className })} className="p-1 text-cyan-400 hover:text-white"><PencilSquareIcon className="w-5 h-5" /></button>
                             <button onClick={() => setClassToDelete(className)} className="p-1 text-red-400 hover:text-white"><TrashIcon className="w-5 h-5" /></button>
@@ -539,7 +539,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
                                 </button>
                                 <input
                                     type="text"
-                                    defaultValue={t(month.name as any)}
+                                    defaultValue={t(month.name)}
                                     key={`${month.name}-${index}-name`}
                                     onBlur={(e) => handleMonthChange(index, 'name', e.target.value)}
                                     placeholder={t('Month Name')}
@@ -560,7 +560,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
                                 <div className="p-2 border-t border-gray-700/50">
                                     <label className="block text-xs font-medium text-gray-400 mb-1">{t('Description')}</label>
                                     <textarea
-                                        defaultValue={t(month.description as any) || ''}
+                                        defaultValue={t(month.description) || ''}
                                         key={`${month.name}-${index}-desc`}
                                         onBlur={(e) => handleMonthChange(index, 'description', e.target.value)}
                                         rows={3}
@@ -589,7 +589,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
                                     </button>
                                     <input
                                         type="text"
-                                        defaultValue={t(dayInfo.name as any)}
+                                        defaultValue={t(dayInfo.name)}
                                         key={`${dayInfo.name}-${index}-name`}
                                         onBlur={(e) => handleDayNameChange(index, 'name', e.target.value)}
                                         placeholder={t('Day Name')}
@@ -603,7 +603,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
                                      <div className="p-2 border-t border-gray-700/50">
                                         <label className="block text-xs font-medium text-gray-400 mb-1">{t('Description')}</label>
                                         <textarea
-                                            defaultValue={t(dayInfo.description as any) || ''}
+                                            defaultValue={t(dayInfo.description) || ''}
                                             key={`${dayInfo.name}-${index}-desc`}
                                             onBlur={(e) => handleDayNameChange(index, 'description', e.target.value)}
                                             rows={3}
@@ -696,7 +696,7 @@ const CurrencyEditor: React.FC<CurrencyEditorProps> = ({ world, onFieldChange, c
             <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                 {currencyList.map((currency) => (
                     <div key={currency} className="flex items-center justify-between p-2 bg-gray-900/40 rounded-md">
-                        <span className={`text-gray-200 ${world.currencyName === currency ? 'font-bold' : ''}`}>{t(currency as any)}</span>
+                        <span className={`text-gray-200 ${world.currencyName === currency ? 'font-bold' : ''}`}>{t(currency)}</span>
                         <div className="flex items-center gap-2">
                             {world.currencyName === currency ? (
                                 <StarIcon className="w-4 h-4 text-yellow-400" title={t('Default currency')} />
@@ -851,7 +851,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         >
             <div className="flex border-b border-gray-700/60 mb-4">
                 {['General', 'Calendar', 'Races', 'Classes', 'Currencies'].map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === tab ? 'border-cyan-400 text-white' : 'border-transparent text-gray-400 hover:text-white'}`}>{t(tab as any)}</button>
+                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === tab ? 'border-cyan-400 text-white' : 'border-transparent text-gray-400 hover:text-white'}`}>{t(tab)}</button>
                 ))}
             </div>
 

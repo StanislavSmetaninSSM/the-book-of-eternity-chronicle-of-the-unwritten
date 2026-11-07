@@ -127,7 +127,7 @@ const Tooltip = ({
                         {location.factionControl.map(fc => (
                             <div key={fc.factionId || fc.factionName} className="text-xs">
                                 <div className="flex justify-between items-center text-amber-900/90 mb-0.5">
-                                    <span className="font-semibold">{fc.factionName} ({t(fc.controlType as any)})</span>
+                                    <span className="font-semibold">{fc.factionName} ({t(fc.controlType)})</span>
                                     <span className="font-mono">{fc.controlLevel}%</span>
                                 </div>
                                 <div className="w-full bg-amber-800/20 rounded-full h-1.5 overflow-hidden">

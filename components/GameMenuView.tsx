@@ -453,7 +453,7 @@ export default function GameMenuView({
                             <button type="button" onClick={() => handleDifficultyChange('hard')} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${currentDifficulty === 'hard' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('Hard')}</button>
                             <button type="button" onClick={() => handleDifficultyChange('impossible')} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${currentDifficulty === 'impossible' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('Impossible')}</button>
                         </div>
-                        <p className="text-xs text-gray-400 mt-2 text-center">{t(`${currentDifficulty}_mode_description` as any)}</p>
+                        <p className="text-xs text-gray-400 mt-2 text-center">{t(`${currentDifficulty}_mode_description`)}</p>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-gray-900/30 rounded-lg border border-yellow-500/20">
                         <div>
@@ -525,7 +525,7 @@ export default function GameMenuView({
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     {(['shareCharacteristics', 'shareSkills', 'shareNpcReputation', 'shareFactionReputation', 'shareInventory'] as const).map(key => (
                                         <div key={key} className="flex items-center justify-between p-2 bg-gray-900/30 rounded-lg">
-                                        <label className="font-medium text-gray-300 text-sm">{t(key as any)}</label>
+                                        <label className="font-medium text-gray-300 text-sm">{t(key)}</label>
                                         <label htmlFor={`mp-${key}-ingame`} className="relative inline-flex items-center cursor-pointer">
                                             <input
                                             type="checkbox"

@@ -195,7 +195,7 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
             return raceOptions;
         }
         return raceOptions.filter(race =>
-            t(race as any).toLowerCase().includes(raceSearch.toLowerCase())
+            t(race).toLowerCase().includes(raceSearch.toLowerCase())
         );
     }, [raceOptions, raceSearch, t]);
 
@@ -204,7 +204,7 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
             return classOptions;
         }
         return classOptions.filter(cls =>
-            t(cls as any).toLowerCase().includes(classSearch.toLowerCase())
+            t(cls).toLowerCase().includes(classSearch.toLowerCase())
         );
     }, [classOptions, classSearch, t]);
     
@@ -226,8 +226,8 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
                     <div className="p-3 bg-gray-900/30 rounded-lg border border-cyan-500/20 space-y-2">
                         <h4 className="text-lg font-semibold text-cyan-400">{t('Copied from Template')}</h4>
                         <p className="text-xs text-gray-400">{t("Race, class, and characteristics will be copied from {name}.", { name: templatePlayer.name })}</p>
-                        <p><strong>{t('Race')}:</strong> {t(templatePlayer.race as any)}</p>
-                        <p><strong>{t('Class')}:</strong> {t(templatePlayer.class as any)}</p>
+                        <p><strong>{t('Race')}:</strong> {t(templatePlayer.race)}</p>
+                        <p><strong>{t('Class')}:</strong> {t(templatePlayer.class)}</p>
                     </div>
                 ) : (
                     <>
@@ -254,7 +254,7 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
                                     <p className="text-xs text-yellow-400/80 mb-2">{t('custom_race_zero_attribute_warning')}</p>
                                     {CHARACTERISTICS_LIST.map(attr => (
                                         <div key={attr} className="flex justify-between items-center bg-gray-700/50 p-1 rounded-md mb-1 text-xs">
-                                            <span className="capitalize">{t(attr as any)}</span>
+                                            <span className="capitalize">{t(attr)}</span>
                                             <div className="flex items-center gap-2">
                                                 <button type="button" onClick={() => handleAttributeChange(attr, -1)} disabled={customAttributes[attr as keyof typeof customAttributes] <= 1} className="p-1 rounded-full bg-red-600/50 hover:bg-red-500 disabled:bg-gray-600 text-white"><MinusIcon className="w-3 h-3" /></button>
                                                 <span>{customAttributes[attr as keyof typeof customAttributes]}</span>
@@ -275,7 +275,7 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
                                     className="w-full bg-gray-800/60 border border-gray-600 rounded-md p-2 mt-1 text-gray-200 focus:ring-1 focus:ring-cyan-500 transition"
                                 />
                                 <select id="race" name="race" onChange={handleInputChange} value={formData.race} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-2 text-gray-200 mt-1">
-                                    {filteredRaceOptions.map(r => <option key={r} value={r}>{t(r as any)}</option>)}
+                                    {filteredRaceOptions.map(r => <option key={r} value={r}>{t(r)}</option>)}
                                 </select>
                             </>
                         )}
@@ -301,7 +301,7 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
                                     <label className="block text-sm font-medium text-gray-300 mb-1">{t("Distribute Bonus Points (Remaining: {points})", { points: customClassAttributePoints })}</label>
                                     {CHARACTERISTICS_LIST.map(attr => (
                                         <div key={attr} className="flex justify-between items-center bg-gray-700/50 p-1 rounded-md mb-1 text-xs">
-                                            <span className="capitalize">{t(attr as any)}</span>
+                                            <span className="capitalize">{t(attr)}</span>
                                             <div className="flex items-center gap-2">
                                                 <button type="button" onClick={() => handleCustomClassAttributeChange(attr, -1)} disabled={customClassAttributes[attr as keyof typeof customClassAttributes] <= 0} className="p-1 rounded-full bg-red-600/50 hover:bg-red-500 disabled:bg-gray-600 text-white"><MinusIcon className="w-3 h-3" /></button>
                                                 <span>{customClassAttributes[attr as keyof typeof customClassAttributes]}</span>
@@ -321,7 +321,7 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
                                     className="w-full bg-gray-800/60 border border-gray-600 rounded-md p-2 mt-1 text-gray-200 focus:ring-1 focus:ring-cyan-500 transition"
                                 />
                                 <select id="charClass" name="charClass" onChange={handleInputChange} value={formData.charClass} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-2 text-gray-200 mt-1">
-                                  {filteredClassOptions.map(c => <option key={c} value={c}>{t(c as any)}</option>)}
+                                  {filteredClassOptions.map(c => <option key={c} value={c}>{t(c)}</option>)}
                                 </select>
                             </>
                         )}
@@ -334,7 +334,7 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
                                     <label className="block text-sm font-medium text-gray-300 mb-1">{t("Distribute Attribute Points (Remaining: {points})", { points: attributePoints })}</label>
                                     {CHARACTERISTICS_LIST.map(attr => (
                                         <div key={attr} className="flex justify-between items-center bg-gray-700/50 p-1 rounded-md mb-1 text-xs">
-                                            <span className="capitalize">{t(attr as any)}</span>
+                                            <span className="capitalize">{t(attr)}</span>
                                             <div className="flex items-center gap-2">
                                                 <button type="button" onClick={() => handleAttributeChange(attr, -1)} disabled={customAttributes[attr as keyof typeof customAttributes] <= 1} className="p-1 rounded-full bg-red-600/50 hover:bg-red-500 disabled:bg-gray-600 text-white"><MinusIcon className="w-3 h-3" /></button>
                                                 <span>{customAttributes[attr as keyof typeof customAttributes]}</span>

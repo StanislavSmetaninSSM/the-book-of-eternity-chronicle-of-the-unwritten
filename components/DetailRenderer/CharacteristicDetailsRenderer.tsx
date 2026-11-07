@@ -15,7 +15,7 @@ const CharacteristicDetailsRenderer: React.FC<CharacteristicDetailsProps> = ({ d
     return (
         <div className="space-y-4">
             <div className="flex items-baseline gap-4">
-                <h3 className="text-3xl font-bold text-cyan-300 capitalize">{t(data.name as any)}</h3>
+                <h3 className="text-3xl font-bold text-cyan-300 capitalize">{t(data.name)}</h3>
                 <p className="text-3xl font-mono text-white">{data.value}</p>
             </div>
             <div className="text-gray-400 text-lg italic"><MarkdownRenderer content={description} /></div>

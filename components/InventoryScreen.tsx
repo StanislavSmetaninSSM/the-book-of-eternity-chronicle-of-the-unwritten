@@ -124,7 +124,7 @@ const EquipmentSlotComponent: React.FC<{
             ) : (
                 <div className="text-center text-gray-500 pointer-events-none">
                     <Icon className="w-8 h-8 mx-auto mb-1 opacity-50" />
-                    <div className="text-xs font-semibold opacity-60">{t(slot.label as any)}</div>
+                    <div className="text-xs font-semibold opacity-60">{t(slot.label)}</div>
                 </div>
             )}
         </div>
@@ -539,7 +539,7 @@ export const InventoryManagerUI: React.FC<InventoryManagerUIProps> = ({
                             >
                                 {(Array.isArray(item.equipmentSlot) ? item.equipmentSlot : [item.equipmentSlot]).map(slot => (
                                     slot && <button key={slot} onClick={() => handleEquip(slot)} className="context-menu-item">
-                                        {t(slot as any)}
+                                        {t(slot)}
                                     </button>
                                 ))}
                             </div>

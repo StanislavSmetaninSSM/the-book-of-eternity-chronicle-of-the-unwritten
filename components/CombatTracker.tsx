@@ -214,7 +214,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                              {isGroup ? (
                                 <p className="text-xs text-gray-400 uppercase tracking-wider">{t('{count}x {unitName} ({type})', { count: combatant.count || 0, unitName: t(combatant.unitName as any), type: t(combatant.type as any) })}</p>
                             ) : (
-                                <p className="text-xs text-gray-400 uppercase tracking-wider">{t(combatant.type as any)}</p>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider">{t(combatant.type)}</p>
                             )}
                         </div>
                         {isDefeated && <span className="text-xs bg-red-900/50 text-red-400 px-2 py-1 rounded-full font-bold">{t('DEFEATED')}</span>}
@@ -256,7 +256,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                         onClick={(e) => { e.stopPropagation(); setActiveTab(tab); }}
                         className={`w-full rounded-md py-2 text-xs font-medium leading-5 transition flex items-center justify-center gap-1.5 ${activeTab === tab ? 'bg-gray-700 text-cyan-400 shadow' : 'text-gray-300 hover:bg-gray-700/50'}`}
                     >
-                        {t(tab as any)}
+                        {t(tab)}
                     </button>
                 ))}
                 </div>
@@ -287,7 +287,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                                 <div className="grid grid-cols-2 gap-1 text-xs">
                                     {(combatant.resistances ?? []).map((res, i) => (
                                         <div key={i} className="bg-gray-800/60 p-1.5 rounded flex justify-between items-center">
-                                            <span className="text-gray-300">{res.resistTypeDisplayName || t(res.resistType as any)}</span>
+                                            <span className="text-gray-300">{res.resistTypeDisplayName || t(res.resistType)}</span>
                                             <span className={`font-mono font-semibold ${parseInt(res.resistanceValue ?? '0') >= 0 ? 'text-green-400' : 'text-red-400'}`}>{res.resistanceValue}</span>
                                         </div>
                                     ))}
@@ -303,7 +303,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                                         <div className="flex-1">
                                             <div className="flex justify-between items-baseline">
                                                  <span className="font-semibold text-red-400">{wound.woundName}</span>
-                                                 <span className="text-xs text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t(wound.severity as any)}</span>
+                                                 <span className="text-xs text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t(wound.severity)}</span>
                                             </div>
                                              <p className="text-sm text-gray-400 italic mt-1 line-clamp-2">{wound.descriptionOfEffects}</p>
                                         </div>

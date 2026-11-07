@@ -164,7 +164,7 @@ const WorldStateDisplay: React.FC<{
 
     // Use absolute value for year display to handle BC/negative years cleanly
     const fullDateString = worldState?.date
-    ? `${t(worldState.date.dayOfWeekName as any)}, ${t('day_of_month', { dayOfMonth: worldState.date.dayOfMonth })} ${t(worldState.date.currentMonthName as any)}, ${Math.abs(worldState.date.currentYear)}`
+    ? `${t(worldState.date.dayOfWeekName)}, ${t('day_of_month', { dayOfMonth: worldState.date.dayOfMonth })} ${t(worldState.date.currentMonthName)}, ${Math.abs(worldState.date.currentYear)}`
     : `Day ${worldState?.day || '?'}`;
     
     const daysInSelectedMonth = useMemo(() => {
@@ -224,7 +224,7 @@ const WorldStateDisplay: React.FC<{
                                     onChange={e => setEditedWeather(e.target.value)} 
                                     className="dark-select w-full text-center text-lg font-semibold capitalize"
                                 >
-                                    {FULL_WEATHER_OPTIONS.map(w => <option key={w} value={w}>{t(w as any)}</option>)}
+                                    {FULL_WEATHER_OPTIONS.map(w => <option key={w} value={w}>{t(w)}</option>)}
                                 </select>
                                 <div className="flex justify-end gap-2">
                                     <button onClick={handleWeatherCancel} className="p-1 text-red-400 hover:text-white rounded-full hover:bg-red-700/50" title={t('Cancel')}><XMarkIcon className="w-4 h-4" /></button>
@@ -233,12 +233,12 @@ const WorldStateDisplay: React.FC<{
                             </div>
                         ) : (
                             <div onClick={() => { setEditedWeather(worldState?.weather || 'Clear'); setIsEditingWeather(true); }} className="group cursor-pointer p-1 rounded-md hover:bg-gray-700/50 transition-colors relative">
-                                <p className="text-lg font-semibold capitalize text-center">{t((worldState?.weather || 'N/A') as any)}</p>
+                                <p className="text-lg font-semibold capitalize text-center">{t((worldState?.weather || 'N/A'))}</p>
                                 <PencilSquareIcon className="w-4 h-4 text-gray-500 absolute top-1/2 -translate-y-1/2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
                         )
                     ) : (
-                        <p className="text-lg font-semibold capitalize">{t((worldState?.weather || 'N/A') as any)}</p>
+                        <p className="text-lg font-semibold capitalize">{t((worldState?.weather || 'N/A'))}</p>
                     )}
                 </div>
             </div>
@@ -259,7 +259,7 @@ const WorldStateDisplay: React.FC<{
                             <div>
                                 <label className="block text-sm font-medium text-gray-300">{t('Month')}</label>
                                 <select value={editedDate.monthIndex} onChange={(e) => setEditedDate(p => ({...p, monthIndex: parseInt(e.target.value, 10)}))} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-2 text-gray-200">
-                                    {calendar?.months.map((month, index) => <option key={month.name} value={index}>{t(month.name as any)}</option>)}
+                                    {calendar?.months.map((month, index) => <option key={month.name} value={index}>{t(month.name)}</option>)}
                                 </select>
                             </div>
                             <div>
@@ -302,7 +302,7 @@ const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, onDelete, allowH
         'Personal': { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t('Personal') },
     }), [t]);
 
-    const typeInfo = eventTypeMapping[event.eventType as keyof typeof eventTypeMapping] || { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t(event.eventType as any) || t('Personal') };
+    const typeInfo = eventTypeMapping[event.eventType as keyof typeof eventTypeMapping] || { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t(event.eventType) || t('Personal') };
 
     const shouldRenderImage = event.image_prompt && (gameSettings?.generateWorldEventImages ?? true);
 
@@ -352,7 +352,7 @@ const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, onDelete, allowH
                         <div className="flex-1">
                             <p className="font-bold text-gray-100 pr-8 group-hover:text-cyan-300 transition-colors">{event.headline}</p>
                             <div className="text-xs text-gray-400 mt-1">
-                                {event.date ? `${t('day_of_month', {dayOfMonth: event.date.dayOfMonth})} ${t(event.date.monthName as any)} - ${event.date.timeOfDay} - ${t('Turn')} ${event.turnNumber}` : `${t('Turn')} ${event.turnNumber}`}
+                                {event.date ? `${t('day_of_month', {dayOfMonth: event.date.dayOfMonth})} ${t(event.date.monthName)} - ${event.date.timeOfDay} - ${t('Turn')} ${event.turnNumber}` : `${t('Turn')} ${event.turnNumber}`}
                             </div>
                         </div>
                     </div>

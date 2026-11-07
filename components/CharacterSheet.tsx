@@ -463,7 +463,7 @@ const ActivitiesView: React.FC<ActivitiesViewProps> = ({ character, isAdminEdita
                                 <div key={`${activity.activityName}-${index}`} className={`bg-gray-800/60 p-3 rounded-lg border-l-4 ${isSuccess ? 'border-green-600' : 'border-red-600'} group relative`}>
                                     <div>
                                         <h4 className={`font-semibold ${isSuccess ? 'text-green-300' : 'text-red-300'}`}>{activity.activityName}</h4>
-                                        <p className="text-xs text-gray-400">{t('Completed on turn {turn}', { turn: activity.completionTurn })} - {t(activity.finalOutcome as any)}</p>
+                                        <p className="text-xs text-gray-400">{t('Completed on turn {turn}', { turn: activity.completionTurn })} - {t(activity.finalOutcome)}</p>
                                         <p className="text-sm text-gray-300 mt-1"><MarkdownRenderer content={activity.narrativeSummary} /></p>
                                     </div>
                                     {isAdminEditable && (
@@ -688,7 +688,7 @@ const CharacterSheet: React.FC<CharacterSheetProps> = (props) => {
                                     className="bg-slate-800/70 hover:bg-slate-700/90 rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-center transition-all duration-200 transform hover:scale-105 border border-slate-700 hover:border-cyan-500"
                                 >
                                     <tab.icon className="w-7 h-7 text-cyan-400" />
-                                    <span className="font-semibold text-gray-200 text-sm">{t(tab.name as any)}</span>
+                                    <span className="font-semibold text-gray-200 text-sm">{t(tab.name)}</span>
                                 </button>
                             ))}
                         </div>
@@ -701,7 +701,7 @@ const CharacterSheet: React.FC<CharacterSheetProps> = (props) => {
                                 {t('Back to Menu')}
                             </button>
                             <div className="w-px h-6 bg-gray-700"></div>
-                            <h3 className="text-xl font-bold text-cyan-400 narrative-text flex-1">{t(activeView as any)}</h3>
+                            <h3 className="text-xl font-bold text-cyan-400 narrative-text flex-1">{t(activeView)}</h3>
                             <button onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)} title={t(isHeaderCollapsed ? 'Expand Header' : 'Collapse Header')} className="p-2 text-gray-400 rounded-full hover:bg-gray-700/50 transition-colors">
                                 {isHeaderCollapsed ? <ChevronDownIcon className="w-5 h-5" /> : <ChevronUpIcon className="w-5 h-5" />}
                             </button>
