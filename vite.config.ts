@@ -306,7 +306,7 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
               return response;
             });
             if (result === null) { res.statusCode = 204; res.end(); return; }
-            if ((result as any)?.relayExpired) { send(410, { error: 'Relay request expired or was cancelled before its response was consumed.' }); return; }
+            if (result !== null && typeof result === 'object' && 'relayExpired' in result) { send(410, { error: 'Relay request expired or was cancelled before its response was consumed.' }); return; }
             send(200, result);
             return;
           }

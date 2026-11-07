@@ -625,7 +625,7 @@ export const InventoryManagerUI: React.FC<InventoryManagerUIProps> = ({
                             <div className="flex items-center gap-2 flex-shrink-0">
                                 <fieldset disabled={isSorting} className="flex items-center gap-2">
                                     <label htmlFor="sort-criteria" className="text-sm text-gray-400 flex-shrink-0">{t('Sort by:')}</label>
-                                    <select id="sort-criteria" value={itemSortCriteria} onChange={(e) => updateItemSortSettings(e.target.value as any, itemSortDirection)} className="dark-select">
+                                    <select id="sort-criteria" value={itemSortCriteria} onChange={(e) => updateItemSortSettings(e.target.value as PlayerCharacter['itemSortCriteria'], itemSortDirection)} className="dark-select">
                                         <option value="manual">{t('Manual')}</option>
                                         <option value="name">{t('Name')}</option>
                                         <option value="quality">{t('Quality')}</option>

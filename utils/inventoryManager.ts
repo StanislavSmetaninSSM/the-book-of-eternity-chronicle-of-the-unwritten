@@ -157,9 +157,10 @@ export const moveItemForNpc = (npcId: string, itemToMove: Item, destinationConta
     if (!itemInInventory) return currentState;
 
     if (npc.equippedItems) {
-        Object.keys(npc.equippedItems).forEach(slot => {
-            if ((npc.equippedItems as any)[slot] === itemToMove.existedId) {
-                (npc.equippedItems as any)[slot] = null;
+        const equipment: Record<string, string | null> = npc.equippedItems;
+        Object.keys(equipment).forEach(slot => {
+            if (equipment[slot] === itemToMove.existedId) {
+                equipment[slot] = null;
             }
         });
     }

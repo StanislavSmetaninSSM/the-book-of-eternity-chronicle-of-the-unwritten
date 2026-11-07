@@ -506,7 +506,7 @@ const TerritoryAndRelationsView: React.FC<FactionDetailsProps> = ({ faction, onO
                     <div className="space-y-3">
                         {(faction.relations || []).map(relation => {
                             // IMPROVED LOOKUP: Check targetFactionId OR initialTargetFactionId
-                            const targetId = relation.targetFactionId || (relation as any).initialTargetFactionId;
+                            const targetId = relation.targetFactionId || relation.initialTargetFactionId;
                             
                             // Try to find the faction in the map using ID. 
                             // If not found by ID (maybe map is stale or ID not synced yet), try to find by name if possible (not standard but robust), 

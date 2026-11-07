@@ -761,10 +761,9 @@ export const createPlayerActionsManager = (
             const sourceItem = pc.inventory[sourceItemIndex];
             const validQuantity = Math.min(quantity, sourceItem.count);
     
+            // The moved stack is either merged by name or gets a fresh id, so the source id is not
+            // carried over and needs no cleanup.
             const itemToMove = { ...sourceItem, count: validQuantity };
-            if (itemToMove.existedId) {
-                delete (itemToMove as any).existedId;
-            }
     
             const existingStack = storage.contents.find(i => i.name === itemToMove.name && !i.equipmentSlot);
             if (existingStack) {
@@ -823,10 +822,9 @@ export const createPlayerActionsManager = (
                 return prevState;
             }
 
+            // The moved stack is either merged by name or gets a fresh id, so the source id is not
+            // carried over and needs no cleanup.
             const itemToMove = { ...sourceItem, count: validQuantity };
-            if (itemToMove.existedId) {
-                delete (itemToMove as any).existedId;
-            }
 
             const existingStack = pc.inventory.find(i => i.name === itemToMove.name && !i.equipmentSlot);
             if (existingStack) {

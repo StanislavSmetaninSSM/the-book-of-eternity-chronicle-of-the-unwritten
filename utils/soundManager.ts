@@ -1,6 +1,8 @@
 
 // This module manages the notification sound for the game.
 
+import { createAudioContext } from './audioContext';
+
 let audioContext: AudioContext | null = null;
 let audioBuffer: AudioBuffer | null = null;
 let isInitializing = false;
@@ -18,7 +20,7 @@ export const initializeAndPreviewSound = async () => {
 
     try {
         // Create a new AudioContext
-        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContext = createAudioContext();
         
         // Browsers may suspend the AudioContext until a user gesture. We need to resume it.
         if (audioContext.state === 'suspended') {

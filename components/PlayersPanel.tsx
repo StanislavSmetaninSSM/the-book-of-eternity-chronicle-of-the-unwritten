@@ -4,6 +4,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import { UserIcon, PlusCircleIcon, DocumentDuplicateIcon, ArrowRightOnRectangleIcon, TrashIcon } from '@heroicons/react/24/outline';
 import PlayerCreationModal from './PlayerCreationModal';
 import { gameData } from '../utils/localizationGameData';
+import { resolveWorldFor } from '../utils/worldData';
 import ConfirmationModal from './ConfirmationModal';
 import ImageRenderer from './ImageRenderer';
 
@@ -51,12 +52,8 @@ const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, g
     };
     
     const currentWorldData = useMemo(() => {
-        const universeKey = gameSettings?.gameWorldInformation?.baseInfo?.universe as keyof typeof gameData;
-        if (universeKey === 'history' || universeKey === 'myths') {
-            const eraKey = gameSettings?.gameWorldInformation?.baseInfo?.selectedEra as any;
-            return gameData[universeKey][eraKey] || gameData.fantasy;
-        }
-        return gameData[universeKey] || gameData.fantasy;
+        const baseInfo = gameSettings?.gameWorldInformation?.baseInfo;
+        return resolveWorldFor(gameData, baseInfo?.universe ?? '', baseInfo?.selectedEra) || gameData.fantasy;
     }, [gameSettings]);
 
     return (

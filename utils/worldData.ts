@@ -46,3 +46,7 @@ export const resolveWorldFor = (source: WorldSource, universe: string, era?: str
     }
     return getUniverseWorld(source, universe);
 };
+
+/** A stored world blob (save settings, loaded file) seen as a world. */
+export const asWorld = (value: unknown): WorldData | undefined =>
+    isRecord(value) ? (value as unknown as WorldData) : undefined;

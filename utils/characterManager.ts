@@ -1,5 +1,6 @@
 import { PlayerCharacter, Characteristics, GameSettings } from '../types';
 import { recalculateDerivedStats } from './gameContext';
+import { asWorld } from './worldData';
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -52,7 +53,7 @@ export function createNewPlayerCharacter(
                 customClassAttributes
             } = creationData;
             
-            const currentWorld = gameSettings.gameWorldInformation.baseInfo as any;
+            const currentWorld = asWorld(gameSettings.gameWorldInformation.baseInfo);
 
             newPlayer.race = isCustomRace ? customRaceName : race;
             newPlayer.class = isCustomClass ? customClassName : charClass;
@@ -124,7 +125,7 @@ export function createNewPlayerCharacter(
         customClassAttributes,
     } = creationData;
 
-    const currentWorld = gameSettings.gameWorldInformation.baseInfo as any;
+    const currentWorld = asWorld(gameSettings.gameWorldInformation.baseInfo);
 
     const standardCharacteristics: any = {};
     const finalLevel = (partyLevel > 1 && !shareCharacteristics) ? partyLevel : 1;

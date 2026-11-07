@@ -3,6 +3,7 @@ import { coordinateKey, resolveLinkTarget } from '../utils/locationLinks.js';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Location, GameSettings, Faction, ImageCacheEntry } from '../types';
+import type { DifficultyProfile } from '../types';
 import { 
     MapPinIcon, QuestionMarkCircleIcon, HomeModernIcon, BuildingStorefrontIcon, 
     FireIcon, GlobeAltIcon, SunIcon, ArrowPathIcon, UserGroupIcon,
@@ -93,7 +94,9 @@ const Tooltip = ({
     const { t } = useLocalization();
     if (!location) return null;
     
-    const profile = (location as any).externalDifficultyProfile || (location as any).estimatedExternalDifficultyProfile;
+    // Legacy saves only had the estimate, not the settled profile.
+    const legacyLocation = location as Location & { estimatedExternalDifficultyProfile?: DifficultyProfile };
+    const profile = location.externalDifficultyProfile || legacyLocation.estimatedExternalDifficultyProfile;
 
     const modalRoot = document.getElementById('modal-root');
     if (!modalRoot) return null;
@@ -297,7 +300,7 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
                             locationType: 'outdoor', 
                             biome: 'Plains', // A safe default for an unknown outdoor location
                             image_prompt: `A detailed fantasy art image of a mysterious location known as ${link.name}. ${link.shortDescription}`,
-                        } as any;
+                        } as Location & { isVisited: boolean; lastEventsDescription?: string };
                         allLocations.set(`undiscovered-${key}`, unvisitedLoc);
                     }
                 });

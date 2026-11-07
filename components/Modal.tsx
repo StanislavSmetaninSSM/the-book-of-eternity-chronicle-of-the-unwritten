@@ -104,7 +104,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, showFon
     ? React.Children.map(children, child =>
         React.isValidElement(child)
           ? React.cloneElement(child as React.ReactElement<any>, {
-              className: `${(child.props as any).className || ''} ${FONT_SIZE_CLASSES[fontSizeIndex]}`
+              className: `${(child.props as { className?: string }).className || ''} ${FONT_SIZE_CLASSES[fontSizeIndex]}`
             })
           : child
       )
