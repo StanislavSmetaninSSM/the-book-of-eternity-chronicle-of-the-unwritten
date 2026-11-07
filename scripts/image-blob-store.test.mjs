@@ -90,6 +90,28 @@ test('the image store keeps identical bytes once and hands data URLs back', asyn
   assert.equal(store.isImageRef('data:image/png;base64,AAA'), false);
 });
 
+test('an image that cannot be written stays inline instead of becoming a dead reference', async () => {
+  const vite = await getTestServer();
+  const store = await vite.ssrLoadModule('/utils/imageBlobStore.ts');
+  const refs = await vite.ssrLoadModule('/utils/saveImageRefs.ts');
+  await clearImageStore(store);
+
+  const originalPut = globalThis.IDBObjectStore.prototype.put;
+  globalThis.IDBObjectStore.prototype.put = function (...args) {
+    if (this.name === 'images') throw Object.assign(new Error('The quota has been exceeded.'), { name: 'QuotaExceededError' });
+    return originalPut.apply(this, args);
+  };
+  try {
+    const cache = { scene: png(31) };
+    const dehydrated = await refs.dehydrateImageCache(cache);
+    assert.equal(dehydrated.cache.scene, png(31), 'the payload is kept inline');
+    assert.equal(dehydrated.stored, 0);
+    assert.equal((await store.getImageStoreStats()).count, 0);
+  } finally {
+    globalThis.IDBObjectStore.prototype.put = originalPut;
+  }
+});
+
 test('a stored save keeps references and loads the images back', async () => {
   const vite = await getTestServer();
   const store = await vite.ssrLoadModule('/utils/imageBlobStore.ts');
@@ -201,9 +223,10 @@ test('images survive while any save refers to them and are swept afterwards', as
 
   // Nothing refers to them any more: the next sweep reclaims the space.
   await gameStore('autosaves', 'readwrite', store => store.delete('current_autosave'));
-  // A fresh page load has no in-memory grace list, which is what the sweep sees.
+  // A routine sweep is throttled because it reads every stored save; a forced one runs now.
   store.resetImageStoreForTests();
-  const swept = await fileManager.sweepUnusedImages();
+  assert.equal(await fileManager.sweepUnusedImages(), 0, 'a routine sweep right after a save is skipped');
+  const swept = await fileManager.sweepUnusedImages({ force: true });
   assert.equal(swept, 2, 'both unreferenced images were reclaimed');
   assert.equal((await store.getImageStoreStats()).count, 0);
 });

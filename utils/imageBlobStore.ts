@@ -142,8 +142,31 @@ const hashBytes = async (bytes: Uint8Array): Promise<string> => {
 };
 
 /**
+ * Writes one record. Unlike `withStore` this reports failure, because a reference to an
+ * image that never reached the store would be lost on the next load.
+ */
+const putRecord = async (record: StoredImageRecord): Promise<boolean> => {
+    const db = await openImageDb();
+    if (!db) return false;
+    try {
+        await new Promise<void>((resolve, reject) => {
+            const transaction = db.transaction(IMAGE_STORE_NAME, 'readwrite');
+            transaction.objectStore(IMAGE_STORE_NAME).put(record);
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error || new Error('Image write was aborted.'));
+        });
+        return true;
+    } catch (error) {
+        console.error('Could not store an image', error);
+        return false;
+    }
+};
+
+/**
  * Stores a base64 data URL and returns the reference to keep in the save. Values that
- * are not data URLs (http links, existing references, keys) are returned unchanged.
+ * are not data URLs (http links, existing references, keys) are returned unchanged, and
+ * so is an image that could not be written: keeping it inline is better than a dead link.
  */
 export async function storeImageDataUrl(dataUrl: string): Promise<string> {
     if (!isDataUrl(dataUrl)) return dataUrl;
@@ -180,7 +203,7 @@ export async function storeImageDataUrl(dataUrl: string): Promise<string> {
         createdAt: now,
         lastUsedAt: now,
     };
-    await withStore('readwrite', store => store.put(record));
+    if (!await putRecord(record)) return dataUrl;
     recentlyWritten.set(id, now);
     rememberRef(dataUrl, ref);
     return ref;

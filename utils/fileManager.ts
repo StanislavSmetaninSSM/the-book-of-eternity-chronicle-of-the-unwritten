@@ -605,10 +605,21 @@ async function putAutosave(saveData: SaveFile): Promise<void> {
 }
 
 /**
+ * Every sweep reads all stored saves to learn which images are still referenced, and the
+ * autosave path runs on each turn, so a routine sweep is throttled. Player actions that
+ * should reclaim space immediately (slot deletion, migration) ask for a forced sweep.
+ */
+const SWEEP_INTERVAL_MS = 3 * 60_000;
+let lastSweepAt = 0;
+
+/**
  * Deletes stored images that no autosave, crash-recovery point, checkpoint or slot refers
  * to any more. Failures are logged and never propagated: cleanup must not break saving.
  */
-export async function sweepUnusedImages(): Promise<number> {
+export async function sweepUnusedImages(options: { force?: boolean } = {}): Promise<number> {
+  const now = Date.now();
+  if (!options.force && now - lastSweepAt < SWEEP_INTERVAL_MS) return 0;
+  lastSweepAt = now;
   try {
     const db = await openDB();
     const records = await new Promise<unknown[]>((resolve, reject) => {
@@ -699,7 +710,7 @@ export async function migrateInlineImagesToImageStore(): Promise<{ records: numb
         transaction.onabort = () => reject(transaction.error || new Error('Image migration was aborted.'));
       });
       if (written) console.info(`Moved inline images of ${written} stored save(s) into the image store.`);
-      await sweepUnusedImages();
+      await sweepUnusedImages({ force: true });
     }
     const images = collectImageRefs(pending.map(item => item.value)).size;
     return { records: written, images };
@@ -1070,7 +1081,7 @@ export async function deleteDBSlot(slotId: number): Promise<void> {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
-  await sweepUnusedImages();
+  await sweepUnusedImages({ force: true });
   const existingSlots = readSlotMetadataFromStorage();
   if (existingSlots) {
     writeSlotMetadataToStorage(existingSlots.filter(slot => slot.slotId !== slotId));
