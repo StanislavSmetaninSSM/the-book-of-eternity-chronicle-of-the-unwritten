@@ -38,6 +38,8 @@ export interface GameSettings {
     baseInfo: any;
     customInfo: string;
     calendar?: Calendar;
+    /** Universe id; absent in saves written before translations became lazy. */
+    universe?: string;
   };
   adultMode: boolean;
   // FIX: Added missing youtubeApiKey property to GameSettings interface.

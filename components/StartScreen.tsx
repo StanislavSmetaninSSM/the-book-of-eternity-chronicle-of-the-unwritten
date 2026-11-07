@@ -5,6 +5,7 @@ import Modal from './Modal';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, loadStartScreenDraft, saveStartScreenFormDraft, saveStartScreenWorldDraft, clearStartScreenDraft, type PreparedSaveFile } from '../utils/fileManager';
 import ConfirmationModal from './ConfirmationModal';
 import { useLocalization } from '../context/LocalizationContext';
+import { useWorldTranslations } from '../hooks/useWorldTranslations';
 import { gameData } from '../utils/localizationGameData';
 import AboutContent from './AboutContent';
 import { DBSaveSlotInfo, Calendar, Month, DayInfo } from '../types';
@@ -755,6 +756,8 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
     const draftSaveWarningShownRef = useRef(false);
     const [isStartDraftLoaded, setIsStartDraftLoaded] = useState(false);
     const [wasStartDraftRestored, setWasStartDraftRestored] = useState(false);
+    // Race and class names come from the universe dictionary, which is loaded on demand.
+    const worldTranslationsReady = useWorldTranslations(formData.universe);
 
     const reportDraftSaveError = (error: unknown) => {
         if (!draftSaveWarningShownRef.current) {
@@ -1217,7 +1220,10 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
 
                 <div className="max-h-[65vh] overflow-y-auto pr-4 -mr-4">
                         <div className="animate-fade-in-down">
-                            <CreationForm
+                            {!worldTranslationsReady && (
+                                <p className="py-8 text-center text-gray-400" data-testid="start-translations-loading">{t('Loading Settings...')}</p>
+                            )}
+                            {worldTranslationsReady && <CreationForm
                                 formData={formData}
                                 handleInputChange={handleInputChange}
                                 handleCheckboxChange={handleCheckboxChange}
@@ -1233,7 +1239,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                                 customGameData={customGameData}
                                 setIsCreatingUniverse={setIsCreatingUniverse}
                                 setFormData={setFormData}
-                            />
+                            />}
                         </div>
                 </div>
 

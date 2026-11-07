@@ -1015,7 +1015,8 @@ export const createInitialContext = (creationData: any, language: Language): Gam
             baseInfo: worldForContext,
             customInfo: worldInformation,
             currencyName: creationData.currencyName || currentWorld.currencyName || 'Gold',
-            calendar: localizedCalendar
+            calendar: localizedCalendar,
+            universe
         },
         nonMagicMode: creationData.nonMagicMode,
         adultMode: creationData.adultMode,

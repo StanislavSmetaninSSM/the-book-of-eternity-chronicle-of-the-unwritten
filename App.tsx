@@ -18,6 +18,7 @@ import { PartyStatus } from './components/PartyStatus';
 import SidePanel from './components/SidePanel';
 // FIX: Changed import to named import as per error message indicating no default export.
 import StartScreen  from './components/StartScreen';
+import { useWorldTranslations } from './hooks/useWorldTranslations';
 import { withLiveActivePlayer } from './utils/partyView';
 import TurnIndicator from './components/TurnIndicator';
 import { useLocalization } from './context/LocalizationContext';
@@ -813,6 +814,12 @@ export default function App(): React.ReactNode {
         }
     }, [isRegenerating, sendMessage, askQuestion]);
 
+    // The per-universe dictionary (races, classes, skills, months) is loaded on demand.
+    // A save written before the universe was recorded gets every dictionary.
+    const activeUniverse = gameSettings?.gameWorldInformation?.universe
+        ?? (gameState ? null : undefined);
+    const worldTranslationsReady = useWorldTranslations(activeUniverse);
+
     if (!hasStarted) {
         return <>
             <ArenaGmRelayPanel />
@@ -834,7 +841,15 @@ export default function App(): React.ReactNode {
     }
 
 
+        if (!worldTranslationsReady) {
         return (
+            <div className="min-h-screen bg-gray-900 flex items-center justify-center" data-testid="translations-loading">
+                <p className="text-gray-300">{t('Loading Settings...')}</p>
+            </div>
+        );
+    }
+
+    return (
         <>
             <ArenaGmRelayPanel />
             {gameState && imageWarmupPrompts.length > 0 && (
