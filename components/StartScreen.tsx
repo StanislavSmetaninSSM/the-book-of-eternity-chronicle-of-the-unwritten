@@ -87,7 +87,7 @@ const initialFormData = {
     keepLatestNpcJournals: false,
     latestNpcJournalsCount: 20,
     cooperativeGameType: 'None' as 'None' | 'MultiplePersonalities' | 'FullParty',
-    autoPassTurnInCoop: true,
+    autoPassTurn: true,
     multiplePersonalitiesSettings: {
         shareCharacteristics: false,
         shareSkills: false,

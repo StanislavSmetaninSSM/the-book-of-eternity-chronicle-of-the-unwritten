@@ -242,6 +242,7 @@ function buildSlotInfo(slotId: number, saveData: SaveFile): DBSaveSlotInfo {
     playerLevel: saveData.gameState.playerCharacter.level,
     locationName: saveData.gameState.currentLocationData.name,
     turnNumber: saveData.gameContext.currentTurnNumber,
+    imagesOmitted: Boolean(saveData.imagesOmittedForQuota || saveData.omittedImageCount),
   };
 }
 

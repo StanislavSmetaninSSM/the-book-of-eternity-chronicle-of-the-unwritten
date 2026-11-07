@@ -49,7 +49,10 @@ export interface GameSettings {
   keepLatestNpcJournals: boolean;
   latestNpcJournalsCount: number;
   cooperativeGameType: 'None' | 'MultiplePersonalities' | 'FullParty';
-  autoPassTurnInCoop: boolean;
+  /** Hand the turn to the next party member automatically. */
+  autoPassTurn: boolean;
+  /** @deprecated Pre-single-player name, still read from old saves. */
+  autoPassTurnInCoop?: boolean;
   showPartyStatusPanel?: boolean;
   uiControlScale?: number;
   uiFontScale?: number;
@@ -1285,6 +1288,8 @@ export interface DBSaveSlotInfo {
     playerLevel: number;
     locationName: string;
     turnNumber: number;
+    /** The slot had to be written without cached images (size budget or full quota). */
+    imagesOmitted?: boolean;
 }
 
 export interface AdjacencyMapEntry {

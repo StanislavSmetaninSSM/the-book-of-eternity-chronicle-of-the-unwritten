@@ -20,6 +20,7 @@ import { createMusicManager } from './logic/music';
 import { processAndApplyResponse } from '../utils/responseProcessor';
 import { restorePlayerStats } from '../utils/restorePlayer';
 import { cloneGameStateForEdit } from '../utils/gameStateClone';
+import { migrateGameSettings } from '../utils/settingsMigration';
 import { withLiveActivePlayer } from '../utils/partyView';
 import { recalculateAllWeights } from '../utils/inventoryManager';
 import { recalculateDerivedStats, buildNextContext, createInitialContext, calculateDate, calculateTotalMinutes, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
@@ -486,6 +487,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const restoreFromSaveData = useCallback((source: SaveFile) => {
         const data = localizeLegacySave(source);
+        // Old saves keep the pre-single-player settings key; rename it before it is used.
+        if (data.gameContext?.gameSettings) {
+            data.gameContext.gameSettings = migrateGameSettings(data.gameContext.gameSettings);
+        }
         syncRevisionRef.current += 1;
         clearPendingContextEdits();
         if (activeTurnRef.current) abortControllerRef.current?.abort();
