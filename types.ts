@@ -34,12 +34,58 @@ export type ImageCacheEntry = {
   sourceModel?: string;
 };
 
+/** A world as the creation form, the customiser and the prompt builder see it. */
+export interface WorldData {
+    name: string;
+    description: string;
+    currencyName: string;
+    currencyOptions?: string[];
+    races: Record<string, { description: string; bonuses: Record<string, number>; availableClasses?: string[] }>;
+    classes: Record<string, { description: string; bonuses: Record<string, number> }>;
+    calendar?: Calendar;
+}
+
+/** The world a chronicle runs in, recorded in the game settings. */
+export interface WorldBaseInfo extends WorldData {
+    universe?: string;
+    selectedEra?: string | null;
+}
+
+/** How strongly a faction holds a location. */
+export interface FactionControlEntry {
+    factionId?: string;
+    factionName?: string;
+    controlType?: 'Military' | 'Economic' | 'Social' | 'Covert';
+    controlLevel: number;
+}
+
+/** A player's standing with one NPC or faction. */
+export interface NpcReputationEntry {
+    NPCId?: string;
+    relationshipLevel?: number;
+    isCompanion?: boolean;
+}
+
+export interface FactionReputationEntry {
+    factionId?: string;
+    reputation?: number;
+    playerRank?: string | null;
+    isMember?: boolean;
+}
+
+/** The short status of the player that the narrating model reports each turn. */
+export interface PlayerStatus {
+    healthPercentage?: string;
+    energyPercentage?: string;
+    activeConditions?: string[];
+}
+
 export interface GameSettings {
   nonMagicMode: boolean;
   language: Language;
   gameWorldInformation: {
     currencyName: string;
-    baseInfo: any;
+    baseInfo: WorldBaseInfo;
     customInfo: string;
     calendar?: Calendar;
     /** Universe id; absent in saves written before translations became lazy. */
@@ -341,8 +387,8 @@ export interface PlayerCharacter {
     autoCombatSkill: string | null;
     stealthState: StealthState;
     effortTracker: EffortTracker;
-    personalNpcReputations?: any[];
-    personalFactionReputations?: any[];
+    personalNpcReputations?: NpcReputationEntry[];
+    personalFactionReputations?: FactionReputationEntry[];
     characterChronicle?: (string | null)[];
 }
 
@@ -432,7 +478,7 @@ export interface LocationData {
     custom_image_prompt?: string | null;
     pending_image_prompt?: string | null;
     adjacencyMap?: AdjacencyMapEntry[];
-    factionControl?: any[];
+    factionControl?: FactionControlEntry[];
     locationStorages?: LocationStorage[];
     activeThreats?: ActiveThreat[];
 }
@@ -976,7 +1022,7 @@ interface LocationUpdate {
     newInternalDifficultyProfile?: Partial<DifficultyProfile>;
     newExternalDifficultyProfile?: Partial<DifficultyProfile>;
     newLastEventsDescription?: string;
-    factionControl?: any[];
+    factionControl?: FactionControlEntry[];
     locationStorages?: LocationStorage[];
     newImagePrompt?: string; // Added for pending image prompt handling
     /** Older guides wrote the prompt straight onto the update instead of using the new* fields. */
@@ -989,7 +1035,8 @@ export interface StorageUpdatePayload {
   newDescription?: string;
   newCapacity?: number | null;
   newOwner?: LocationStorage['owner'];
-  [key: string]: any;
+  /** Fields copied verbatim onto the storage, so their shape is whatever the guide sent. */
+  [key: string]: unknown;
 }
 
 export interface StorageUpdate {
@@ -1118,7 +1165,7 @@ export interface GameResponse {
     };
     updateWorldProgressionTracker?: { newLastWorldProgressionTimeInMinutes: number };
     updateFactionProgressionTracker?: { newLastFactionProgressionTimeInMinutes: number };
-    playerStatus?: any;
+    playerStatus?: PlayerStatus;
     worldStateFlags?: WorldStateFlag[];
     removeWorldStateFlags?: string[];
     worldEventsLog?: WorldEvent[];
@@ -1292,7 +1339,8 @@ export interface GameContext {
     worldMap: Record<string, Location>;
     responseHistory: ChatMessage[];
     currentStepFocus: string | null;
-    partiallyGeneratedResponse: any | null;
+    /** The response merged so far; a prompt-only context carries it as serialised JSON. */
+    partiallyGeneratedResponse: Partial<GameResponse> | string | null;
     enemiesDataForCurrentTurn: EnemyCombatObject[];
     alliesDataForCurrentTurn: AllyCombatObject[];
     playerCustomStates: CustomState[];
@@ -1341,4 +1389,5 @@ export interface SaveFile {
   missingImageCount?: number;
 }
 
-export const isWound = (d: any): d is (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null }) => d && typeof d === 'object' && !Array.isArray(d) && d.type === 'wound';
+export const isWound = (d: unknown): d is (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null }) =>
+    !!d && typeof d === 'object' && !Array.isArray(d) && (d as { type?: unknown }).type === 'wound';

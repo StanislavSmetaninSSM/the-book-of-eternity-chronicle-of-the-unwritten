@@ -1,20 +1,7 @@
-import type { Calendar } from '../types';
+import type { WorldData } from '../types';
 import { isRecord } from './typeGuards';
 
-/**
- * A world as the creation form, the universe customiser and the prompt builder see it: the
- * shipped universes, a configuration file loaded from disk and a world the player is inventing
- * all have this shape.
- */
-export interface WorldData {
-    name: string;
-    description: string;
-    currencyName: string;
-    currencyOptions?: string[];
-    races: Record<string, { description: string; bonuses: Record<string, number>; availableClasses?: string[] }>;
-    classes: Record<string, { description: string; bonuses: Record<string, number> }>;
-    calendar?: Calendar;
-}
+export type { WorldData } from '../types';
 
 /**
  * The universe table: `gameData` itself, a configuration file, or a JSON round-trip of either.
