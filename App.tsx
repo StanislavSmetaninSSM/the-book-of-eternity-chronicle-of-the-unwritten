@@ -1,21 +1,14 @@
 
 import { CheckIcon, ChevronDoubleLeftIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import CharacterSheet from './components/CharacterSheet';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ChatWindow from './components/ChatWindow';
-import CombatTracker from './components/CombatTracker';
-import DetailRenderer from './components/DetailRenderer/index';
 import ErrorBoundary from './components/ErrorBoundary';
 import ImageRenderer from './components/ImageRenderer';
 import InputBar from './components/InputBar';
-import { InventoryScreen } from './components/InventoryScreen';
-import LocationViewer from './components/LocationViewer';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import Modal from './components/Modal';
-import LyriaMusicPlayer from './components/LyriaMusicPlayer';
 import { PartyStatus } from './components/PartyStatus';
-import SidePanel from './components/SidePanel';
 // FIX: Changed import to named import as per error message indicating no default export.
 import StartScreen  from './components/StartScreen';
 import { useWorldTranslations } from './hooks/useWorldTranslations';
@@ -23,17 +16,27 @@ import { withLiveActivePlayer } from './utils/partyView';
 import TurnIndicator from './components/TurnIndicator';
 import { useLocalization } from './context/LocalizationContext';
 import { useGameLogic } from './hooks/useGameLogic';
-import { ChatMessage, Cinematic, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, Project, LocationData, ImageCacheEntry } from './types';
-import TextReaderModal from './components/TextReaderModal';
+import { ChatMessage, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, LocationData, ImageCacheEntry } from './types';
 import { useSpeech } from './context/SpeechContext';
 import { consumeStartupLoadRequest, migrateInlineImagesToImageStore, releasePreparedSaveFiles, type PreparedSaveFiles } from './utils/fileManager';
-import StorageScreen from './components/StorageScreen';
-import CinemaPlayer from './components/CinemaPlayer';
-import CinemaHall from './components/CinemaHall';
 import ConfirmationModal from './components/ConfirmationModal';
 import LoadingSpinner from './components/LoadingSpinner';
-import ImageCacheGallery from './components/ImageCacheGallery';
 import ArenaGmRelayPanel from './components/ArenaGmRelayPanel';
+
+// The in-game screens ship as their own chunks: the start screen needs none of them, and
+// the panels, modals and the detail renderer only appear once the chronicle is running.
+const SidePanel = React.lazy(() => import('./components/SidePanel'));
+const DetailRenderer = React.lazy(() => import('./components/DetailRenderer/index'));
+const CharacterSheet = React.lazy(() => import('./components/CharacterSheet'));
+const InventoryScreen = React.lazy(() => import('./components/InventoryScreen').then(module => ({ default: module.InventoryScreen })));
+const StorageScreen = React.lazy(() => import('./components/StorageScreen'));
+const CombatTracker = React.lazy(() => import('./components/CombatTracker'));
+const LocationViewer = React.lazy(() => import('./components/LocationViewer'));
+const CinemaHall = React.lazy(() => import('./components/CinemaHall'));
+const CinemaPlayer = React.lazy(() => import('./components/CinemaPlayer'));
+const ImageCacheGallery = React.lazy(() => import('./components/ImageCacheGallery'));
+const LyriaMusicPlayer = React.lazy(() => import('./components/LyriaMusicPlayer'));
+const TextReaderModal = React.lazy(() => import('./components/TextReaderModal'));
 
 
 interface ImageModalInfo {
@@ -997,6 +1000,7 @@ export default function App(): React.ReactNode {
                             onLoadAutosave={handleLoadAutosave}
                             compact
                         >
+                            <Suspense fallback={<div className="p-4 text-sm text-gray-400" data-testid="side-panel-loading">{t('Loading Settings...')}</div>}>
                             <SidePanel
                                 gameState={gameState}
                                 worldState={worldState}
@@ -1128,6 +1132,7 @@ export default function App(): React.ReactNode {
                                 deleteImageFromCache={deleteImageFromCache}
                                 clearImageCache={clearImageCache}
                             />
+                            </Suspense>
                         </ErrorBoundary>
                     )}
                 </aside>
@@ -1150,7 +1155,7 @@ export default function App(): React.ReactNode {
                 compact
             >
                 {(isInventoryOpen || managingNpcInventory) && gameState && (
-                    <InventoryScreen
+                    <Suspense fallback={null}><InventoryScreen
                         gameState={gameState}
                         npc={managingNpcInventory}
                         onClose={isInventoryOpen ? handleClosePlayerInventory : handleCloseNpcInventory}
@@ -1176,7 +1181,7 @@ export default function App(): React.ReactNode {
                         updateNpcItemSortOrder={updateNpcItemSortOrder}
                         updateNpcItemSortSettings={updateNpcItemSortSettings}
                         isLoading={isLoading}
-                    />
+                    /></Suspense>
                 )}
                 {messageModalState && (
                     <Modal isOpen={true} onClose={() => setMessageModalState(null)} title={messageModalState.title} showFontSizeControls={true}>
@@ -1185,16 +1190,16 @@ export default function App(): React.ReactNode {
                 )}
 
                 {textReaderState && (
-                    <TextReaderModal
+                    <Suspense fallback={null}><TextReaderModal
                         isOpen={!!textReaderState}
                         onClose={handleCloseTextReader}
                         title={textReaderState.title}
                         content={textReaderState.content}
-                    />
+                    /></Suspense>
                 )}
 
                 {storageScreenState && gameState && (
-                    <StorageScreen
+                    <Suspense fallback={null}><StorageScreen
                         isOpen={!!storageScreenState}
                         onClose={handleCloseStorage}
                         storage={storageScreenState.storage}
@@ -1206,7 +1211,7 @@ export default function App(): React.ReactNode {
                         imageCache={gameState.imageCache}
                         onImageGenerated={onImageGenerated}
                         gameSettings={gameSettings}
-                    />
+                    /></Suspense>
                 )}
 
                 {imageModalInfo && (
@@ -1245,7 +1250,7 @@ export default function App(): React.ReactNode {
                     onToggleFullScreen={() => setIsDetailModalFullScreen(p => !p)}
                     isFullScreen={isDetailModalFullScreen}
                 >
-                    {currentDetailModal && <DetailRenderer
+                    {currentDetailModal && <Suspense fallback={null}><DetailRenderer
                         data={currentDetailModal.data}
                     onForgetNpc={forgetNpc}
                     onForgetLocation={forgetLocation}
@@ -1314,7 +1319,7 @@ export default function App(): React.ReactNode {
                     deleteLocationThreat={deleteLocationThreat}
                     isLoading={isLoading}
                     deleteActiveEffect={deleteActiveEffect}
-                />}
+                /></Suspense>}
             </Modal>
             {isMapFullScreen && gameState && (
                 <Modal
@@ -1324,7 +1329,7 @@ export default function App(): React.ReactNode {
                     size="fullscreen"
                 >
                     <div className="flex-1 flex flex-col h-full bg-gray-900 -m-6">
-                        <LocationViewer
+                        <Suspense fallback={null}><LocationViewer
                             visitedLocations={visitedLocations}
                             currentLocation={gameState.currentLocationData}
                             onOpenModal={handleOpenDetailModal}
@@ -1334,7 +1339,7 @@ export default function App(): React.ReactNode {
                             onCollapse={() => setIsMapFullScreen(false)}
                             gameSettings={gameSettings}
                             encounteredFactions={gameState.encounteredFactions || []}
-                        />
+                        /></Suspense>
                     </div>
                 </Modal>
             )}
@@ -1346,7 +1351,7 @@ export default function App(): React.ReactNode {
                     size="fullscreen"
                 >
                     <div className="flex-1 flex flex-col h-full bg-gray-900 -m-6 p-4">
-                        <CombatTracker
+                        <Suspense fallback={null}><CombatTracker
                             enemies={gameState.enemiesData}
                             allies={gameState.alliesData}
                             combatLog={combatLog}
@@ -1364,7 +1369,7 @@ export default function App(): React.ReactNode {
                             isFullScreen={true}
                             onCollapse={() => setIsCombatFullScreen(false)}
                             editNpcData={editNpcData}
-                        />
+                        /></Suspense>
                     </div>
                 </Modal>
             )}
@@ -1400,7 +1405,7 @@ export default function App(): React.ReactNode {
                     size="fullscreen"
                 >
                     <div className="flex-1 flex flex-col h-full bg-gray-900 -m-6 p-4">
-                        <CinemaHall
+                        <Suspense fallback={null}><CinemaHall
                             cinematics={gameState.cinematics || []}
                             onGenerateTrailer={generateFilmTrailer}
                             isGenerating={isGeneratingCinema || isLoading}
@@ -1417,7 +1422,7 @@ export default function App(): React.ReactNode {
                             generateCinematicAudio={generateCinematicAudio}
                             isFullScreen={true}
                             onCollapse={() => setIsCinemaHallFullScreen(false)}
-                        />
+                        /></Suspense>
                     </div>
                 </Modal>
             )}
@@ -1429,7 +1434,7 @@ export default function App(): React.ReactNode {
                     size="fullscreen"
                 >
                     <div className="flex-1 flex flex-col h-full bg-gray-900 -m-6 p-4">
-                        <ImageCacheGallery
+                        <Suspense fallback={null}><ImageCacheGallery
                             imageCache={gameState.imageCache}
                             onImageGenerated={onImageGenerated}
                             onOpenImageModal={handleShowImageModal}
@@ -1439,7 +1444,7 @@ export default function App(): React.ReactNode {
                             isLoading={isLoading}
                             isFullScreen={true}
                             onCollapse={() => setIsImageCacheFullScreen(false)}
-                        />
+                        /></Suspense>
                     </div>
                 </Modal>
             )}
@@ -1482,7 +1487,7 @@ export default function App(): React.ReactNode {
                 <p>{stealthConfirmAction === 'enter' ? t('enter_stealth_confirmation_p1') : t('exit_stealth_confirmation_p1')}</p>
             </ConfirmationModal>
             {isMusicPlayerVisible && musicPrompt && (
-                <LyriaMusicPlayer
+                <Suspense fallback={null}><LyriaMusicPlayer
                     initialPrompt={musicPrompt}
                     onClose={closeMusicPlayer}
                     onRegeneratePrompt={generateMusicPrompt}
@@ -1495,7 +1500,7 @@ export default function App(): React.ReactNode {
                     musicStatus={musicStatus}
                     setMusicStatus={setMusicStatus}
                     playPauseRef={playPauseMusicRef}
-                />
+                /></Suspense>
             )}
             {viewingCharacter && gameState && (
                 <Modal
@@ -1506,6 +1511,7 @@ export default function App(): React.ReactNode {
                     onToggleFullScreen={() => setIsCharacterSheetFullScreen(p => !p)}
                     isFullScreen={isCharacterSheetFullScreen}
                 >
+                    <Suspense fallback={null}>
                     <CharacterSheet
                         character={viewingCharacter as PlayerCharacter | NPC}
                         playerCharacter={gameState.playerCharacter}
@@ -1559,13 +1565,14 @@ export default function App(): React.ReactNode {
                         onRegenerateId={onRegenerateId}
                         isLoading={isLoading}
                     />
+                    </Suspense>
                 </Modal>
             )}
-            <CinemaPlayer
+            <Suspense fallback={null}><CinemaPlayer
                 cinematic={playingCinematic}
                 isOpen={isCinemaVisible}
                 onClose={closeCinemaPlayer}
-            />
+            /></Suspense>
             {preparedSaveFiles && (
                 <Modal isOpen={true} onClose={closePreparedSaveFile} title={t('Save file is ready')}>
                     <div className="space-y-4 text-gray-200">

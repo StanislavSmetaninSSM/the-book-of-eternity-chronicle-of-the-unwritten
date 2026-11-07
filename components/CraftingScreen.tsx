@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { PlayerCharacter, Recipe, PassiveSkill } from '../types';
+import { PlayerCharacter, Recipe } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { BeakerIcon, CheckCircleIcon, XCircleIcon, ChevronDownIcon, ChevronUpIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
 

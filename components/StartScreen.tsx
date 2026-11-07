@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
+import { PlusIcon } from '@heroicons/react/24/solid';
 import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, ExclamationTriangleIcon, CloudArrowDownIcon } from '@heroicons/react/24/outline';
 import Modal from './Modal';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, loadStartScreenDraft, saveStartScreenFormDraft, saveStartScreenWorldDraft, clearStartScreenDraft, type PreparedSaveFile } from '../utils/fileManager';
@@ -8,24 +8,12 @@ import { useLocalization } from '../context/LocalizationContext';
 import { useWorldTranslations } from '../hooks/useWorldTranslations';
 import { gameData } from '../utils/localizationGameData';
 import AboutContent from './AboutContent';
-import { DBSaveSlotInfo, Calendar, Month, DayInfo } from '../types';
-import { cultivationSystemDescEn, cultivationSystemDescRu } from '../utils/translations/presetRules/fantasy/cultivation';
-import { magicSystemDescEn, magicSystemDescRu } from '../utils/translations/presetRules/fantasy/magic';
-import { priesthoodSystemDescEn, priesthoodSystemDescRu } from '../utils/translations/presetRules/fantasy/priesthood';
-import { hungerSystemDescEn, hungerSystemDescRu } from '../utils/translations/presetRules/post_apocalypse/hunger';
-import { thirstSystemDescEn, thirstSystemDescRu } from '../utils/translations/presetRules/post_apocalypse/thirst';
-import { radiationSystemDescEn, radiationSystemDescRu } from '../utils/translations/presetRules/post_apocalypse/radiation';
-import { psionicSystemDescEn, psionicSystemDescRu } from '../utils/translations/presetRules/post_apocalypse/psionic';
-import { psionicSystemDescSciFiEn, psionicSystemDescSciFiRu } from '../utils/translations/presetRules/sci_fi/psionic';
-import { urbanMagicSystemDescEn, urbanMagicSystemDescRu } from '../utils/translations/presetRules/modern/null_space_magic';
-import { fameSystemDescEn, fameSystemDescRu } from '../utils/translations/presetRules/history/fame';
-import { oldMagicDescEn, oldMagicDescRu } from '../utils/translations/presetRules/myths/old_magic';
-import { divineFavorDescEn, divineFavorDescRu } from '../utils/translations/presetRules/myths/divine_favor';
-import { deathNoteSystemDescEn, deathNoteSystemDescRu } from '../utils/translations/presetRules/modern/death_note_system';
+import { DBSaveSlotInfo, Calendar } from '../types';
+import { loadPresetRuleTexts, type PresetRuleTexts } from '../utils/translations/presetRules';
+import { fillPresetRuleDefaults } from '../utils/presetRuleDefaults';
 import { initializeAndPreviewSound } from '../utils/soundManager';
 import { UniverseCustomizer } from './UniverseCustomizer';
 import { weather as weatherTranslations } from '../utils/translations/ui/weather';
-import { PlayerCharacter } from '../types';
 import type { CrashRecoveryMarker, CrashRecoveryMetadata } from '../utils/fileManager';
 import { notifyError, notifyWarning } from '../utils/notifications';
 
@@ -101,31 +89,31 @@ const initialFormData = {
     useNanoBananaPrimary: false,
     useNanoBananaFallback: true,
     useCultivationSystem: false,
-    cultivationSystemDescription: cultivationSystemDescEn,
+    cultivationSystemDescription: '',
     useMagicSystem: false,
-    magicSystemDescription: magicSystemDescEn,
+    magicSystemDescription: '',
     usePriesthoodSystem: false,
-    priesthoodSystemDescription: priesthoodSystemDescEn,
+    priesthoodSystemDescription: '',
     useHungerSystem: false,
-    hungerSystemDescription: hungerSystemDescEn,
+    hungerSystemDescription: '',
     useThirstSystem: false,
-    thirstSystemDescription: thirstSystemDescEn,
+    thirstSystemDescription: '',
     useRadiationSystem: false,
-    radiationSystemDescription: radiationSystemDescEn,
+    radiationSystemDescription: '',
     usePsionicSystem: false,
-    psionicSystemDescription: psionicSystemDescEn,
+    psionicSystemDescription: '',
     usePsionicSystemSciFi: false,
-    psionicSystemDescriptionSciFi: psionicSystemDescSciFiEn,
+    psionicSystemDescriptionSciFi: '',
     useUrbanMagicSystem: false,
-    urbanMagicSystemDescription: urbanMagicSystemDescEn,
+    urbanMagicSystemDescription: '',
     useDeathNoteSystem: false,
-    deathNoteSystemDescription: deathNoteSystemDescEn,
+    deathNoteSystemDescription: '',
     useFameSystem: false,
-    fameSystemDescription: fameSystemDescEn,
+    fameSystemDescription: '',
     useOldMagicSystem: false,
-    oldMagicDescription: oldMagicDescEn,
+    oldMagicDescription: '',
     useDivineFavorSystem: false,
-    divineFavorDescription: divineFavorDescEn,
+    divineFavorDescription: '',
 };
 
 const formatTimestamp = (timestamp: string | null, t: (key: string) => string): string => {
@@ -215,10 +203,9 @@ const CreationForm: React.FC<CreationFormProps> = ({
     currentWorld,
     customGameData,
     setIsCreatingUniverse,
-    setFormData
 }) => {
     const { t } = useLocalization();
-    const { universe, race, charClass, cooperativeGameType, multiplePersonalitiesSettings, hardMode, impossibleMode, startingMonth, startingDay } = formData;
+    const { race, charClass, cooperativeGameType, multiplePersonalitiesSettings, hardMode, impossibleMode, startingMonth } = formData;
     const isSubmitDisabled = submitButtonText === t('Begin Your Adventure') && formData.universe === 'custom' && !formData.selectedEra;
 
     const FULL_WEATHER_OPTIONS = useMemo(() => Object.keys(weatherTranslations.en), []);
@@ -841,25 +828,22 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
         if (preparedConfigurationFile) releasePreparedSaveFile(preparedConfigurationFile);
     }, [preparedConfigurationFile]);
 
+    // The starting descriptions of the optional systems ship per universe: the start screen
+    // only fetches the pack of the universe being configured (546 KB of source otherwise).
+    const [presetRuleTexts, setPresetRuleTexts] = useState<PresetRuleTexts>({});
+
     useEffect(() => {
-        setFormData(prev => {
-            const newDescriptions: Partial<typeof prev> = {};
-            if (prev.cultivationSystemDescription === cultivationSystemDescEn || prev.cultivationSystemDescription === cultivationSystemDescRu) newDescriptions.cultivationSystemDescription = language === 'ru' ? cultivationSystemDescRu : cultivationSystemDescEn;
-            if (prev.magicSystemDescription === magicSystemDescEn || prev.magicSystemDescription === magicSystemDescRu) newDescriptions.magicSystemDescription = language === 'ru' ? magicSystemDescRu : magicSystemDescEn;
-            if (prev.priesthoodSystemDescription === priesthoodSystemDescEn || prev.priesthoodSystemDescription === priesthoodSystemDescRu) newDescriptions.priesthoodSystemDescription = language === 'ru' ? priesthoodSystemDescRu : priesthoodSystemDescEn;
-            if (prev.hungerSystemDescription === hungerSystemDescEn || prev.hungerSystemDescription === hungerSystemDescRu) newDescriptions.hungerSystemDescription = language === 'ru' ? hungerSystemDescRu : hungerSystemDescEn;
-            if (prev.thirstSystemDescription === thirstSystemDescEn || prev.thirstSystemDescription === thirstSystemDescRu) newDescriptions.thirstSystemDescription = language === 'ru' ? thirstSystemDescRu : thirstSystemDescEn;
-            if (prev.radiationSystemDescription === radiationSystemDescEn || prev.radiationSystemDescription === radiationSystemDescRu) newDescriptions.radiationSystemDescription = language === 'ru' ? radiationSystemDescRu : radiationSystemDescEn;
-            if (prev.psionicSystemDescription === psionicSystemDescEn || prev.psionicSystemDescription === psionicSystemDescRu) newDescriptions.psionicSystemDescription = language === 'ru' ? psionicSystemDescRu : psionicSystemDescEn;
-            if (prev.psionicSystemDescriptionSciFi === psionicSystemDescSciFiEn || prev.psionicSystemDescriptionSciFi === psionicSystemDescSciFiRu) newDescriptions.psionicSystemDescriptionSciFi = language === 'ru' ? psionicSystemDescSciFiRu : psionicSystemDescSciFiEn;
-            if (prev.urbanMagicSystemDescription === urbanMagicSystemDescEn || prev.urbanMagicSystemDescription === urbanMagicSystemDescRu) newDescriptions.urbanMagicSystemDescription = language === 'ru' ? urbanMagicSystemDescRu : urbanMagicSystemDescEn;
-            if (prev.deathNoteSystemDescription === deathNoteSystemDescEn || prev.deathNoteSystemDescription === deathNoteSystemDescRu) newDescriptions.deathNoteSystemDescription = language === 'ru' ? deathNoteSystemDescRu : deathNoteSystemDescEn;
-            if (prev.fameSystemDescription === fameSystemDescEn || prev.fameSystemDescription === fameSystemDescRu) newDescriptions.fameSystemDescription = language === 'ru' ? fameSystemDescRu : fameSystemDescEn;
-            if (prev.oldMagicDescription === oldMagicDescEn || prev.oldMagicDescription === oldMagicDescRu) newDescriptions.oldMagicDescription = language === 'ru' ? oldMagicDescRu : oldMagicDescEn;
-            if (prev.divineFavorDescription === divineFavorDescEn || prev.divineFavorDescription === divineFavorDescRu) newDescriptions.divineFavorDescription = language === 'ru' ? divineFavorDescRu : divineFavorDescEn;
-            return Object.keys(newDescriptions).length > 0 ? { ...prev, ...newDescriptions } : prev;
-        });
-    }, [language]);
+        let cancelled = false;
+        loadPresetRuleTexts(formData.universe)
+            .then(texts => { if (!cancelled) setPresetRuleTexts(texts); })
+            .catch(error => console.warn('Unable to load the starting descriptions for this universe:', error));
+        return () => { cancelled = true; };
+    }, [formData.universe]);
+
+    useEffect(() => {
+        if (Object.keys(presetRuleTexts).length === 0) return;
+        setFormData(prev => fillPresetRuleDefaults(prev, presetRuleTexts, language));
+    }, [language, presetRuleTexts]);
 
 
     const handleLanguageToggle = () => {
@@ -1138,13 +1122,15 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
         return finalData;
     };
 
-    const handleLocalSubmit = (e: React.FormEvent) => {
+    const handleLocalSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const creationData = prepareCreationData();
-        if (creationData) {
-            onStartLocal(creationData);
-            void clearStartScreenDraft().catch(reportDraftSaveError);
-        }
+        const prepared = prepareCreationData();
+        if (!prepared) return;
+        // The pack is usually already in memory; awaiting it keeps a fast submit from
+        // starting a game with empty system descriptions.
+        const texts = await loadPresetRuleTexts(formData.universe);
+        onStartLocal(fillPresetRuleDefaults(prepared, texts, language));
+        void clearStartScreenDraft().catch(reportDraftSaveError);
     };
 
     const handleCreateUniverse = () => {

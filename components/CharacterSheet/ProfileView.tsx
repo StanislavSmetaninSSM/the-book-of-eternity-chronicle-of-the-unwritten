@@ -14,11 +14,9 @@ import {
     ArrowUturnLeftIcon,
     UserIcon,
     MapPinIcon,
-    BookOpenIcon,
     CogIcon,
     UserGroupIcon
 } from '@heroicons/react/24/outline';
-import ImageRenderer from '../ImageRenderer';
 import { notifyWarning } from '../../utils/notifications';
 
 interface ProfileViewProps {
@@ -111,9 +109,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     onOpenDetailModal,
     onSwitchView,
     onRegenerateId,
-    gameSettings,
-    imageCache,
-    onImageGenerated,
     encounteredFactions,
     activeQuests
 }) => {

@@ -1,12 +1,12 @@
 
 
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocalization } from '../context/LocalizationContext';
 import Modal from './Modal';
 import { gameData, standardCalendarStructure } from '../utils/localizationGameData';
 import { PlusIcon, MinusIcon, CheckIcon } from '@heroicons/react/24/solid';
 // FIX: Added missing icon imports to resolve multiple 'Cannot find name' errors.
-import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, StarIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, StarIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import ConfirmationModal from './ConfirmationModal';
 import { Month, Calendar, DayInfo } from '../types';
 import { notifyError, notifySuccess, notifyWarning } from '../utils/notifications';

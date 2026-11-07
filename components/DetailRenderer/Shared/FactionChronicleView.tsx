@@ -16,7 +16,6 @@ import {
     MinusIcon,
     PlusIcon
 } from '@heroicons/react/24/solid';
-import MarkdownRenderer from '../../MarkdownRenderer';
 
 interface FactionChronicleViewProps {
     faction: Faction;

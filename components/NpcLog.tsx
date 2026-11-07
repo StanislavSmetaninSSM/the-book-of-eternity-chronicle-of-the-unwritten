@@ -168,7 +168,7 @@ const attitudeColorMap: Record<string, string> = {
 };
 
 
-export default function NpcLog({ gameState, npcs, encounteredFactions, onOpenModal, onOpenJournalModal, onViewCharacterSheet, imageCache, onImageGenerated, updateNpcSortOrder, forgetNpc, allowHistoryManipulation, gameSettings, onOpenImageModal, updateNpcPortrait }: NpcLogProps): React.ReactNode {
+export default function NpcLog({ gameState, npcs, encounteredFactions, onOpenJournalModal, onViewCharacterSheet, imageCache, onImageGenerated, updateNpcSortOrder, forgetNpc, allowHistoryManipulation, gameSettings, onOpenImageModal, updateNpcPortrait }: NpcLogProps): React.ReactNode {
   const { t } = useLocalization();
   const factionMapById = useMemo(() => new Map((encounteredFactions || []).filter(f => f && f.factionId).map(f => [f.factionId, f])), [encounteredFactions]);
   const factionMapByName = useMemo(() => new Map((encounteredFactions || []).filter(f => f && typeof f.name === 'string').map(f => [f.name.toLowerCase(), f])), [encounteredFactions]);

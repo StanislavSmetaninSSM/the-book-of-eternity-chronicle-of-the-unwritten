@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { PassiveSkill, PlayerCharacter } from '../../types';
+import { PassiveSkill } from '../../types';
 import { DetailRendererProps } from './types';
 import Section from './Shared/Section';
 import DetailRow from './Shared/DetailRow';

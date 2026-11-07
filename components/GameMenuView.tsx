@@ -3,8 +3,8 @@
 
 
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ArrowDownTrayIcon, ArrowUpTrayIcon, ClockIcon, WrenchScrewdriverIcon, InformationCircleIcon, TrashIcon, CloudArrowDownIcon, ExclamationTriangleIcon, BookOpenIcon, UserGroupIcon, WifiIcon, CheckIcon, ClipboardDocumentIcon, ArrowPathIcon, PaintBrushIcon } from '@heroicons/react/24/outline';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ArrowDownTrayIcon, ArrowUpTrayIcon, ClockIcon, WrenchScrewdriverIcon, InformationCircleIcon, TrashIcon, CloudArrowDownIcon, BookOpenIcon, PaintBrushIcon } from '@heroicons/react/24/outline';
 import { GameSettings, DBSaveSlotInfo, GameState } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import ConfirmationModal from './ConfirmationModal';
@@ -12,9 +12,6 @@ import AboutContent from './AboutContent';
 import Modal from './Modal';
 import { UniverseCustomizer } from './UniverseCustomizer';
 import { gameData as defaultGameData } from '../utils/localizationGameData';
-import { initializeAndPreviewSound } from '../utils/soundManager';
-import { weather as weatherTranslations } from '../utils/translations/ui/weather';
-import MarkdownRenderer from './MarkdownRenderer';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP } from '../utils/fileManager';
 
 
@@ -94,7 +91,6 @@ const ToggleSwitch: React.FC<{
   </div>
 );
 
-type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
 export default function GameMenuView({
     onSave,

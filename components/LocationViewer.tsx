@@ -2,10 +2,10 @@
 import { coordinateKey, resolveLinkTarget } from '../utils/locationLinks.js';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { Location, GameSettings, Faction, DifficultyProfile, ImageCacheEntry } from '../types';
+import { Location, GameSettings, Faction, ImageCacheEntry } from '../types';
 import { 
     MapPinIcon, QuestionMarkCircleIcon, HomeModernIcon, BuildingStorefrontIcon, 
-    FireIcon, GlobeAltIcon, SunIcon, PlusIcon, MinusIcon, ArrowPathIcon, UserGroupIcon,
+    FireIcon, GlobeAltIcon, SunIcon, ArrowPathIcon, UserGroupIcon,
     ArrowsPointingOutIcon, ArrowsPointingInIcon, FlagIcon
 } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
@@ -438,7 +438,7 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
         );
     }, [isStrategicView, encounteredFactions]);
 
-    const handleMouseEnter = useCallback((location: Location, event: React.MouseEvent) => {
+    const handleMouseEnter = useCallback((location: Location, _event: React.MouseEvent) => {
         setHoveredLocation(location);
     }, []);
     

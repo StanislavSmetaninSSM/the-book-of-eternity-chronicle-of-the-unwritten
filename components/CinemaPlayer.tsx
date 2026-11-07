@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Modal from './Modal';
 import { useLocalization } from '../context/LocalizationContext';
-import { PlayIcon, PauseIcon, ArrowLeftIcon, ArrowRightIcon } from '@heroicons/react/24/solid';
+import { PlayIcon, PauseIcon, ArrowLeftIcon, ArrowRightIcon, SpeakerWaveIcon, SpeakerXMarkIcon } from '@heroicons/react/24/solid';
 import { stripModerationSymbols } from '../utils/textUtils';
 import { Cinematic } from '../types';
 
@@ -49,7 +49,7 @@ const CinemaPlayer: React.FC<CinemaPlayerProps> = ({ isOpen, onClose, cinematic 
     const [isPlaying, setIsPlaying] = useState(true);
     const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
-    const [isMuted, setIsMuted] = useState(false); // Local state for mute
+    const [isMuted, setIsMuted] = useState(false);
 
     const frames = cinematic?.frames || null;
 
@@ -85,35 +85,45 @@ const CinemaPlayer: React.FC<CinemaPlayerProps> = ({ isOpen, onClose, cinematic 
         return () => clearTimeout(timer);
     }, [currentIndex, isPlaying, isOpen, frames, stopAudio]);
 
+    const startAudio = useCallback(() => {
+        if (!cinematic?.audio_base64 || audioSourceRef.current) return;
+        const audioBase64 = cinematic.audio_base64;
+        const play = async () => {
+            try {
+                const context = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+                audioContextRef.current = context;
+
+                const decodedBytes = decode(audioBase64);
+                const audioBuffer = await decodeAudioData(decodedBytes, context, 24000, 1);
+
+                const source = context.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(context.destination);
+                source.start(0);
+                audioSourceRef.current = source;
+            } catch (e) {
+                console.error("Failed to decode or play cinematic audio:", e);
+            }
+        };
+        play();
+    }, [cinematic]);
+
     useEffect(() => {
-        // Reset and play audio when modal opens with new cinematic
+        // Reset the slide show when the modal opens or a new cinematic arrives.
         if (isOpen && cinematic) {
             setCurrentIndex(0);
             setIsPlaying(true);
             stopAudio();
-
-            if (cinematic.audio_base64 && !isMuted) {
-                const play = async () => {
-                    try {
-                        const context = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-                        audioContextRef.current = context;
-                        
-                        const decodedBytes = decode(cinematic.audio_base64!);
-                        const audioBuffer = await decodeAudioData(decodedBytes, context, 24000, 1);
-
-                        const source = context.createBufferSource();
-                        source.buffer = audioBuffer;
-                        source.connect(context.destination);
-                        source.start(0);
-                        audioSourceRef.current = source;
-                    } catch (e) {
-                        console.error("Failed to decode or play cinematic audio:", e);
-                    }
-                };
-                play();
-            }
+            if (!isMuted) startAudio();
         }
-    }, [cinematic, isOpen, isMuted, stopAudio]);
+    }, [cinematic, isOpen, startAudio, stopAudio, isMuted]);
+
+    useEffect(() => {
+        // Mute is a playback switch only: it must not restart the slide show.
+        if (!isOpen) return;
+        if (isMuted) stopAudio();
+        else startAudio();
+    }, [isMuted, isOpen, startAudio, stopAudio]);
     
     const handleClose = () => {
         stopAudio();
@@ -155,6 +165,18 @@ const CinemaPlayer: React.FC<CinemaPlayerProps> = ({ isOpen, onClose, cinematic 
                         <button onClick={nextFrame} className="cinema-control-button">
                             <ArrowRightIcon className="w-8 h-8" />
                         </button>
+                        {cinematic?.audio_base64 && (
+                            <button
+                                onClick={() => setIsMuted(muted => !muted)}
+                                className="cinema-control-button"
+                                title={t(isMuted ? 'Unmute' : 'Mute')}
+                                aria-label={t(isMuted ? 'Unmute' : 'Mute')}
+                                aria-pressed={isMuted}
+                                data-testid="cinema-mute"
+                            >
+                                {isMuted ? <SpeakerXMarkIcon className="w-8 h-8" /> : <SpeakerWaveIcon className="w-8 h-8" />}
+                            </button>
+                        )}
                     </div>
                     <div className="cinema-progress-bar">
                         <div className="cinema-progress-inner" style={{ width: `${((currentIndex + 1) / (frames?.length || 1)) * 100}%` }}></div>

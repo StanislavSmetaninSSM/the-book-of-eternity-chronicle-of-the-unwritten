@@ -1,17 +1,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 // FIX: Add missing import for ImageCacheEntry
-import { PlayerCharacter, NPC, Location, Faction, FactionAffiliation, ImageCacheEntry, WorldState, WorldStateFlag, WorldEvent, GameSettings } from '../types';
+import { NPC, Location, Faction, ImageCacheEntry, WorldState, WorldStateFlag, WorldEvent, GameSettings } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
-import SectionHeader from './CharacterSheet/Shared/SectionHeader';
-import EditableField from './DetailRenderer/Shared/EditableField';
-import IdDisplay from './DetailRenderer/Shared/IdDisplay';
 import ImageRenderer from './ImageRenderer';
 import MarkdownRenderer from './MarkdownRenderer';
-import StatBar from './CharacterSheet/Shared/StatBar';
 // FIX: Add missing icon imports and aliases to resolve multiple 'Cannot find name' errors.
 import {
-    UserGroupIcon, PhotoIcon, CogIcon, BookOpenIcon, GlobeAltIcon,
+    UserGroupIcon, BookOpenIcon, GlobeAltIcon,
     ScaleIcon as PoliticalIcon,
     ShieldExclamationIcon as MilitaryIcon,
     CurrencyDollarIcon as EconomicIcon,
@@ -22,28 +18,10 @@ import {
     EyeIcon as PublicIcon,
     UsersIcon as RegionalIcon,
     EyeSlashIcon as SecretIcon,
-    TruckIcon as LogisticsIcon, ShieldCheckIcon as StabilityIcon,
-    BeakerIcon as ArcaneTechIcon, MapPinIcon as ExplorationIcon, BanknotesIcon as WealthIcon,
-    UsersIcon, SpeakerWaveIcon as InfluenceIcon, MapPinIcon,
-    ChevronDownIcon, ChevronUpIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon,
     TrashIcon,
-    StarIcon,
-    AcademicCapIcon,
-    WrenchScrewdriverIcon,
-    ClipboardDocumentListIcon,
-    ExclamationCircleIcon,
     CheckIcon,
     FlagIcon,
-    ArrowUturnLeftIcon,
-    InformationCircleIcon,
-    BoltIcon,
-    SparklesIcon,
-    ShieldCheckIcon,
-    ExclamationTriangleIcon,
     ClockIcon,
-    EyeSlashIcon,
-    FireIcon,
-    UserIcon,    
 } from '@heroicons/react/24/outline';
 import ConfirmationModal from './ConfirmationModal';
 import { PencilSquareIcon, XMarkIcon } from '@heroicons/react/24/solid';
@@ -324,13 +302,6 @@ const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, onDelete, allowH
         'Personal': { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t('Personal') },
     }), [t]);
 
-    const visibilityMapping = useMemo(() => ({
-        'Public': { icon: PublicIcon, colorClass: 'visibility-Public', label: t('Public') },
-        'Regional': { icon: RegionalIcon, colorClass: 'visibility-Regional', label: t('Regional') },
-        'Faction-Internal': { icon: UserGroupIcon, colorClass: 'visibility-Faction-Internal', label: t('Faction-Internal') },
-        'Secret': { icon: SecretIcon, colorClass: 'visibility-Secret', label: t('Secret') },
-    }), [t]);
-    
     const typeInfo = eventTypeMapping[event.eventType as keyof typeof eventTypeMapping] || { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t(event.eventType as any) || t('Personal') };
 
     const shouldRenderImage = event.image_prompt && (gameSettings?.generateWorldEventImages ?? true);
@@ -418,7 +389,7 @@ const FULL_WEATHER_OPTIONS = [
 ];
 
 const WorldPanel = (props: WorldPanelProps) => {
-    const { worldState, worldStateFlags, worldEventsLog, turnNumber, allowHistoryManipulation, onDeleteFlag, editWorldState, onEditWeather, onEditFlagData, biome, allNpcs, allFactions, allLocations, onOpenDetailModal, onDeleteEvent, deleteWorldEventsByTurnRange, onShowMessageModal, gameSettings, imageCache, onImageGenerated, onOpenImageModal } = props;
+    const { worldState, worldStateFlags, worldEventsLog, turnNumber, allowHistoryManipulation, onDeleteFlag, editWorldState, onEditWeather, onEditFlagData, onOpenDetailModal, onDeleteEvent, deleteWorldEventsByTurnRange, onShowMessageModal, gameSettings, imageCache, onImageGenerated, onOpenImageModal } = props;
     const { t } = useLocalization();
     const [flagToDelete, setFlagToDelete] = useState<WorldStateFlag | null>(null);
     const [editingFlagId, setEditingFlagId] = useState<string | null>(null);

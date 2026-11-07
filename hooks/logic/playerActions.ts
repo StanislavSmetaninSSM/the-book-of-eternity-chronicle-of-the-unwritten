@@ -5,7 +5,7 @@ import { resolveLinkTarget } from '../../utils/locationLinks.js';
 
 
 import React from 'react';
-import { GameState, ChatMessage, NPC, Faction, PlayerCharacter, Location, Quest, CustomState, WorldState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item } from '../../types';
+import { GameState, ChatMessage, NPC, Faction, PlayerCharacter, Location, Quest, WorldState, WorldStateFlag, UnlockedMemory, LocationStorage, Item } from '../../types';
 import { deleteMessage as deleteMessageUtil, clearHalfHistory as clearHalfHistoryUtil, deleteLogs as deleteLogsUtil, forgetNpc as forgetNpcUtil, forgetFaction as forgetFactionUtil } from '../../utils/uiManager';
 import { recalculateDerivedStats, calculateDate, calculateTotalMinutes, calculateJourneyDay } from '../../utils/gameContext';
 import { recalculateAllWeights } from '../../utils/inventoryManager';
@@ -746,7 +746,6 @@ export const createPlayerActionsManager = (
             if (!Array.isArray(storages) || !Array.isArray(prevState.playerCharacter.inventory)) return prevState;
             const matchingStorages = storages.filter(storage => storage?.storageId === storageId);
             if (matchingStorages.length !== 1 || !Array.isArray(matchingStorages[0].contents)) return prevState;
-            const priorStorage = matchingStorages[0];
             const sourceItems = prevState.playerCharacter.inventory.filter(entry => entry.existedId === item.existedId);
             if (sourceItems.length !== 1 || !Number.isSafeInteger(sourceItems[0].count) || sourceItems[0].count <= 0) return prevState;
 

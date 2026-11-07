@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocalization } from '../context/LocalizationContext';
 import { FilmIcon, PlayIcon, ArrowDownTrayIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon, DocumentArrowUpIcon, ArrowPathIcon, XCircleIcon, PencilIcon, CheckIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, SpeakerWaveIcon } from '@heroicons/react/24/solid';
 import { Cinematic, CinemaFrame } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 import LoadingSpinner from './LoadingSpinner';
-import ImageRenderer from './ImageRenderer';
 import Modal from './Modal';
 
 interface CinemaHallProps {
@@ -179,7 +178,7 @@ const CinematicCard: React.FC<CinematicCardProps> = ({ cinematic, onPlay, onExpo
     const [isExpanded, setIsExpanded] = useState(false);
     const [selectedVoice, setSelectedVoice] = useState('Kore');
     const voices = ['Kore', 'Puck', 'Charon', 'Zephyr', 'Fenrir'];
-    const posterUrl = cinematic.frames[0]?.imageUrl;
+    const posterUrl = cinematic.frames?.[0]?.imageUrl;
 
     const handleGenerateAudio = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -218,7 +217,7 @@ const CinematicCard: React.FC<CinematicCardProps> = ({ cinematic, onPlay, onExpo
                     <div>
                         <h5 className="text-sm font-semibold text-gray-300 mb-2">{t('Comments')}</h5>
                         <div className="space-y-2 text-xs text-gray-400 italic">
-                            {cinematic.comments.map((comment, i) => (
+                            {(cinematic.comments || []).map((comment, i) => (
                                 <blockquote key={i} className="pl-2 border-l-2 border-gray-600">
                                     "{comment}"
                                 </blockquote>

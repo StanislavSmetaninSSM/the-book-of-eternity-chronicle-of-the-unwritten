@@ -4,7 +4,6 @@ import { GameState, Item, LocationStorage, GameSettings, ImageCacheEntry } from 
 import Modal from './Modal';
 import { useLocalization } from '../context/LocalizationContext';
 // FIX: Change default import to named import for InventoryManagerUI.
-import { InventoryScreen } from './InventoryScreen';
 
 interface StorageScreenProps {
     isOpen: boolean;
@@ -30,10 +29,6 @@ const StorageScreen: React.FC<StorageScreenProps> = (props) => {
         gameState,
         onMoveToStorage,
         onRetrieveFromStorage,
-        onOpenDetailModal,
-        imageCache,
-        onImageGenerated,
-        gameSettings,
     } = props;
     const { t } = useLocalization();
     const player = gameState.playerCharacter;

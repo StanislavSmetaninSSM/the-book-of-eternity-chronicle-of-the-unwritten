@@ -6,7 +6,7 @@ import { DetailRendererProps } from './types';
 import Section from './Shared/Section';
 import EditableField from './Shared/EditableField';
 import { useLocalization } from '../../context/LocalizationContext';
-import { UserIcon, TagIcon, AcademicCapIcon, PhotoIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { UserIcon, TagIcon, AcademicCapIcon, PhotoIcon } from '@heroicons/react/24/outline';
 import ImageRenderer from '../ImageRenderer';
 
 interface PlayerCharacterDetailsProps extends Omit<DetailRendererProps, 'data'> {
@@ -26,8 +26,6 @@ const PlayerCharacterDetailsRenderer: React.FC<PlayerCharacterDetailsProps> = ({
 }) => {
     const { t } = useLocalization();
     const isCustomPortrait = !!character.portrait;
-    const hasPendingUpdate = !!character.pending_image_prompt;
-    
     const [localPrompt, setLocalPrompt] = useState(character.image_prompt || '');
 
     useEffect(() => {
@@ -43,12 +41,6 @@ const PlayerCharacterDetailsRenderer: React.FC<PlayerCharacterDetailsProps> = ({
     const handleUploadFromModal = useCallback((base64: string) => {
         if (updatePlayerPortrait) {
             updatePlayerPortrait(character.playerId, { custom: base64 });
-        }
-    }, [updatePlayerPortrait, character.playerId]);
-
-    const handleRevertPortrait = useCallback(() => {
-        if (updatePlayerPortrait) {
-            updatePlayerPortrait(character.playerId, { custom: null });
         }
     }, [updatePlayerPortrait, character.playerId]);
 

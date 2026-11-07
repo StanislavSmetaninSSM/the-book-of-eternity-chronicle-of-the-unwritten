@@ -1,7 +1,7 @@
 
 
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
-import { PlayerCharacter, NPC, GameSettings, ImageCacheEntry, Quest } from '../../types';
+import { PlayerCharacter, NPC } from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import ImageRenderer from '../ImageRenderer';
 import EditableField from '../DetailRenderer/Shared/EditableField';
@@ -14,8 +14,6 @@ import {
     ScaleIcon,
     StarIcon,
     CurrencyDollarIcon,
-    SparklesIcon,
-    LockClosedIcon,
     PencilSquareIcon
 } from '@heroicons/react/24/outline';
 
@@ -41,7 +39,6 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
     onOpenDetailModal,
     onSwitchView,
     isLoading,
-    playerCharacter,
     onShowMessageModal,
     activeQuests 
 }) => {

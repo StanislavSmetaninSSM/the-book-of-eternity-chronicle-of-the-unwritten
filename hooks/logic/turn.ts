@@ -1,5 +1,5 @@
 import React from 'react';
-import { GameState, GameContext, ChatMessage, GameResponse, WorldStateFlag, Location, NPC, GameSettings, SaveFile } from '../../types';
+import { GameState, GameContext, ChatMessage, GameResponse, Location, GameSettings, SaveFile } from '../../types';
 import { executeTurn, askGmQuestion as executeGmQuestion, getModelForStep, executeWorldProgression } from '../../utils/gemini';
 import { createInitialContext, buildNextContext, WorldMapWarning } from '../../utils/gameContext';
 import { formatError } from '../../utils/errorUtils';
@@ -16,7 +16,6 @@ const asArray = <T>(value: T | T[] | null | undefined): T[] => {
     if (Array.isArray(value)) return value.filter(item => item !== null && item !== undefined);
     return [value];
 };
-const isObject = (item: any): item is object => (item && typeof item === 'object' && !Array.isArray(item));
 
 // Distinguish explicit cancellation from a superseded turn. Only the former
 // discards this turn's own recovery record.
@@ -33,7 +32,6 @@ export const createTurnManager = (
         syncRevisionRef = { current: 0 }, activeTurnRef = { current: null }, turnPhaseRef = { current: 'idle' },
         gameplayMutationRevisionRef = { current: 0 }, gameplayMutationPendingRef = { current: false },
         setSuperInstructions, setGameSettings,
-        setLanguage,
         t,
         turnStartTimeRef, setTurnTime, setCurrentStep, setCurrentModel,
         language,
@@ -133,14 +131,14 @@ export const createTurnManager = (
         };
 
         try {
-            const onPartialResponse = (response: any, stepName: string, modelName: string) => {
+            const onPartialResponse = (response: any, _stepName: string, _modelName: string) => {
                 if (wasSuperseded()) return;
                 setLastJsonResponse(JSON.stringify(response, null, 2));
                 if (response.items_and_stat_calculations) {
                     setGameLog(response.items_and_stat_calculations);
                 }
             };
-            const onStepStart = (stepName: string, modelName: string) => {
+            const onStepStart = (stepName: string, _modelName: string) => {
                 if (wasSuperseded()) return;
                 setCurrentStep(stepName);
                 setCurrentModel(getModelForStep(stepName, context));
@@ -414,7 +412,7 @@ export const createTurnManager = (
 
         try {
             setLastRequestJson(JSON.stringify(context, null, 2));
-            const onStepStart = (stepName: string, modelName: string) => {
+            const onStepStart = (stepName: string, _modelName: string) => {
               if (wasSuperseded()) return;
               setCurrentStep(stepName);
               setCurrentModel(getModelForStep(stepName, context));
@@ -434,7 +432,7 @@ export const createTurnManager = (
 
             if (shouldRunWorldProgression(finalResponse.generateWorldProgression, context.gameSettings)) {
                 const wpContext = { ...context, responseHistory: [...historyWithQuestion, gmMessage] };
-                const wpResponseRaw = await executeWorldProgression(wpContext, turnController.signal, onStreamingChunk, (r, s, m) => { if (!wasSuperseded()) setLastJsonResponse(JSON.stringify(r, null, 2)); }, onStepStart);
+                const wpResponseRaw = await executeWorldProgression(wpContext, turnController.signal, onStreamingChunk, (r, _s, _m) => { if (!wasSuperseded()) setLastJsonResponse(JSON.stringify(r, null, 2)); }, onStepStart);
                 const wpResponse = deepStripModerationSymbols(wpResponseRaw);
                 finalMergedResponse = deepMergeResponses(finalResponse, wpResponse);
 

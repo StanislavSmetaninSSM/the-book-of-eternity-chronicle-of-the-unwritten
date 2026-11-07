@@ -10,7 +10,6 @@ import { useSpeech } from '../../../context/SpeechContext';
 import { SpeakerWaveIcon, StopCircleIcon } from '@heroicons/react/24/solid';
 import { TrashIcon } from '@heroicons/react/24/outline';
 import ConfirmationModal from '../../ConfirmationModal';
-import { stripMarkdown } from '../../../utils/textUtils';
 
 interface TextContentModalProps {
   isOpen: boolean;

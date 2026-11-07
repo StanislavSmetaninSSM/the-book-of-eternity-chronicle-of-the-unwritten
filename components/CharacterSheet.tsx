@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { PlayerCharacter, NPC, GameSettings, Item, StructuredBonus, Faction, Location, UnlockedMemory, CompletedActivity, ImageCacheEntry, Quest } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import CharacterSheetHeader from './CharacterSheet/Header';
@@ -38,15 +38,10 @@ import {
     TrashIcon, 
     MinusIcon, 
     PlusIcon, 
-    MapPinIcon, 
     UserGroupIcon, 
-    CurrencyDollarIcon, 
-    ScaleIcon, 
     FlagIcon 
 } from '@heroicons/react/24/outline';
-import { SparklesIcon as SparklesSolidIcon, SpeakerWaveIcon, StopCircleIcon, BookOpenIcon as BookOpenSolidIcon, PencilSquareIcon } from '@heroicons/react/24/solid';
-import ImageRenderer from './ImageRenderer';
-import StatBar from './CharacterSheet/Shared/StatBar';
+import { SpeakerWaveIcon, StopCircleIcon, BookOpenIcon as BookOpenSolidIcon } from '@heroicons/react/24/solid';
 import NpcRelationshipsView from './CharacterSheet/NpcRelationshipsView';
 import NpcGoalsView from './CharacterSheet/NpcGoalsView';
 

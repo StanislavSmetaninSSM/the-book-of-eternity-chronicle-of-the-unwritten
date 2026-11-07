@@ -4,7 +4,7 @@
 
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Faction, NPC, PlayerCharacter, Location, Project, CompletedProject, StructuredBonus, GameSettings, FactionRank, CustomState, FactionRankBranch, ImageCacheEntry } from '../../types';
+import { Faction, NPC, PlayerCharacter, Project, CompletedProject, StructuredBonus, CustomState } from '../../types';
 import { DetailRendererProps } from './types';
 import { useLocalization } from '../../context/LocalizationContext';
 import { locateFactionProject } from '../../utils/factionProjects';
@@ -12,28 +12,24 @@ import SectionHeader from '../CharacterSheet/Shared/SectionHeader';
 import EditableField from './Shared/EditableField';
 import IdDisplay from './Shared/IdDisplay';
 import ImageRenderer from '../ImageRenderer';
-import MarkdownRenderer from '../MarkdownRenderer';
 import StatBar from '../CharacterSheet/Shared/StatBar';
 import {
-    UserGroupIcon, PhotoIcon, CogIcon, BookOpenIcon, GlobeAltIcon,
+    UserGroupIcon, CogIcon, BookOpenIcon, GlobeAltIcon,
     ScaleIcon as EconomicIcon, FireIcon as MilitaryIcon, ChatBubbleLeftRightIcon as SocialIcon,
     EyeSlashIcon as CovertIcon, TruckIcon as LogisticsIcon, ShieldCheckIcon as StabilityIcon,
     BeakerIcon as ArcaneTechIcon, MapPinIcon as ExplorationIcon, BanknotesIcon as WealthIcon,
     UsersIcon, SpeakerWaveIcon as InfluenceIcon, MapPinIcon,
-    ChevronDownIcon, ChevronUpIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon,
+    ChevronDownIcon, ChevronUpIcon,
     TrashIcon,
     StarIcon,
     AcademicCapIcon,
     WrenchScrewdriverIcon,
     ClipboardDocumentListIcon,
     ExclamationCircleIcon,
-    CheckIcon,
     FlagIcon,
     ArrowUturnLeftIcon,
     InformationCircleIcon,
     BoltIcon,
-    SparklesIcon,
-    ShieldCheckIcon,
     ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import ConfirmationModal from '../ConfirmationModal';
@@ -54,7 +50,6 @@ const FactionHeader: React.FC<FactionDetailsProps> = ({ faction, onOpenImageModa
     const displayImagePrompt = faction.custom_image_prompt || faction.image_prompt;
     const originalImagePrompt = faction.image_prompt;
 
-    const hasPendingUpdate = !!faction.pending_image_prompt;
 
     const handleAcceptUpdate = useCallback(() => {
         if (onEditFactionData && faction.factionId && faction.pending_image_prompt) {
@@ -562,7 +557,7 @@ const TerritoryAndRelationsView: React.FC<FactionDetailsProps> = ({ faction, onO
     );
 };
 
-const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: Faction, perspectiveFor?: { name: string; rank: string | null; branch?: string | null; } }> = ({ faction, perspectiveFor, ...props }) => {
+const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: Faction, perspectiveFor?: { name: string; rank: string | null; branch?: string | null; } }> = ({ faction, perspectiveFor }) => {
     const { t } = useLocalization();
     
     const characterRank = perspectiveFor ? perspectiveFor.rank : (faction.isPlayerMember ? faction.playerRank : null);
@@ -677,7 +672,7 @@ const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: 
     );
 };
 
-const StrategyAndDirectivesView: React.FC<FactionDetailsProps> = ({ faction, allowHistoryManipulation, onEditFactionData }) => {
+const StrategyAndDirectivesView: React.FC<FactionDetailsProps> = ({ faction, onEditFactionData }) => {
     const { t } = useLocalization();
     const priorities = faction.customArchetypePriorities;
 
@@ -827,7 +822,7 @@ const BonusesAndStatesView: React.FC<FactionDetailsProps> = (props) => {
 
 
 const FactionDetailsRenderer: React.FC<FactionDetailsProps> = (props) => {
-    const { faction: factionWithUiProps, onEditFactionData, allowHistoryManipulation, onOpenTextReader, deleteFactionBonus, ...rest } = props;
+    const { faction: factionWithUiProps, onEditFactionData, allowHistoryManipulation, onOpenTextReader, deleteFactionBonus } = props;
     const { initialView, perspectiveFor, ...faction } = factionWithUiProps;
     const { t } = useLocalization();
     const [activeTab, setActiveTab] = useState(initialView || 'menu');

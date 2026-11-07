@@ -2,7 +2,6 @@ import React from 'react';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import EditableField from '../../DetailRenderer/Shared/EditableField';
 import { BookOpenIcon } from '@heroicons/react/24/outline';
-import { PlayerCharacter, NPC } from '../../../types';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 

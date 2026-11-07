@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { EnemyCombatObject, AllyCombatObject, NPC, Item, ActiveSkill, PassiveSkill, CombatAction, PlayerCharacter, Wound, CombatActionEffect, GameSettings, ImageCacheEntry } from '../types';
-import { ShieldExclamationIcon, BoltIcon, ShieldCheckIcon, SunIcon, CloudIcon, DocumentTextIcon, SparklesIcon, ArchiveBoxIcon, Cog6ToothIcon, InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
+import { EnemyCombatObject, AllyCombatObject, NPC, PlayerCharacter, GameSettings, ImageCacheEntry } from '../types';
+import { ShieldExclamationIcon, BoltIcon, ShieldCheckIcon, SunIcon, CloudIcon, DocumentTextIcon, ArchiveBoxIcon, Cog6ToothIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { FireIcon } from '@heroicons/react/24/solid';
 import ImageRenderer from './ImageRenderer';
 import { useLocalization } from '../context/LocalizationContext';
@@ -151,7 +151,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
         return Math.max(1, Math.round(el));
     }, [combatant, fullNpcData, gameSettings]);
     
-    const { passiveSkills, hasPassiveSkills, inventory, hasInventory, actions, hasActions } = useMemo(() => {
+    const { passiveSkills, hasPassiveSkills, inventory, hasInventory, actions } = useMemo(() => {
         const combatActions = combatant.actions || [];
         const finalPassiveSkills = fullNpcData?.passiveSkills || [];
         const finalInventory = fullNpcData?.inventory || [];

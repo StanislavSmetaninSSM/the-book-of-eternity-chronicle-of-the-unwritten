@@ -68,11 +68,6 @@ export interface ArenaGmImageResponse {
   correlationId: string;
 }
 
-interface RelayRequestEventDetail {
-  request: ArenaGmTurnRequest;
-  resolve: (response: GameResponse) => void;
-  reject: (reason: Error) => void;
-}
 
 const newCorrelationId = (): string => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();

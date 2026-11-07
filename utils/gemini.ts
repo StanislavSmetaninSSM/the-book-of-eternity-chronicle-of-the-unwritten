@@ -78,7 +78,7 @@ const cleanJsonString = (jsonString: string): string => {
     // This approach matches strings OR numbers with leading zeros.
     // By matching strings first (Group 1), we ensure we don't modify contents inside quotes (like time "08:00" or codes "007").
     // Only if it matches Group 2/3 (number outside quotes) do we apply the fix.
-    cleaned = cleaned.replace(/("(?:\\.|[^\\"])*")|([:\[,]\s*)0+([1-9]\d*)/g, (match, stringContent, separator, number) => {
+    cleaned = cleaned.replace(/("(?:\\.|[^\\"])*")|([:\[,]\s*)0+([1-9]\d*)/g, (_match, stringContent, separator, number) => {
         // If it matched a string (Group 1), return it exactly as is.
         if (stringContent) return stringContent;
         
@@ -452,7 +452,7 @@ export async function askGmQuestion(
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
     const mainPromptSteps = await loadPromptSteps();
-    const onPartialResponse = (response: any, stepName: string, modelName: string) => {
+    const onPartialResponse = (_response: any, _stepName: string, _modelName: string) => {
         // This is a single-step process, so onPartialResponse is equivalent to the final response.
         // We don't need to do anything special here as the final return will handle the full object.
     };

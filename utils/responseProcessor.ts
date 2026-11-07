@@ -3,7 +3,7 @@
 
 
 
-import { GameState, GameResponse, PlayerCharacter, Characteristics, GameSettings, Quest, Location, Item, NPC, Faction, ActiveSkill, PassiveSkill, SkillMastery, Wound, CustomState, WorldStateFlag, WorldEvent, Recipe, QuestUpdate, FactionChronicleUpdate, FactionBonusChange, FactionResourceChange, StructuredBonus, FactionCustomStateChange, UnlockedMemory, AdjacencyMapEntry, CompletedActivity, LocationStorage, ActiveThreat, Project, CompletedProject, FactionRankBranchChange, FactionRankBranch, NPCSkillChange, FactionRank, Effect, CompleteThreatActivity, NPCSkillMasteryChange, NPCPassiveSkillMasteryChange, EnemyCombatObject, AllyCombatObject, Combatant, InterNPCRelationshipChange, NpcRelationship, NpcPersonalQuest, NpcRelationshipLock } from '../types';
+import { GameState, GameResponse, PlayerCharacter, Characteristics, GameSettings, Quest, Location, Item, NPC, Faction, ActiveSkill, PassiveSkill, Wound, QuestUpdate, UnlockedMemory, ActiveThreat, Project, CompletedProject, NPCSkillChange, FactionRank, Effect, EnemyCombatObject, AllyCombatObject, Combatant, NpcRelationship } from '../types';
 import { recalculateAllWeights } from './inventoryManager';
 import { recalculateDerivedStats } from './gameContext';
 import { generateFactionColor } from './colorUtils';
@@ -835,7 +835,7 @@ const applySkillChanges = (npc: NPC, change: NPCSkillChange, isPassive: boolean)
     if (isPassive) npc.passiveSkills = newSkills as PassiveSkill[]; else npc.activeSkills = newSkills as ActiveSkill[];
 };
 
-const applyChangesToPlayer = (player: PlayerCharacter, changes: Partial<GameResponse>, t: TFunction, gameSettings: GameSettings | null): { player: PlayerCharacter, logs: string[], rejectedNewItems: Partial<Item>[], acceptedNewItems: Partial<Item>[] } => {
+const applyChangesToPlayer = (player: PlayerCharacter, changes: Partial<GameResponse>, t: TFunction, _gameSettings: GameSettings | null): { player: PlayerCharacter, logs: string[], rejectedNewItems: Partial<Item>[], acceptedNewItems: Partial<Item>[] } => {
     let newPlayer = JSON.parse(JSON.stringify(player));
     const logs: string[] = [];
     const rejectedNewItems: Partial<Item>[] = [];

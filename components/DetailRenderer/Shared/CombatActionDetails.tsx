@@ -1,13 +1,11 @@
 
 import React from 'react';
-import { CombatAction, CombatActionEffect } from '../../../types';
+import { CombatAction } from '../../../types';
 import { useLocalization } from '../../../context/LocalizationContext';
 import StatItem from './StatItem';
 import { 
     Cog6ToothIcon, UsersIcon, AcademicCapIcon, HashtagIcon, PaperClipIcon, SparklesIcon, 
-    HeartIcon, FireIcon, SunIcon, CloudIcon, ShieldCheckIcon, ShieldExclamationIcon, HandRaisedIcon 
 } from '@heroicons/react/24/outline';
-import MarkdownRenderer from '../../MarkdownRenderer';
 import EffectCard from './EffectCard';
 
 const CombatActionDetails: React.FC<{ action: CombatAction }> = ({ action }) => {

@@ -3,7 +3,6 @@ import { Project, CompletedProject } from '../../../types';
 import Modal from '../../Modal';
 import { useLocalization } from '../../../context/LocalizationContext';
 import { TrashIcon } from '@heroicons/react/24/outline';
-import MarkdownRenderer from '../../MarkdownRenderer';
 import ConfirmationModal from '../../ConfirmationModal';
 
 interface ProjectViewerModalProps {

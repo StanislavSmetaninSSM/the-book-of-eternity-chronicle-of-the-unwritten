@@ -14,8 +14,6 @@ import {
     MusicalNoteIcon,
     ChevronUpIcon,
     ChevronDownIcon,
-    UserGroupIcon,
-    BoltIcon as SimultaneousIcon,
     PaperClipIcon,
     PlayIcon,
     PauseIcon
@@ -147,7 +145,7 @@ const MarkdownToolbar: React.FC<{
     );
 }
 
-export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, gameSettings, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
+export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
@@ -159,7 +157,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
   const [activeView, setActiveView] = useState<'write' | 'preview'>('write');
   const [isSuggestionsExpanded, setIsSuggestionsExpanded] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { t, language } = useLocalization();
+  const { t } = useLocalization();
   const [selectedImage, setSelectedImage] = useState<{ dataUrl: string; mimeType: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const actionDraftWarningShownRef = useRef(false);
@@ -301,11 +299,11 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
           }
           // Keep the encoded image plus the large rules prompt below the relay's 12 MiB limit.
           if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'].includes(file.type)) {
-              notifyWarning(language === 'ru' ? 'Поддерживаются изображения PNG, JPEG, WebP, GIF и BMP.' : 'Supported images: PNG, JPEG, WebP, GIF and BMP.');
+              notifyWarning(t('image_upload_unsupported_type'));
               return;
           }
           if (file.size > 4 * 1024 * 1024) {
-              notifyWarning(language === 'ru' ? 'Размер изображения не должен превышать 4 МиБ.' : 'The image must be no larger than 4 MiB.');
+              notifyWarning(t('image_upload_too_large'));
               return;
           }
           const reader = new FileReader();

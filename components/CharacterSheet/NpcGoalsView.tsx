@@ -4,7 +4,6 @@ import { NPC, NpcPersonalQuest } from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import { FlagIcon, MapIcon, CheckCircleIcon, XCircleIcon, StopCircleIcon, LightBulbIcon, TrashIcon } from '@heroicons/react/24/outline';
 import SectionHeader from './Shared/SectionHeader';
-import MarkdownRenderer from '../MarkdownRenderer';
 import EditableField from '../DetailRenderer/Shared/EditableField';
 import ConfirmationModal from '../ConfirmationModal';
 
