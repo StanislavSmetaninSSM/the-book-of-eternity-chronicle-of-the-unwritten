@@ -341,11 +341,12 @@ export default function GameMenuView({
                             <ArrowDownTrayIcon className="w-5 h-5" />
                             {t("Save to File")}
                         </button>
-                        <button onClick={onLoad} disabled={isLoading} className="flex-1 w-full flex items-center justify-center gap-3 px-4 py-2 text-base font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button onClick={onLoad} disabled={isLoading} title={t('Choose the save file and, if you have it, the images file - both at once is fine.')} className="flex-1 w-full flex items-center justify-center gap-3 px-4 py-2 text-base font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
                              <ArrowUpTrayIcon className="w-5 h-5" />
                             {t("Load from File")}
                         </button>
                     </div>
+                    <p className="mt-2 text-xs text-gray-400">{t('Choose the save file and, if you have it, the images file - both at once is fine.')}</p>
                     <button onClick={onLoadAutosave} disabled={!autosaveTimestamp || isLoading} className="w-full mt-3 text-cyan-400/80 hover:text-cyan-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 p-2">
                         <ClockIcon className="w-5 h-5" />
                         {t("Autosave")}: {formatTimestamp(autosaveTimestamp, t)}

@@ -54,7 +54,8 @@ export const startScreen = {
     "Failed to load game file. It might be corrupted or in an invalid format.": "Failed to load game file. It might be corrupted or in an invalid format.",
     "Failed to load autosave data. It may be corrupted.": "Failed to load autosave data. It may be corrupted.",
     "Or continue your journey": "Or continue your journey",
-    "Load from File": "Load from File",
+    "Load from File": "Load from File",    "Choose the save file and, if you have it, the images file - both at once is fine.": "Choose the save file and, if you have it, the images file - both at once is fine.",
+
     "Load Autosave": "Load Autosave",
     // Custom class/race
     "Create Custom Class": "Create Custom Class",
@@ -187,7 +188,8 @@ export const startScreen = {
     "Failed to load game file. It might be corrupted or in an invalid format.": "Не удалось загрузить файл сохранения. Он может быть поврежден или иметь неверный формат.",
     "Failed to load autosave data. It may be corrupted.": "Не удалось загрузить автосохранение. Оно может быть повреждено.",
     "Or continue your journey": "Или продолжите свое путешествие",
-    "Load from File": "Загрузить из файла",
+    "Load from File": "Загрузить из файла",    "Выберите файл сохранения и, если есть, файл с картинками — можно сразу оба.": "Выберите файл сохранения и, если есть, файл с картинками — можно сразу оба.",
+
     "Load Autosave": "Загрузить автосохранение",
     // Custom class/race
     "Create Custom Class": "Создать свой класс",

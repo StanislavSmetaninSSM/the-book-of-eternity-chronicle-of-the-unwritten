@@ -148,6 +148,13 @@ test('a lost image is dropped instead of breaking the load', async () => {
   assert.ok(restored, 'the save still loads');
   assert.equal(restored.gameState.imageCache.scene, undefined, 'the unreadable image is dropped');
   assert.equal(restored.gameState.imageCache.portrait, png(4), 'the rest of the cache survives');
+  assert.equal(restored.missingImageCount, 1, 'the load reports how many images were lost');
+
+  // The report is about that load only; it must not stick to the stored save.
+  await fileManager.saveToDB(restored);
+  const rawAgain = await readRawRecord('autosaves', 'current_autosave');
+  assert.equal(rawAgain.saveData.missingImageCount, undefined);
+  assert.equal((await fileManager.loadFromDB()).missingImageCount, undefined);
 });
 
 test('saves written before the store existed are migrated once', async () => {
@@ -282,4 +289,20 @@ test('a save and its images can travel as two separate files', async () => {
   // The imported save keeps working through the normal fileManager path.
   await fileManager.saveToDB(imported.saveData);
   assert.equal((await fileManager.loadFromDB()).gameState.imageCache.scene, png(21));
+
+  // The images file may also be imported first, on its own, and the save afterwards.
+  await clearImageStore(store);
+  await gameStore('autosaves', 'readwrite', store_ => store_.clear());
+  const imagesOnly = await bundleModule.applySaveBundleDocuments([bundle]);
+  assert.equal(imagesOnly.saveData, null, 'an images-only pick loads no save');
+  assert.equal(imagesOnly.imagesImported, 2);
+  assert.equal((await store.getImageStoreStats()).count, 2, 'the bytes are stored for the next step');
+
+  const laterSave = await bundleModule.applySaveBundleDocuments([referenced]);
+  assert.equal(laterSave.imagesImported, 0);
+  assert.equal(laterSave.missingImages, 0, 'the previously imported images are reused');
+  assert.equal(laterSave.saveData.gameState.imageCache.scene, png(21));
+
+  // A file that is neither a save nor an images bundle is still rejected.
+  assert.equal(await bundleModule.applySaveBundleDocuments([{ hello: 'world' }]), null);
 });

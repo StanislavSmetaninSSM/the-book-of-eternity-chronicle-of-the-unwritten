@@ -514,7 +514,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
             <ArrowDownTrayIcon className="w-5 h-5" />
             {t("Save to File")}
         </button>
-        <button onClick={onLoadGame} disabled={isLoading} className="flex-1 flex items-center justify-center gap-3 px-4 py-2 text-sm font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+        <button onClick={onLoadGame} disabled={isLoading} title={t('Choose the save file and, if you have it, the images file - both at once is fine.')} className="flex-1 flex items-center justify-center gap-3 px-4 py-2 text-sm font-semibold text-gray-200 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
              <ArrowUpTrayIcon className="w-5 h-5" />
             {t("Load from File")}
         </button>

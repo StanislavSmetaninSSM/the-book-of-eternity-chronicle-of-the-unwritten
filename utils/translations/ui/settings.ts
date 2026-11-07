@@ -101,7 +101,11 @@ export const settings = {
     "Or download the save and its images as two files: keep them together, the save needs the images file.": "Or download the save and its images as two files: keep them together, the save needs the images file.",
     "Save file without images": "Save file without images",
     "Images file": "Images file",
+    "Choose the save file and, if you have it, the images file - both at once is fine.": "Choose the save file and, if you have it, the images file - both at once is fine.",
     "Imported images: {count}.": "Imported images: {count}.",
+    "Images were added: {count}. Now load the save file.": "Images were added: {count}. Now load the save file.",
+    "Some images were missing and were skipped ({count}).": "Some images were missing and were skipped ({count}).",
+
     "Some images were not found: import the images file together with the save ({count}).": "Some images were not found: import the images file together with the save ({count}).",
     "Load": "Load",
     "Delete": "Delete",
@@ -264,7 +268,11 @@ export const settings = {
     "Or download the save and its images as two files: keep them together, the save needs the images file.": "Либо скачайте сохранение и картинки двумя файлами: держите их вместе, сохранению нужен файл с картинками.",
     "Save file without images": "Файл сохранения без картинок",
     "Images file": "Файл с картинками",
+    "Choose the save file and, if you have it, the images file - both at once is fine.": "Выберите файл сохранения и, если есть, файл с картинками — можно сразу оба.",
     "Imported images: {count}.": "Импортировано картинок: {count}.",
+    "Images were added: {count}. Now load the save file.": "Картинки добавлены: {count}. Теперь загрузите файл сохранения.",
+    "Some images were missing and were skipped ({count}).": "Часть картинок не найдена в хранилище и пропущена ({count}).",
+
     "Some images were not found: import the images file together with the save ({count}).": "Часть картинок не найдена: выберите файл с картинками вместе с сохранением (не хватает {count}).",
     "Load": "Загрузить",
     "Delete": "Удалить",

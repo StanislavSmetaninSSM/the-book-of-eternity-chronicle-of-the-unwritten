@@ -39,6 +39,10 @@ export const createSaveLoadManager = (
         setIsSaving: React.Dispatch<React.SetStateAction<boolean>>,
     }
 ) => {
+    const warnMissingImages = (count: number) => {
+        notifyWarning(t('Some images were missing and were skipped ({count}).', { count }));
+    };
+
     const informMissingImages = (count: number) => {
         notifyWarning(t('Some images were not found: import the images file together with the save ({count}).', { count }));
     };
@@ -268,6 +272,11 @@ export const createSaveLoadManager = (
         if (!canCommit) return false;
         const result = await loadSaveBundleFromFiles(t);
         if (!result || !canCommit()) return false;
+        if (!result.saveData) {
+            // Only the images file was picked: the bytes are stored, the save is next.
+            notifySuccess(t('Images were added: {count}. Now load the save file.', { count: result.imagesImported }));
+            return false;
+        }
         if (result.missingImages > 0) {
             informMissingImages(result.missingImages);
         } else if (result.imagesImported > 0) {
@@ -283,6 +292,7 @@ export const createSaveLoadManager = (
         const data = await loadFromDB();
         if (!data) { notifyWarning(t("No autosave data found.")); return false; }
         if (!canCommit()) return false;
+        if (data.missingImageCount) warnMissingImages(data.missingImageCount);
         try { restoreFromSaveData(data); return true; }
         catch (e) { notifyError(t('Failed to load game.') + ` ${e instanceof Error ? e.message : e}`); return false; }
     };
@@ -324,6 +334,7 @@ export const createSaveLoadManager = (
             const data = await loadFromDBSlot(slotId);
             if (!data) { notifyWarning(t('No data found in this slot.')); return false; }
             if (!canCommit()) return false;
+            if (data.missingImageCount) warnMissingImages(data.missingImageCount);
             restoreFromSaveData(data);
             return true;
         } catch (e) {

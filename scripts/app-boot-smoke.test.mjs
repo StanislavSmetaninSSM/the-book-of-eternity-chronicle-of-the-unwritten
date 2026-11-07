@@ -5,6 +5,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {createServer} from 'vite';
 import 'fake-indexeddb/auto';
+import { waitForDom } from './helpers/domWait.mjs';
 
 // The sandbox cannot run a real Chromium build, so this smoke boots the whole
 // application shell (not just one component) in JSDOM. It covers the setup
@@ -32,9 +33,9 @@ test('the application shell boots into the local setup screen',async()=>{
   const {SpeechProvider}=await vite.ssrLoadModule('/context/SpeechContext.tsx');
   root=createRoot(document.getElementById('root'));
   await act(async()=>{root.render(React.createElement(LocalizationProvider,null,React.createElement(SpeechProvider,null,React.createElement(App))))});
-  await act(async()=>{await new Promise(r=>setTimeout(r,400))});
   const buttons=()=>[...document.querySelectorAll('button')];
   const label=b=>b.textContent.trim();
+  await waitForDom(act,()=>buttons().some(b=>label(b)==='Full Party'),{label:'the setup screen'});
   assert.ok(document.body.textContent.includes('Choose Your Universe'));
   assert.ok(!/something went wrong|unexpected error/i.test(document.body.textContent));
   const fullParty=buttons().find(b=>label(b)==='Full Party');

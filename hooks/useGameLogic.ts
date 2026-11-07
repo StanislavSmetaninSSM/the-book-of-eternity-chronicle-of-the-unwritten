@@ -1355,6 +1355,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     : 'The game state changed while recovery was loading. Retry if you want to load the checkpoint.');
                 return false;
             }
+            if (data.missingImageCount) {
+                console.warn(`Crash recovery restored ${data.missingImageCount} image(s) fewer than it references.`);
+            }
             restoreFromSaveData(data);
             return true;
         } catch (e: any) {

@@ -87,7 +87,8 @@ export function rewriteImageRefs<T>(value: T, aliases: Map<string, string>): T {
 }
 
 export interface SaveBundleImportResult {
-    saveData: SaveFile;
+    /** Null when only images were picked: they are stored, but there is no save to load. */
+    saveData: SaveFile | null;
     imagesImported: number;
     missingImages: number;
 }
@@ -100,7 +101,14 @@ export interface SaveBundleImportResult {
 export async function applySaveBundleDocuments(documents: unknown[]): Promise<SaveBundleImportResult | null> {
     const bundles = documents.filter(isImageBundleDocument);
     const saveDocument = documents.find(isSaveDocument);
-    if (!saveDocument) return null;
+    if (!saveDocument) {
+        // Picking only the images file is a valid step: the bytes are stored and the save
+        // that references them can be imported next, in either order.
+        if (bundles.length === 0) return null;
+        let imagesImported = 0;
+        for (const bundle of bundles) imagesImported += (await importImageBundle(bundle)).stored;
+        return { saveData: null, imagesImported, missingImages: 0 };
+    }
 
     let imagesImported = 0;
     const aliases = new Map<string, string>();

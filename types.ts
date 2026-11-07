@@ -1324,6 +1324,8 @@ export interface SaveFile {
   omittedImageCount?: number;
   /** Set when the storage quota forced the save to be written without any images. */
   imagesOmittedForQuota?: boolean;
+  /** Images this save referenced but the local store could not return when it was loaded. */
+  missingImageCount?: number;
 }
 
 export const isWound = (d: any): d is (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null }) => d && typeof d === 'object' && !Array.isArray(d) && d.type === 'wound';

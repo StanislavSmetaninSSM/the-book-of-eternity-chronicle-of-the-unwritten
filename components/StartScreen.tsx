@@ -724,10 +724,11 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 <button type="submit" data-testid="begin-adventure" disabled={isSubmitDisabled} className="flex-1 w-full bg-cyan-600 text-white font-bold py-3 px-4 rounded-md hover:bg-cyan-500 transition-all text-lg shadow-lg shadow-cyan-500/10 disabled:bg-gray-600 disabled:cursor-not-allowed">
                     {submitButtonText}
                 </button>
-                <button type="button" data-testid="load-from-file" onClick={onLoadGame} className="flex-1 w-full bg-gray-600 text-white font-bold py-3 px-4 rounded-md hover:bg-gray-500 transition-all text-lg">
+                <button type="button" data-testid="load-from-file" onClick={onLoadGame} title={t('Choose the save file and, if you have it, the images file - both at once is fine.')} className="flex-1 w-full bg-gray-600 text-white font-bold py-3 px-4 rounded-md hover:bg-gray-500 transition-all text-lg">
                     {t("Load from File")}
                 </button>
             </div>
+            <p className="text-center text-xs text-gray-400 mt-2">{t('Choose the save file and, if you have it, the images file - both at once is fine.')}</p>
             {isSubmitDisabled && (
                 <p className="text-center text-yellow-400 text-sm mt-2">{t('custom_universe_required_warning')}</p>
             )}

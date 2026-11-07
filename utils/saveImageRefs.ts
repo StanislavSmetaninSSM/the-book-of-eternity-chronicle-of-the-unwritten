@@ -116,18 +116,30 @@ export async function hydrateStateImages<TState extends HasImageCache>(state: TS
     return { ...state, imageCache: cache as TState['imageCache'] };
 }
 
+interface HasMissingCount { missingImageCount?: number }
+
 interface HasGameState extends HasImageCache { gameState?: HasImageCache | null }
 
-export async function dehydrateSaveImages<TSave extends HasGameState>(save: TSave): Promise<TSave> {
+export async function dehydrateSaveImages<TSave extends HasGameState & HasMissingCount>(save: TSave): Promise<TSave> {
     if (!save?.gameState) return save;
     const gameState = await dehydrateStateImages(save.gameState);
-    return gameState === save.gameState ? save : { ...save, gameState } as TSave;
+    // `missingImageCount` describes one particular load, not the save itself: keeping it
+    // would make every later load report images that were already accounted for.
+    const { missingImageCount, ...rest } = save as TSave & HasMissingCount;
+    if (gameState === save.gameState && missingImageCount === undefined) return save;
+    return { ...rest, gameState } as TSave;
 }
 
-export async function hydrateSaveImages<TSave extends HasGameState>(save: TSave): Promise<TSave> {
-    if (!save?.gameState) return save;
-    const gameState = await hydrateStateImages(save.gameState);
-    return gameState === save.gameState ? save : { ...save, gameState } as TSave;
+export async function hydrateSaveImages<TSave extends HasGameState & HasMissingCount>(save: TSave): Promise<TSave> {
+    if (!save?.gameState?.imageCache) return save;
+    const { cache, restored, dropped } = await hydrateImageCache(save.gameState.imageCache);
+    if (restored === 0 && dropped === 0) return save;
+    const next: TSave = {
+        ...save,
+        gameState: { ...save.gameState, imageCache: cache as HasImageCache['imageCache'] } as TSave['gameState'],
+    };
+    if (dropped > 0) next.missingImageCount = (Number(save.missingImageCount) || 0) + dropped;
+    return next;
 }
 
 /** Every `blob:` reference inside a value, used to decide which stored images are alive. */
