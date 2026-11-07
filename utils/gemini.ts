@@ -1,4 +1,6 @@
 import { ensureThreatActivityIds } from './gameContext';
+import { errorMessage } from './errorUtils';
+import { asRecord } from './typeGuards';
 
 import { GameContext, GameResponse } from '../types';
 // @ts-ignore
@@ -129,8 +131,8 @@ export async function callGenerativeApi(
     let data: any;
     try {
         data = JSON.parse(cleanJsonString(relayResult.text));
-    } catch (error: any) {
-        throw new RegenerationRequiredError(error.message, `Invalid JSON returned by Arena GM for ${context.currentStepFocus || 'step'}.`, relayResult.text);
+    } catch (error: unknown) {
+        throw new RegenerationRequiredError(errorMessage(error), `Invalid JSON returned by Arena GM for ${context.currentStepFocus || 'step'}.`, relayResult.text);
     }
     if (ruleBundleId && data?._arenaRuleBundleUnavailable === true) {
         throw new ArenaGmRelayRequestError(409, 'The GM could not access the verified rule bundle.');
@@ -172,7 +174,7 @@ export async function executeStepWithCorrection(
     onStreamingChunk: (text: string) => void,
     onStepStart: (stepName: string, modelName: string) => void
 ): Promise<{ response: any, signature?: string }> {
-    let lastError: any = null;
+    let lastError: unknown = null;
     let additionalGuides = '';
     const guides = await loadStageGuides();
     const narrativeStyleGuide = guides.narrative;
@@ -223,7 +225,7 @@ export async function executeStepWithCorrection(
             partiallyGeneratedResponse: JSON.stringify(partiallyGeneratedResponse), 
             currentStepFocus: stepName, 
             isRegenerationAttempt: attempt > 1,
-            regenerationReason: lastError?.reason || '' 
+            regenerationReason: (asRecord(lastError)?.reason as string | undefined) || '' 
         };
         const stepPrompt = promptFn();
         const focus = isNarrative ? NARRATIVE_FOCUS : '';
@@ -248,11 +250,11 @@ export async function executeStepWithCorrection(
             onPartialResponse(newPartialResponse, stepName, model);
             return { response: newPartialResponse, signature };
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             lastError = err;
             if (abortSignal.aborted || err instanceof ArenaGmRelayRequestError) throw err;
             
-            console.warn(`Step '${stepName}' failed on regeneration attempt ${attempt}. Reason: ${err.message}`);
+            console.warn(`Step '${stepName}' failed on regeneration attempt ${attempt}. Reason: ${errorMessage(err)}`);
 
             if (err instanceof RegenerationRequiredError && err.rawText) {
                 const MAX_CORRECTION_RETRIES = 10;
@@ -271,7 +273,7 @@ export async function executeStepWithCorrection(
 
                         if (correctionResult.regenerationRequired) {
                             console.log("Correction AI indicated regeneration is required.", correctionResult.reason);
-                            lastError = { ...lastError, reason: correctionResult.reason };
+                            lastError = { ...(asRecord(lastError) ?? {}), reason: correctionResult.reason };
                             break;
                         }
                         
@@ -280,9 +282,9 @@ export async function executeStepWithCorrection(
                         correctionSuccessful = true;
                         break;
 
-                    } catch (correctionError: any) {
+                    } catch (correctionError: unknown) {
                         if (abortSignal.aborted) throw correctionError;
-                        console.warn(`Correction attempt ${correctionAttempt} failed. Error: ${correctionError.message}`);
+                        console.warn(`Correction attempt ${correctionAttempt} failed. Error: ${errorMessage(correctionError)}`);
                     }
                 }
 
@@ -303,7 +305,7 @@ export async function executeStepWithCorrection(
         }
     }
     
-    throw new Error(`Failed to execute step '${stepName}' after ${MAX_REGENERATION_RETRIES} attempts. Last error: ${lastError?.message}`);
+    throw new Error(`Failed to execute step '${stepName}' after ${MAX_REGENERATION_RETRIES} attempts. Last error: ${errorMessage(lastError)}`);
 }
 
 export const getModelForStep = (_stepName: string, _context: GameContext): string => 'Arena GM';
@@ -403,7 +405,10 @@ export async function executeTurn(
         await executeStep('Step3_Combat_TaskGuide', mainPromptSteps.getStep3);
         // Combat calculation logs may change equipped-item durability after
         // Step 0 set its flags. The relevant item commands belong to Steps 4/5.
-        const hasEquipment = (actor: any) => actor?.equippedItems && Object.values(actor.equippedItems).some(Boolean);
+        const hasEquipment = (actor: unknown) => {
+            const equipped = asRecord(asRecord(actor)?.equippedItems);
+            return !!equipped && Object.values(equipped).some(Boolean);
+        };
         const flags = partiallyGeneratedResponse._internal_flags_ ||= {};
         if (hasEquipment(context.playerCharacter)) flags.needsInventoryProcessing = true;
         const combatants = [
@@ -567,9 +572,9 @@ export async function executeCancellableJsonGeneration(
     onStreamingChunk(result.text);
     try {
         return JSON.parse(cleanJsonString(result.text));
-    } catch (error: any) {
+    } catch (error: unknown) {
         throw new RegenerationRequiredError(
-            error.message,
+            errorMessage(error),
             'Arena GM returned invalid JSON for cinematic generation.',
             result.text,
         );
