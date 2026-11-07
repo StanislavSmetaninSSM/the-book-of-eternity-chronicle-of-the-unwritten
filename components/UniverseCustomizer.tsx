@@ -9,7 +9,12 @@ import { PlusIcon, MinusIcon, CheckIcon } from '@heroicons/react/24/solid';
 // FIX: Added missing icon imports to resolve multiple 'Cannot find name' errors.
 import { MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, StarIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import ConfirmationModal from './ConfirmationModal';
-import { Month, Calendar, DayInfo } from '../types';
+import { Month, Calendar, DayInfo, WorldData, RaceDefinition, ClassDefinition } from '../types';
+
+/** What the race editor works on: a stored race plus the key it is filed under. */
+type EditableRace = RaceDefinition & { name?: string; originalName?: string; attributePoints?: number };
+/** What the class editor works on: a stored class plus the key it is filed under. */
+type EditableClass = ClassDefinition & { name?: string; originalName?: string; attributePoints?: number };
 import { notifyError, notifySuccess, notifyWarning } from '../utils/notifications';
 
 interface UniverseCustomizerProps {
@@ -25,9 +30,9 @@ const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intellig
 
 // RaceEditModal Component
 const RaceEditModal: React.FC<{
-    race: any;
+    race: EditableRace;
     allClasses: string[];
-    onSave: (race: any) => void;
+    onSave: (race: EditableRace & { name: string }) => void;
     onClose: () => void;
 }> = ({ race, allClasses, onSave, onClose }) => {
     const { t } = useLocalization();
@@ -79,7 +84,7 @@ const RaceEditModal: React.FC<{
     };
 
     const handleClassToggle = (className: string) => {
-        setLocalRace((prev: any) => {
+        setLocalRace(prev => {
             const availableClasses = prev.availableClasses || [];
             if (availableClasses.includes(className)) {
                 return { ...prev, availableClasses: availableClasses.filter((c: string) => c !== className) };
@@ -196,8 +201,8 @@ const ExportControls: React.FC<{
 };
 
 interface RaceEditorProps {
-    world: any;
-    onFieldChange: (field: string, value: any) => void;
+    world: WorldData;
+    onFieldChange: (field: string, value: unknown) => void;
     customUniverses: { key: string; name: string }[];
     onExport: (dataType: 'races' | 'classes' | 'calendar' | 'currencies', targetKey: string) => void;
 }
@@ -206,7 +211,7 @@ interface RaceEditorProps {
 const RaceEditor: React.FC<RaceEditorProps> = ({ world, onFieldChange, customUniverses, onExport }) => {
     const { t } = useLocalization();
     const [races, setRaces] = useState(world.races || {});
-    const [editingRace, setEditingRace] = useState<any>(null);
+    const [editingRace, setEditingRace] = useState<EditableRace | null>(null);
     const [raceToDelete, setRaceToDelete] = useState<string | null>(null);
     const [search, setSearch] = useState('');
 
@@ -218,7 +223,7 @@ const RaceEditor: React.FC<RaceEditorProps> = ({ world, onFieldChange, customUni
         return Object.keys(races).filter(raceName => t(raceName).toLowerCase().includes(search.toLowerCase()));
     }, [races, search, t]);
 
-    const handleSaveRace = (race: any) => {
+    const handleSaveRace = (race: EditableRace & { name: string }) => {
         const newRaces = { ...races };
         // If name was changed, we need to remove old key and add new one
         if (race.originalName && race.originalName !== race.name) {
@@ -274,8 +279,8 @@ const RaceEditor: React.FC<RaceEditorProps> = ({ world, onFieldChange, customUni
 
 // ClassEditModal Component
 const ClassEditModal: React.FC<{
-    classData: any;
-    onSave: (classData: any) => void;
+    classData: EditableClass;
+    onSave: (classData: EditableClass & { name: string }) => void;
     onClose: () => void;
 }> = ({ classData, onSave, onClose }) => {
     const { t } = useLocalization();
@@ -373,8 +378,8 @@ const ClassEditModal: React.FC<{
 };
 
 interface ClassEditorProps {
-    world: any;
-    onFieldChange: (field: string, value: any) => void;
+    world: WorldData;
+    onFieldChange: (field: string, value: unknown) => void;
     customUniverses: { key: string; name: string }[];
     onExport: (dataType: 'races' | 'classes' | 'calendar' | 'currencies', targetKey: string) => void;
 }
@@ -383,7 +388,7 @@ interface ClassEditorProps {
 const ClassEditor: React.FC<ClassEditorProps> = ({ world, onFieldChange, customUniverses, onExport }) => {
     const { t } = useLocalization();
     const [classes, setClasses] = useState(world.classes || {});
-    const [editingClass, setEditingClass] = useState<any>(null);
+    const [editingClass, setEditingClass] = useState<EditableClass | null>(null);
     const [classToDelete, setClassToDelete] = useState<string | null>(null);
     const [search, setSearch] = useState('');
 
@@ -395,7 +400,7 @@ const ClassEditor: React.FC<ClassEditorProps> = ({ world, onFieldChange, customU
         return Object.keys(classes).filter(className => t(className).toLowerCase().includes(search.toLowerCase()));
     }, [classes, search, t]);
 
-    const handleSaveClass = (classData: any) => {
+    const handleSaveClass = (classData: EditableClass & { name: string }) => {
         const newClasses = { ...classes };
         if (classData.originalName && classData.originalName !== classData.name) {
             delete newClasses[classData.originalName];
@@ -466,7 +471,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
         setIsConfirmLoadStandardCalendarOpen(false);
     };
 
-    const handleFieldChange = (field: keyof Calendar, value: any) => {
+    const handleFieldChange = (field: keyof Calendar, value: Calendar[keyof Calendar]) => {
         onCalendarChange({ ...calendar, [field]: value });
     };
 
@@ -634,8 +639,8 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
 };
 
 interface CurrencyEditorProps {
-    world: any;
-    onFieldChange: (field: string, value: any) => void;
+    world: WorldData;
+    onFieldChange: (field: string, value: unknown) => void;
     customUniverses: { key: string; name: string }[];
     onExport: (dataType: 'races' | 'classes' | 'calendar' | 'currencies', targetKey: string) => void;
 }
@@ -777,7 +782,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         }
 
         let exportedItemName = '';
-        const deepCopy = (obj: any) => JSON.parse(JSON.stringify(obj));
+        const deepCopy = <T,>(obj: T): T => JSON.parse(JSON.stringify(obj));
 
         if (dataType === 'races') {
             targetWorld.races = deepCopy(sourceData.races);
@@ -804,7 +809,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         onClose();
     };
     
-    const handleFieldChange = (field: string, value: any) => {
+    const handleFieldChange = (field: string, value: unknown) => {
         setLocalData((prev: typeof gameData) => {
             const newData = JSON.parse(JSON.stringify(prev));
             const world = resolveWorldFor(newData, universe, selectedEra);

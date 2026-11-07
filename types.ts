@@ -35,13 +35,26 @@ export type ImageCacheEntry = {
 };
 
 /** A world as the creation form, the customiser and the prompt builder see it. */
+/** One race of a universe's preset pack, as the customizer edits it. */
+export interface RaceDefinition {
+    description: string;
+    bonuses: Record<string, number>;
+    availableClasses?: string[];
+}
+
+/** One class of a universe's preset pack, as the customizer edits it. */
+export interface ClassDefinition {
+    description: string;
+    bonuses: Record<string, number>;
+}
+
 export interface WorldData {
     name: string;
     description: string;
     currencyName: string;
     currencyOptions?: string[];
-    races: Record<string, { description: string; bonuses: Record<string, number>; availableClasses?: string[] }>;
-    classes: Record<string, { description: string; bonuses: Record<string, number> }>;
+    races: Record<string, RaceDefinition>;
+    classes: Record<string, ClassDefinition>;
     calendar?: Calendar;
 }
 
