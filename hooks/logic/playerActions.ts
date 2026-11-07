@@ -855,56 +855,6 @@ export const createPlayerActionsManager = (
         });
     };
 
-    const shareStorageAccess = (locationId: string, storageId: string, targetPlayerId: string) => {
-        setGameState(prevState => {
-            if (!prevState || !prevState.currentLocationData || prevState.currentLocationData.locationId !== locationId) return prevState;
-    
-            const newState = cloneGameStateForEdit(prevState);
-            const pc = newState.playerCharacter as PlayerCharacter;
-            const location = newState.currentLocationData as Location;
-            const storage = location.locationStorages?.find(s => s.storageId === storageId);
-            const targetPlayer = newState.players.find((p: PlayerCharacter) => p.playerId === targetPlayerId);
-
-            if (!storage || !targetPlayer || storage.owner.ownerId !== pc.playerId) return prevState;
-
-            if (!storage.authorizedUsers) storage.authorizedUsers = [];
-            if (!storage.authorizedUsers.some(u => u.playerId === targetPlayerId)) {
-                storage.authorizedUsers.push({ playerId: targetPlayerId, playerName: targetPlayer.name });
-            }
-            if (storage.owner.ownerType === 'Player') {
-                storage.owner.ownerType = 'Shared';
-            }
-            
-            newState.currentLocationData = location;
-            if (gameContextRef.current) gameContextRef.current.currentLocation = location;
-
-            return newState;
-        });
-    };
-
-    const revokeStorageAccess = (locationId: string, storageId: string, targetPlayerId: string) => {
-         setGameState(prevState => {
-            if (!prevState || !prevState.currentLocationData || prevState.currentLocationData.locationId !== locationId) return prevState;
-    
-            const newState = cloneGameStateForEdit(prevState);
-            const pc = newState.playerCharacter as PlayerCharacter;
-            const location = newState.currentLocationData as Location;
-            const storage = location.locationStorages?.find(s => s.storageId === storageId);
-
-            if (!storage || storage.owner.ownerId !== pc.playerId) return prevState;
-
-            storage.authorizedUsers = (storage.authorizedUsers || []).filter(u => u.playerId !== targetPlayerId);
-            if (storage.authorizedUsers.length === 0 && storage.owner.ownerType === 'Shared') {
-                storage.owner.ownerType = 'Player';
-            }
-            
-            newState.currentLocationData = location;
-            if (gameContextRef.current) gameContextRef.current.currentLocation = location;
-
-            return newState;
-        });
-    };
-
     return {
         spendAttributePoint,
         setAutoCombatSkill,
@@ -949,7 +899,5 @@ export const createPlayerActionsManager = (
         placeAsStorage,
         moveToLocationStorage,
         retrieveFromLocationStorage,
-        shareStorageAccess,
-        revokeStorageAccess,
     };
 }

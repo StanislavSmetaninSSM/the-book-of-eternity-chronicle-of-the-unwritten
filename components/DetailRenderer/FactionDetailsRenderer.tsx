@@ -7,6 +7,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Faction, NPC, PlayerCharacter, Location, Project, CompletedProject, StructuredBonus, GameSettings, FactionRank, CustomState, FactionRankBranch, ImageCacheEntry } from '../../types';
 import { DetailRendererProps } from './types';
 import { useLocalization } from '../../context/LocalizationContext';
+import { locateFactionProject } from '../../utils/factionProjects';
 import SectionHeader from '../CharacterSheet/Shared/SectionHeader';
 import EditableField from './Shared/EditableField';
 import IdDisplay from './Shared/IdDisplay';
@@ -44,6 +45,7 @@ interface FactionDetailsProps extends Omit<DetailRendererProps, 'data'> {
   onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
   allNpcs: NPC[];
   deleteFactionProject?: (factionId: string, projectId: string) => void;
+  deleteFactionCompletedProject?: (factionId: string, projectId: string) => void;
   deleteFactionCustomState?: (factionId: string, stateId: string) => void;
 }
 
@@ -380,15 +382,17 @@ const CompletedProjectCard: React.FC<{ project: CompletedProject; onDelete?: () 
 };
 
 const ProjectsView: React.FC<FactionDetailsProps> = (props) => {
-    const { faction, allowHistoryManipulation, deleteFactionProject, clearAllCompletedFactionProjects } = props;
+    const { faction, allowHistoryManipulation, deleteFactionProject, deleteFactionCompletedProject, clearAllCompletedFactionProjects } = props;
     const { t } = useLocalization();
     const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
-    const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+    const [projectToDelete, setProjectToDelete] = useState<Project | CompletedProject | null>(null);
     const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
     const handleDeleteProjectConfirm = () => {
-        if (projectToDelete && deleteFactionProject) {
-            deleteFactionProject(faction.factionId, projectToDelete.projectId);
+        if (projectToDelete) {
+            const bucket = locateFactionProject(faction, projectToDelete.projectId);
+            const handler = bucket === 'completed' ? deleteFactionCompletedProject : deleteFactionProject;
+            handler?.(faction.factionId, projectToDelete.projectId);
         }
         setProjectToDelete(null);
     };
@@ -429,7 +433,7 @@ const ProjectsView: React.FC<FactionDetailsProps> = (props) => {
                         {(faction.completedProjects || []).length > 0 ? (
                             <div className="space-y-3">
                             {(faction.completedProjects || []).map(proj => (
-                                <CompletedProjectCard key={proj.projectId} project={proj} onDelete={allowHistoryManipulation ? () => {} : undefined} />
+                                <CompletedProjectCard key={proj.projectId} project={proj} onDelete={allowHistoryManipulation && deleteFactionCompletedProject ? () => setProjectToDelete(proj) : undefined} />
                             ))}
                             </div>
                         ) : (

@@ -186,21 +186,19 @@ export default function App(): React.ReactNode {
         onDeleteCurrentActivity,
         onDeleteCompletedActivity,
         deleteFactionProject,
+        deleteFactionCompletedProject,
         deleteFactionCustomState,
         worldMap,
         updateNpcPortrait,
         placeAsStorage,
         moveToLocationStorage,
         retrieveFromLocationStorage,
-        shareStorageAccess,
-        revokeStorageAccess,
         deleteLocationThreat,
         isGeneratingCinema,
         cinemaGenerationProgress,
         generateFilmTrailer,
         playingCinematic,
         playCinematic,
-        stopPlayingCinematic,
         exportCinematic,
         importCinematic,
         deleteCinematic,
@@ -208,7 +206,6 @@ export default function App(): React.ReactNode {
         extendingCinematicId,
         cancelCinemaGeneration,
         isCinemaVisible,
-        cinemaFrames,
         closeCinemaPlayer,
         updateCinematic,
         regenerateCinemaFrame,
@@ -1105,6 +1102,7 @@ export default function App(): React.ReactNode {
                                 onDeleteCurrentActivity={onDeleteCurrentActivity}
                                 onDeleteCompletedActivity={onDeleteCompletedActivity}
                                 deleteFactionProject={deleteFactionProject}
+                                deleteFactionCompletedProject={deleteFactionCompletedProject}
                                 deleteFactionCustomState={deleteFactionCustomState}
                                 sidePanelView={sidePanelView}
                                 onSetSidePanelView={setSidePanelView}
@@ -1204,8 +1202,6 @@ export default function App(): React.ReactNode {
                         gameState={gameState}
                         onMoveToStorage={moveToLocationStorage}
                         onRetrieveFromStorage={retrieveFromLocationStorage}
-                        onShareAccess={shareStorageAccess}
-                        onRevokeAccess={revokeStorageAccess}
                         onOpenDetailModal={handleOpenDetailModal}
                         imageCache={gameState.imageCache}
                         onImageGenerated={onImageGenerated}
@@ -1303,6 +1299,7 @@ export default function App(): React.ReactNode {
                     allLocations={allWorldLocations}
                     clearAllCompletedFactionProjects={clearAllCompletedFactionProjects}
                     deleteFactionProject={deleteFactionProject}
+                    deleteFactionCompletedProject={deleteFactionCompletedProject}
                     deleteFactionCustomState={deleteFactionCustomState}
                     deleteFactionBonus={deleteFactionBonus}
                     clearAllCompletedNpcActivities={clearAllCompletedNpcActivities}

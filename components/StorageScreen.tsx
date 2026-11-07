@@ -14,8 +14,6 @@ interface StorageScreenProps {
     gameState: GameState;
     onMoveToStorage: (locationId: string, storageId: string, item: Item, quantity: number) => void;
     onRetrieveFromStorage: (locationId: string, storageId: string, item: Item, quantity: number) => void;
-    onShareAccess: (locationId: string, storageId: string, targetPlayerId: string) => void;
-    onRevokeAccess: (locationId: string, storageId: string, targetPlayerId: string) => void;
     onOpenDetailModal: (title: string, data: any) => void;
     // FIX: Update imageCache and onImageGenerated prop types.
     imageCache: Record<string, ImageCacheEntry>;
@@ -32,8 +30,6 @@ const StorageScreen: React.FC<StorageScreenProps> = (props) => {
         gameState,
         onMoveToStorage,
         onRetrieveFromStorage,
-        onShareAccess,
-        onRevokeAccess,
         onOpenDetailModal,
         imageCache,
         onImageGenerated,
