@@ -1,6 +1,7 @@
 import { localizeLegacySave, localizeLegacyState } from '../utils/localizeLegacySave';
 import { sanitizeGameState } from '../utils/sanitizeGameState';
 import { isLocalPreferenceKey, sharedSettingsEqual } from '../utils/localGamePreferences';
+import { asRecord } from '../utils/typeGuards';
 import { beginGameplayMutation, gameplayMutationCommitted, guardGameplayActions } from '../utils/gameplayMutationGate';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // FIX: Imported missing types to resolve multiple "Cannot find name" errors.
@@ -617,9 +618,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
         // --- FACTION RANK MIGRATION ---
         const migrateFactionRanks = (faction: Partial<Faction> | undefined | null) => {
-            if (faction && (faction as any).ranks && Array.isArray((faction as any).ranks)) {
+            // Older saves kept the ranks as a plain array instead of the branch structure.
+            const legacyRanks = (faction as { ranks?: unknown } | undefined | null)?.ranks;
+            if (faction && Array.isArray(legacyRanks)) {
                 console.warn(`Migrating old array-based rank structure for faction: ${faction.name}`);
-                const oldRanks = (faction as any).ranks as FactionRank[];
+                const oldRanks = legacyRanks as FactionRank[];
                 faction.ranks = {
                     branches: [
                         {
@@ -775,8 +778,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (typeof firstValue === 'string' || !firstValue?.src) { // Check if it's old format
                 console.warn("Migrating old imageCache format.");
                 const newCache: Record<string, ImageCacheEntry> = {};
-                for (const key in loadedGameState.imageCache) {
-                    const value = (loadedGameState.imageCache as any)[key];
+                const legacyCache: Record<string, unknown> = loadedGameState.imageCache;
+                for (const key in legacyCache) {
+                    const value = legacyCache[key];
                     if (typeof value === 'string') {
                         newCache[key] = {
                             src: value,
@@ -785,7 +789,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         };
                     }
                 }
-                loadedGameState.imageCache = newCache as any;
+                loadedGameState.imageCache = newCache;
             }
         }
 
@@ -799,10 +803,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (Array.isArray(originalFlags)) {
                 processedFlags = originalFlags;
             } else if (typeof originalFlags === 'object') {
-                processedFlags = Object.keys(originalFlags).map(key => {
-                    const flagData = (originalFlags as any)[key];
-                    if (isObject(flagData) && !(flagData as any).flagId) {
-                        return { ...flagData, flagId: key };
+                // Older saves stored the flags as a keyed object, newer ones as an array.
+                const flagTable: Record<string, unknown> = originalFlags as unknown as Record<string, unknown>;
+                processedFlags = Object.keys(flagTable).map(key => {
+                    const flagData = flagTable[key];
+                    const flagRecord = asRecord(flagData);
+                    if (flagRecord && !flagRecord.flagId) {
+                        return { ...flagRecord, flagId: key };
                     }
                     return flagData;
                 }).filter((f): f is WorldStateFlag => isObject(f));
@@ -2387,7 +2394,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     responseModalities: [Modality.AUDIO],
                     speechConfig: {
                         voiceConfig: {
-                            prebuiltVoiceConfig: { voiceName: voice as any },
+                            prebuiltVoiceConfig: { voiceName: voice },
                         },
                     },
                 },

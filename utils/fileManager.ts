@@ -6,6 +6,7 @@ import { dehydrateSaveImages, dehydrateStateImages, hydrateSaveImages, hydrateSt
 import { imageRefId, sweepUnreferencedImages } from './imageBlobStore';
 import { applySaveBundleDocuments, splitSaveImages, type SaveBundleImportResult } from './saveBundle';
 import { notifyError } from './notifications';
+import { asRecord } from './typeGuards';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -655,9 +656,9 @@ export async function migrateInlineImagesToImageStore(): Promise<{ records: numb
   try {
     const db = await openDB();
     const stores = [AUTOSAVE_STORE_NAME, SLOTS_STORE_NAME, INTERRUPTED_TURNS_STORE_NAME];
-    const [autosaves, slots, checkpoints] = await new Promise<unknown[][]>((resolve, reject) => {
+    const [autosaves, slots, checkpoints] = await new Promise<Array<unknown>[]>((resolve, reject) => {
       const transaction = db.transaction(stores, 'readonly');
-      const results: unknown[][] = [[], [], []];
+      const results: Array<unknown>[] = [[], [], []];
       let remaining = stores.length;
       const collect = (index: number, request: IDBRequest) => {
         request.onsuccess = () => {
@@ -671,20 +672,26 @@ export async function migrateInlineImagesToImageStore(): Promise<{ records: numb
     });
 
     const pending: Array<{ store: string; key: string | number; value: any; stamp: string | undefined }> = [];
-    for (const record of autosaves as any[]) {
-      if (!record?.saveData) continue;
-      const saveData = await dehydrateSaveImages(record.saveData);
-      if (saveData !== record.saveData) pending.push({ store: AUTOSAVE_STORE_NAME, key: record.id, value: { ...record, saveData }, stamp: record.saveData.timestamp });
+    for (const row of autosaves) {
+      const record = asRecord(row);
+      const saveData = asRecord(record?.saveData);
+      if (!record || !saveData) continue;
+      const dehydrated = await dehydrateSaveImages(saveData);
+      if (dehydrated !== saveData) pending.push({ store: AUTOSAVE_STORE_NAME, key: String(record.id ?? ''), value: { ...record, saveData: dehydrated }, stamp: typeof saveData.timestamp === 'string' ? saveData.timestamp : undefined });
     }
-    for (const record of slots as any[]) {
-      if (!record?.saveData) continue;
-      const saveData = await dehydrateSaveImages(record.saveData);
-      if (saveData !== record.saveData) pending.push({ store: SLOTS_STORE_NAME, key: record.slotId, value: { ...record, saveData }, stamp: record.saveData.timestamp });
+    for (const row of slots) {
+      const record = asRecord(row);
+      const saveData = asRecord(record?.saveData);
+      if (!record || !saveData) continue;
+      const dehydrated = await dehydrateSaveImages(saveData);
+      if (dehydrated !== saveData) pending.push({ store: SLOTS_STORE_NAME, key: Number(record.slotId ?? 0), value: { ...record, saveData: dehydrated }, stamp: typeof saveData.timestamp === 'string' ? saveData.timestamp : undefined });
     }
-    for (const record of checkpoints as any[]) {
-      if (!record?.baseState) continue;
-      const baseState = await dehydrateStateImages(record.baseState);
-      if (baseState !== record.baseState) pending.push({ store: INTERRUPTED_TURNS_STORE_NAME, key: record.id, value: { ...record, baseState }, stamp: record.createdAt });
+    for (const row of checkpoints) {
+      const record = asRecord(row);
+      const baseState = asRecord(record?.baseState);
+      if (!record || !baseState) continue;
+      const dehydrated = await dehydrateStateImages(baseState);
+      if (dehydrated !== baseState) pending.push({ store: INTERRUPTED_TURNS_STORE_NAME, key: String(record.id ?? ''), value: { ...record, baseState: dehydrated }, stamp: typeof record.createdAt === 'string' ? record.createdAt : undefined });
     }
 
     let written = 0;

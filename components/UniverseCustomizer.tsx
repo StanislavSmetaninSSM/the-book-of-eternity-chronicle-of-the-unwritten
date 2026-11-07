@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocalization } from '../context/LocalizationContext';
 import Modal from './Modal';
 import { gameData, standardCalendarStructure } from '../utils/localizationGameData';
+import { resolveWorldFor } from '../utils/worldData';
 import { PlusIcon, MinusIcon, CheckIcon } from '@heroicons/react/24/solid';
 // FIX: Added missing icon imports to resolve multiple 'Cannot find name' errors.
 import { MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, StarIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
@@ -474,7 +475,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
         if(field === 'days' && typeof value === 'string') {
             value = parseInt(value, 10) || 1;
         }
-        (newMonths[index] as any)[field] = value;
+        Object.assign(newMonths[index], { [field]: value });
         handleFieldChange('months', newMonths);
     };
 
@@ -732,16 +733,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         if (!universe || (universe === 'custom' && !selectedEra)) {
             return null;
         }
-        if (universe === 'history') {
-            return localData.history[selectedEra as keyof typeof localData.history];
-        }
-        if (universe === 'myths') {
-            return localData.myths[selectedEra as keyof typeof localData.myths];
-        }
-        if (universe === 'custom') {
-            return (localData.custom as Record<string, any>)[selectedEra];
-        }
-        return (localData as any)[universe];
+        return resolveWorldFor(localData, universe, selectedEra);
     }, [localData, universe, selectedEra]);
     
     const [localWorldName, setLocalWorldName] = useState('');
@@ -815,13 +807,9 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
     const handleFieldChange = (field: string, value: any) => {
         setLocalData((prev: typeof gameData) => {
             const newData = JSON.parse(JSON.stringify(prev));
-            let world;
-            if (universe === 'history') world = newData.history[selectedEra as keyof typeof newData.history];
-            else if (universe === 'myths') world = newData.myths[selectedEra as keyof typeof newData.myths];
-            else if (universe === 'custom') world = (newData.custom as any)[selectedEra];
-            else world = newData[universe as keyof typeof newData];
+            const world = resolveWorldFor(newData, universe, selectedEra);
             if (world) {
-                (world as any)[field] = value;
+                Object.assign(world, { [field]: value });
             }
             return newData;
         });

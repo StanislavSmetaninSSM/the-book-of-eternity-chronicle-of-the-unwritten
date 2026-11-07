@@ -1,4 +1,5 @@
 import type { Calendar } from '../types';
+import { isRecord } from './typeGuards';
 
 /**
  * A world as the creation form, the universe customiser and the prompt builder see it: the
@@ -20,9 +21,6 @@ export interface WorldData {
  * Loaded files may add universes the build does not ship, so it is keyed by string.
  */
 export type WorldSource = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** History, myths and custom universes keep one world per era; the others are single worlds. */
 export const isEraUniverse = (universe: string): boolean =>
