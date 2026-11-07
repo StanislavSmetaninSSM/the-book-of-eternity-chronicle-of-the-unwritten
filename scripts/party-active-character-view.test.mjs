@@ -1,9 +1,9 @@
-import {test} from 'node:test';
+import {test, after} from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {createServer} from 'vite';
+import { getTestServer, closeTestServer } from './helpers/testServer.mjs';
 import {readFile} from 'node:fs/promises';
 import 'fake-indexeddb/auto';
 
@@ -11,7 +11,7 @@ import 'fake-indexeddb/auto';
 // between turns live only in playerCharacter. Party views must show that copy.
 
 test('live active player replaces only the matching roster slot',async()=>{
- const vite=await createServer({configFile:false,server:{middlewareMode:true},appType:'custom',logLevel:'silent'});
+ const vite = await getTestServer();
  try{
   const {withLiveActivePlayer}=await vite.ssrLoadModule('/utils/partyView.ts');
   const roster=[{playerId:'p',name:'First',personalNpcReputations:[{NPCId:'n1'}]},{playerId:'q',name:'Second'}];
@@ -40,7 +40,7 @@ test('live active player replaces only the matching roster slot',async()=>{
 });
 
 test('edits made between turns reach the party view through the live character',async()=>{
- const vite=await createServer({configFile:false,optimizeDeps:{noDiscovery:true,include:[]},server:{middlewareMode:true},appType:'custom',logLevel:'silent'});
+ const vite = await getTestServer();
  const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'});
  const old={window:globalThis.window,document:globalThis.document,navigator:globalThis.navigator,localStorage:globalThis.localStorage,act:globalThis.IS_REACT_ACT_ENVIRONMENT};
  globalThis.window=dom.window;globalThis.document=dom.window.document;
@@ -85,3 +85,5 @@ test('edits made between turns reach the party view through the live character',
   dom.window.close();await vite.close();
  }
 });
+
+after(async () => { await closeTestServer(); });

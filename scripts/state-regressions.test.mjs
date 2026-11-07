@@ -1,13 +1,13 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'vite';
+import { getTestServer, closeTestServer } from './helpers/testServer.mjs';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 
 const fullItem = (fields = {}) => ({ name: 'Item', description: 'A useful item.', image_prompt: 'A useful item', quality: 'Common', type: 'Misc', price: 1, count: 1, weight: 1, volume: 1, bonuses: [], contentsPath: null, isContainer: false, capacity: null, isConsumption: false, durability: '100%', equipmentSlot: null, ...fields });
 
 test('item journal updates survive player state synchronization', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -29,7 +29,7 @@ test('item journal updates survive player state synchronization', async () => {
 });
 
 test('different wounds with the same name do not merge in nested NPC data', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { deepMergeResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const oldWound = { woundId: 'w1', woundName: 'Cut', descriptionOfEffects: 'left arm' };
@@ -40,7 +40,7 @@ test('different wounds with the same name do not merge in nested NPC data', asyn
 });
 
 test('separate item journal commands survive staged merging', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { deepMergeResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const a = { itemId: 'sword', itemName: 'Sword', entryToAppend: 'first' };
@@ -50,7 +50,7 @@ test('separate item journal commands survive staged merging', async () => {
 });
 
 test('interrupted NPC activity is archived before its replacement is initialized', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -72,7 +72,7 @@ test('interrupted NPC activity is archived before its replacement is initialized
 });
 
 test('faction project commands honor project IDs when projects share a name', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -109,7 +109,7 @@ test('faction project commands honor project IDs when projects share a name', as
 });
 
 test('staged empty combatant arrays end combat while null and unrelated empty arrays remain no-ops', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { deepMergeResponses, processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -138,7 +138,7 @@ test('staged empty combatant arrays end combat while null and unrelated empty ar
 });
 
 test('stage combat cleanup retains safe named NPC health without overriding explicit NPC updates', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { mergeStageResponses, processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -174,7 +174,7 @@ test('stage combat cleanup retains safe named NPC health without overriding expl
 });
 
 test('NPCsData identity does not merge distinct IDs or guess an ambiguous name', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse, deepMergeResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -195,7 +195,7 @@ test('NPCsData identity does not merge distinct IDs or guess an ambiguous name',
 });
 
 test('item journals require unique identity and never fall back from a stale ID', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -224,7 +224,7 @@ test('item journals require unique identity and never fall back from a stale ID'
 });
 
 test('inter-NPC relationship updates use IDs and reject ambiguous or stale identities', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -256,7 +256,7 @@ test('inter-NPC relationship updates use IDs and reject ambiguous or stale ident
 });
 
 test('new same-name items keep distinct IDs, journals, and subsequent updates', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse, mergeStageResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -288,7 +288,7 @@ test('new same-name items keep distinct IDs, journals, and subsequent updates', 
 });
 
 test('unknown NPC target cannot hijack a unique name-only legacy relationship', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -313,7 +313,7 @@ test('unknown NPC target cannot hijack a unique name-only legacy relationship', 
 });
 
 test('name-only relationship changes do not modify a different historical namesake', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -339,7 +339,7 @@ test('name-only relationship changes do not modify a different historical namesa
 });
 
 test('incomplete unknown inventory updates cannot create ghost items', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -410,7 +410,7 @@ test('incomplete unknown inventory updates cannot create ghost items', async () 
 });
 
 test('legacy incomplete items remain inspectable in the item details renderer', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { default: ItemDetails } = await server.ssrLoadModule('/components/DetailRenderer/ItemDetailsRenderer.tsx');
     const { LocalizationProvider } = await server.ssrLoadModule('/context/LocalizationContext.tsx');
@@ -423,7 +423,7 @@ test('legacy incomplete items remain inspectable in the item details renderer', 
 });
 
 test('turn-local item fragments merge before IDs are assigned, without matching saved tags', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -451,7 +451,7 @@ test('turn-local item fragments merge before IDs are assigned, without matching 
 });
 
 test('legacy null item IDs do not intercept the image of a new item', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -480,7 +480,7 @@ test('legacy null item IDs do not intercept the image of a new item', async () =
 });
 
 test('repeated other-player commands are preserved and applied once per turn', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -514,7 +514,7 @@ test('repeated other-player commands are preserved and applied once per turn', a
 });
 
 test('conflicting item tags reject ambiguous fragments regardless of order and stage', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse, mergeStageResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -545,7 +545,7 @@ test('conflicting item tags reject ambiguous fragments regardless of order and s
 });
 
 test('other-player effect durations and journal commands are scoped to their player', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -577,7 +577,7 @@ test('other-player effect durations and journal commands are scoped to their pla
 });
 
 test('conflicting full new item declarations with the same temporary tag are not silently merged', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse, mergeStageResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -603,7 +603,7 @@ test('conflicting full new item declarations with the same temporary tag are not
 });
 
 test('rejected player-side item does not destroy a possible NPC transfer source', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -637,7 +637,7 @@ test('rejected player-side item does not destroy a possible NPC transfer source'
 });
 
 test('effect duration updates do not suppress ticking on other actors with colliding IDs', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -660,7 +660,7 @@ test('effect duration updates do not suppress ticking on other actors with colli
 });
 
 test('companion transfer does not duplicate items into the stash and failed renamed transfers preserve sources', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -690,7 +690,7 @@ test('companion transfer does not duplicate items into the stash and failed rena
 });
 
 test('NPC effect duration updates are scoped to the matching actor and its combat representation', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -708,7 +708,7 @@ test('NPC effect duration updates are scoped to the matching actor and its comba
 });
 
 test('a rejected item defers both sides of player and NPC transfers without rolling back health', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -757,7 +757,7 @@ test('a rejected item defers both sides of player and NPC transfers without roll
 });
 
 test('new NPC name-only effect updates retain their duration on creation turn', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -778,7 +778,7 @@ test('new NPC name-only effect updates retain their duration on creation turn', 
 });
 
 test('ambiguous receiving stack IDs defer transfers instead of deleting NPC items', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -807,7 +807,7 @@ test('ambiguous receiving stack IDs defer transfers instead of deleting NPC item
 });
 
 test('companion transfer into an existing player stack does not also create a stash copy', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -834,7 +834,7 @@ test('companion transfer into an existing player stack does not also create a st
 });
 
 test('deferred transfer batch also withholds a new NPC inline inventory and its equipment references', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -860,7 +860,7 @@ test('deferred transfer batch also withholds a new NPC inline inventory and its 
 });
 
 test('NPC transfer endpoints are validated before applying either side', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -916,7 +916,7 @@ test('NPC transfer endpoints are validated before applying either side', async (
 });
 
 test('companion to NPC transfer does not also stash the transferred stack', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -943,7 +943,7 @@ test('companion to NPC transfer does not also stash the transferred stack', asyn
 });
 
 test('inline effects on new NPCs persist for their first turn while old effects tick', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -964,7 +964,7 @@ test('inline effects on new NPCs persist for their first turn while old effects 
 });
 
 test('explicit inventory transfers are atomic, actor-addressed and idempotent across saves', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse, deepMergeResponses, mergeStageResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -1113,3 +1113,5 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
     assert.match(general.en.error_inventory_transfer_rejected, /Turn rejected/); assert.match(general.ru.error_inventory_transfer_rejected, /Ход отклонён/);
   } finally { await server.close(); }
 });
+
+after(async () => { await closeTestServer(); });

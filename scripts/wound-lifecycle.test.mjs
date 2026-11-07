@@ -1,6 +1,6 @@
-import { test } from 'node:test';
+import { test, after} from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'vite';
+import { getTestServer, closeTestServer } from './helpers/testServer.mjs';
 import { withGameContext } from '../utils/relayPromptContext.js';
 
 const wound = (id, state, nextState = 'Healed') => ({ woundId: id, woundName: id, severity: 'Light', descriptionOfEffects: 'injury', generatedEffects: [], healingState: { currentState: state, description: '', treatmentProgress: 0, progressNeeded: 20, nextState, canBeImprovedBy: [] } });
@@ -27,7 +27,7 @@ test('GM context separates healed history without mutating the game state or dro
 });
 
 test('healed player and NPC wounds normalize nextState without weakening null protection', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse, deepMergeResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -54,7 +54,7 @@ test('healed player and NPC wounds normalize nextState without weakening null pr
 });
 
 test('staged NPC wound updates keep separate wounds for the same NPC', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { deepMergeResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const first = { NPCWoundChanges: [{ NPCId: 'npc-1', ...wound('wound-a', 'Untreated') }, { NPCId: 'npc-2', ...wound('wound-a', 'Untreated') }] };
@@ -69,7 +69,7 @@ test('staged NPC wound updates keep separate wounds for the same NPC', async () 
 });
 
 test('healed wound history is visible without permission to edit history', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const React = (await import('react')).default;
     const { renderToStaticMarkup } = await import('react-dom/server');
@@ -83,7 +83,7 @@ test('healed wound history is visible without permission to edit history', async
 });
 
 test('legacy nested NPC wound updates are flattened into real wounds without creating a wrapper injury', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -106,7 +106,7 @@ test('legacy nested NPC wound updates are flattened into real wounds without cre
 });
 
 test('legacy wounds without healing state remain visible as active injuries', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const React = (await import('react')).default;
     const { renderToStaticMarkup } = await import('react-dom/server');
@@ -121,7 +121,7 @@ test('legacy wounds without healing state remain visible as active injuries', as
 });
 
 test('named NPC combat health is retained in NPC state after combat ends', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -152,7 +152,7 @@ test('named NPC combat health is retained in NPC state after combat ends', async
 });
 
 test('generic combatant wounds receive distinct IDs and remain on the combatant', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -182,7 +182,7 @@ test('generic combatant wounds receive distinct IDs and remain on the combatant'
 });
 
 test('named NPC wound and combat effect survive staged combat cleanup', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { mergeStageResponses, processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -230,7 +230,7 @@ test('named NPC wound and combat effect survive staged combat cleanup', async ()
 });
 
 test('cleanup without a stage combat result does not guess NPC effects from pre-turn state', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { mergeStageResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -245,7 +245,7 @@ test('cleanup without a stage combat result does not guess NPC effects from pre-
 });
 
 test('healing a wound removes only explicitly linked effects from its owner', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -271,7 +271,7 @@ test('healing a wound removes only explicitly linked effects from its owner', as
 });
 
 test('ambiguous or conflicting NPC targets do not apply wound or effect updates to a namesake', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -292,7 +292,7 @@ test('ambiguous or conflicting NPC targets do not apply wound or effect updates 
 });
 
 test('fresh unambiguous nameless-ID combat effect is assigned an ID before cleanup', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { createInitialContext, buildNextContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { mergeStageResponses, processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
@@ -318,3 +318,5 @@ test('fresh unambiguous nameless-ID combat effect is assigned an ID before clean
     assert.equal(poison.effectId, undefined, 'original stage response is not mutated');
   } finally { await server.close(); }
 });
+
+after(async () => { await closeTestServer(); });

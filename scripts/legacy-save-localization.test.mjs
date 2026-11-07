@@ -1,9 +1,9 @@
-import { test } from 'node:test';
+import { test, after} from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'vite';
+import { getTestServer, closeTestServer } from './helpers/testServer.mjs';
 
 test('legacy host, player and spectator saves become local without losing party, history, or pending actions', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   try {
     const { localizeLegacySave } = await server.ssrLoadModule('/utils/localizeLegacySave.ts');
     for (const role of ['host', 'player', 'spectator', 'none', undefined]) {
@@ -31,7 +31,7 @@ test('legacy host, player and spectator saves become local without losing party,
 });
 
 test('malformed party indices resolve only unambiguous identity without overwriting characters', async () => {
- const server = await createServer({configFile:false,server:{middlewareMode:true},appType:'custom',logLevel:'error'});
+ const server = await getTestServer();
  try {
   const {localizeLegacySave}=await server.ssrLoadModule('/utils/localizeLegacySave.ts');
   const a={playerId:'a'}, b={playerId:'b'};
@@ -65,3 +65,5 @@ test('malformed party indices resolve only unambiguous identity without overwrit
   assert.throws(()=>localizeLegacySave({gameState:{players:[a,{}],playerCharacter:a,activePlayerIndex:0},gameContext:{}}),/ambiguous/);
  } finally {await server.close()}
 });
+
+after(async () => { await closeTestServer(); });

@@ -1,10 +1,10 @@
-import { test } from 'node:test';
+import { test, after} from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'vite';
+import { getTestServer, closeTestServer } from './helpers/testServer.mjs';
 
 // Exercise the actual turn pipeline and relay client, with deterministic GM replies.
 test('first turn sends full state at every stage and cannot take the simple path', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const originalFetch = globalThis.fetch;
   const originalWindow = globalThis.window;
   const packets = [];
@@ -67,7 +67,7 @@ test('cinematic prompt builders use a game context and the requested trailer', a
 });
 
 test('oversized relay requests fail once instead of being retried ten times', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   let submissions = 0;
   globalThis.window = { sessionStorage: { setItem() {}, getItem() {}, removeItem() {} } };
@@ -86,7 +86,7 @@ test('oversized relay requests fail once instead of being retried ten times', as
 });
 
 test('first turn respects disabled world progression while keeping setup stages', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   const packets = [], storage = new Map();
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k, v) => storage.set(k, v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
@@ -115,7 +115,7 @@ test('first turn respects disabled world progression while keeping setup stages'
 });
 
 test('a later simple turn carries the current context through the simple response stage', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   const packets = [], storage = new Map();
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k, v) => storage.set(k, v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
@@ -153,7 +153,7 @@ test('a later simple turn carries the current context through the simple respons
 });
 
 test('world progression hands NPC activity results to the NPC stage, without altering unrelated simple turns', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window, packets = [], storage = new Map();
   let simple = true, worldRequested = true, worldCreatesNPC = false;
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k, v) => storage.set(k, v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
@@ -207,7 +207,7 @@ test('world progression hands NPC activity results to the NPC stage, without alt
 });
 
 test('faction event hands NPC goals to the NPC stage even without world progression', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window, packets = [], storage = new Map();
   let emitEvent = true, simple = true, requestFaction = true, requestWorld = false, reportNpc = false, priorEvent = false;
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k, v) => storage.set(k, v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
@@ -269,7 +269,7 @@ test('faction event hands NPC goals to the NPC stage even without world progress
 });
 
 test('combat hands armor durability to inventory and named NPC stages', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window, packets = [], storage = new Map();
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k,v) => storage.set(k,v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
   globalThis.fetch = async (url, init) => {
@@ -320,7 +320,7 @@ test('combat hands armor durability to inventory and named NPC stages', async ()
 });
 
 test('staged combat cleanup carries named NPC health through the actual turn pipeline', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   const packets = [], storage = new Map();
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k, v) => storage.set(k, v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
@@ -365,7 +365,7 @@ test('staged combat cleanup carries named NPC health through the actual turn pip
 });
 
 test('direct combat cleanup hands named NPC final health to NPC stage', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window, packets = [], storage = new Map();
   globalThis.window = { setTimeout: fn => setTimeout(fn, 0), clearTimeout, sessionStorage: { setItem: (k,v) => storage.set(k,v), getItem: k => storage.get(k), removeItem: k => storage.delete(k) } };
   globalThis.fetch = async (url, init) => {
@@ -404,7 +404,7 @@ test('direct combat cleanup hands named NPC final health to NPC stage', async ()
 });
 
 test('inventory processing overrides contradictory simple-turn routing for transfers', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await getTestServer();
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   const packets = [], storage = new Map();
   let malformedFinal = false, malformedEarly = false;
@@ -453,3 +453,5 @@ test('inventory processing overrides contradictory simple-turn routing for trans
     await server.close();
   }
 });
+
+after(async () => { await closeTestServer(); });
