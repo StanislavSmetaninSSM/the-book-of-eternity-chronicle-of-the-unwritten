@@ -1574,9 +1574,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             return { ...prev, imageCache: newCache };
         });
-        // The blob stays while an autosave or slot still points at it; a forced sweep
-        // frees the ones nothing references any more instead of waiting for a save.
-        void sweepUnusedImages({ force: true }).catch(() => undefined);
     }, [setPresentationState]);
 
     // FIX: Added clearImageCache function and exported it from the useGameLogic hook.
@@ -1585,6 +1582,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (!prev) return null;
             return { ...prev, imageCache: {} };
         });
+        // Every image is gone from the game state here, so the blobs that no autosave or
+        // slot still points at can go right away instead of waiting for the next save.
+        // A single deletion does not sweep: images generated during the current turn are
+        // not in any stored record yet, and the sweep would delete them.
         void sweepUnusedImages({ force: true }).catch(() => undefined);
     }, [setPresentationState]);
 

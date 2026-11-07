@@ -70,6 +70,21 @@ const readExport = (page: Page, labelPart: string) => page.evaluate(async part =
   return { filename: link.getAttribute('download') || '', body: await response.json() };
 }, labelPart);
 
+/**
+ * The side panel re-renders while a save is being restored, so a single read can catch the
+ * grid mid-mount and see nothing. Poll until the whole menu is there.
+ */
+async function readTabIds(page: Page): Promise<string[]> {
+  const read = () => page.locator('[data-testid^="side-tab-"]')
+    .evaluateAll(nodes => nodes.map(node => node.getAttribute('data-testid') as string));
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const ids = await read().catch(() => [] as string[]);
+    if (ids.length > 5) return ids;
+    await page.waitForTimeout(250);
+  }
+  return [];
+}
+
 const clearDatabases = (page: Page) => page.evaluate(async () => {
   for (const name of ['gemini-rpg-db', 'gemini-rpg-images']) {
     await new Promise<void>((resolve, reject) => {
@@ -198,9 +213,7 @@ test.describe('images across a real browser session', () => {
     await importFiles(page, fixturePath('save-with-image.json'));
     await expect(page.getByTestId('chat-window')).toBeVisible();
 
-    await expect(page.locator('[data-testid^="side-tab-"]').first()).toBeVisible();
-    const tabIds = await page.locator('[data-testid^="side-tab-"]')
-      .evaluateAll(nodes => nodes.map(node => node.getAttribute('data-testid') as string));
+    const tabIds = await readTabIds(page);
     expect(tabIds.length).toBeGreaterThan(5);
 
     for (const tabId of tabIds) {
@@ -274,9 +287,7 @@ test.describe('database slots and cache maintenance', () => {
     await expect(page.getByTestId('chat-window')).toBeVisible();
 
     await page.getByRole('button', { name: 'Switch Language' }).click();
-    await expect(page.locator('[data-testid^="side-tab-"]').first()).toBeVisible();
-    const tabIds = await page.locator('[data-testid^="side-tab-"]')
-      .evaluateAll(nodes => nodes.map(node => node.getAttribute('data-testid') as string));
+    const tabIds = await readTabIds(page);
     expect(tabIds.length).toBeGreaterThan(5);
 
     const leaked: string[] = [];
