@@ -41,10 +41,7 @@ jobs:
 
   e2e:
     name: Playwright browser smoke
-    # The specs drive a real Chromium against a production build, which is not
-    # available in the development sandbox; keep this job advisory until a run on
-    # CI hardware has been confirmed green.
-    continue-on-error: true
+    # Confirmed green on CI hardware: a real Chromium against the production build.
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
