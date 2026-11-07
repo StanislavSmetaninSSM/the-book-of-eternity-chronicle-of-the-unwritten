@@ -259,6 +259,13 @@ export interface Effect {
     description: string;
 }
 
+export interface NPCWoundChange extends Partial<Wound> {
+    NPCId: string;
+    NPCName: string;
+    /** Older guide versions grouped the wounds of one NPC under the NPC entry. */
+    wounds?: Partial<Wound>[];
+}
+
 export interface Wound {
     woundId: string;
     woundName: string;
@@ -916,6 +923,8 @@ export interface CompleteNPCActivity {
 
 export interface CompleteFactionProject {
     factionId?: string;
+    /** Turn-local tag of a faction created in this response; resolved to factionId before use. */
+    initialFactionId?: string;
     factionName?: string;
     projectId: string;
     projectName: string;
@@ -970,6 +979,9 @@ interface LocationUpdate {
     factionControl?: any[];
     locationStorages?: LocationStorage[];
     newImagePrompt?: string; // Added for pending image prompt handling
+    /** Older guides wrote the prompt straight onto the update instead of using the new* fields. */
+    image_prompt?: string;
+    pending_image_prompt?: string | null;
 }
 
 export interface StorageUpdatePayload {
@@ -1152,7 +1164,7 @@ export interface GameResponse {
     playerAutoCombatSkillChange?: string | 'clear' | null;
     playerStealthStateChange?: Partial<StealthState>;
     playerEffortTrackerChange?: Partial<EffortTracker>;
-    NPCWoundChanges?: (Partial<Wound> & { NPCId: string; NPCName: string })[];
+    NPCWoundChanges?: NPCWoundChange[];
     NPCInventoryResourcesChanges?: NPCInventoryResourceChange[];
     NPCCustomStateChanges?: NPCCustomStateChange[];
     NPCActivityUpdates?: NPCActivityUpdate[];

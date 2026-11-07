@@ -3,14 +3,15 @@
 
 
 
-import { CurrentActivity, GameState, GameResponse, PlayerCharacter, Characteristics, GameSettings, Quest, Location, Item, NPC, Faction, ActiveSkill, PassiveSkill, Wound, QuestUpdate, UnlockedMemory, ActiveThreat, Project, CompletedProject, NPCSkillChange, FactionRank, Effect, EnemyCombatObject, AllyCombatObject, Combatant, NpcRelationship } from '../types';
+import { CurrentActivity, CompleteFactionProject, CompleteNPCActivity, CustomState, InventoryTransfer, GameState, GameResponse, PlayerCharacter, Characteristics, GameSettings, Quest, Location, Item, NPC, Faction, ActiveSkill, PassiveSkill, Wound, QuestUpdate, UnlockedMemory, ActiveThreat, Project, CompletedProject, NPCSkillChange, FactionRank, Effect, EnemyCombatObject, AllyCombatObject, Combatant, NpcRelationship } from '../types';
 import { recalculateAllWeights } from './inventoryManager';
 import { recalculateDerivedStats } from './gameContext';
+import { asRecord } from './typeGuards';
 import { generateFactionColor } from './colorUtils';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
-const isObject = (item: any): item is object => {
+const isObject = (item: unknown): item is object => {
     return (item && typeof item === 'object' && !Array.isArray(item));
 };
 
@@ -22,7 +23,7 @@ const asArray = <T>(value: T | T[] | null | undefined): T[] => {
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-const arrayMergeConfig: Record<string, { idField: string, nameField?: string, compositeKey?: (item: any) => string | undefined }> = {
+const arrayMergeConfig: Record<string, { idField: string, nameField?: string, compositeKey?: (item: Record<string, unknown>) => string | undefined }> = {
     players: { idField: 'playerId' },
     activeQuests: { idField: 'questId', nameField: 'questName' },
     completedQuests: { idField: 'questId', nameField: 'questName' },
@@ -60,13 +61,20 @@ const arrayMergeConfig: Record<string, { idField: string, nameField?: string, co
     'ranks.branches': { idField: 'branchId', nameField: 'displayName' },
     ranks: { idField: '', nameField: 'rankNameMale' },
     objectives: { idField: 'objectiveId', nameField: 'description' },
-    completedActivities: { idField: '', compositeKey: (item: any) => item.activityId ? `id:${item.activityId}` : `${item.activityName}_${item.completionTurn}` },
+    completedActivities: { idField: '', compositeKey: item => item.activityId ? `id:${item.activityId}` : `${item.activityName}_${item.completionTurn}` },
     activeSkills: { idField: 'skillName' },
     passiveSkills: { idField: 'skillName' },
     activeThreats: { idField: 'threatId', nameField: 'name' },
     activePlayerEffects: { idField: 'effectId' },
     activeEffects: { idField: 'effectId' },
-    adjacencyMap: { idField: '', compositeKey: (item: any) => item.targetLocationId ? `id:${item.targetLocationId}` : `xy:${item.targetCoordinates?.x},${item.targetCoordinates?.y}` },
+    adjacencyMap: {
+        idField: '',
+        compositeKey: item => {
+            if (item.targetLocationId) return `id:${item.targetLocationId}`;
+            const coordinates = asRecord(item.targetCoordinates);
+            return `xy:${coordinates?.x},${coordinates?.y}`;
+        },
+    },
     worldStateFlags: { idField: 'flagId', nameField: 'displayName' },
     locationStorages: { idField: 'storageId' },
     newLocations: { idField: 'locationId', nameField: 'name' },
@@ -126,7 +134,7 @@ const arrayReplaceKeys = new Set([
 
 const arrayConcatKeys = new Set(['itemJournalUpdates', 'combatLogEntries', 'gameLog', 'detailsLog', 'scribeChronicle', 'journalEntries', 'textContent']);
 
-const mergeById = (arr1: any[], arr2: any[], idField: string, nameField?: string, compositeKey?: (item: any) => string | undefined, strictIdentity = false, matchOnlyExistingByName = false, allowInitialIdFallback = true) => {
+const mergeById = <T>(arr1: T[], arr2: T[] | undefined | null, idField: string, nameField?: string, compositeKey?: (item: Record<string, unknown>) => string | undefined, strictIdentity = false, matchOnlyExistingByName = false, allowInitialIdFallback = true): T[] => {
     const mergedList = [...arr1];
     
     // GUARD: If arr2 is undefined/null or not an array, return the original list to prevent crashes.
@@ -138,9 +146,9 @@ const mergeById = (arr1: any[], arr2: any[], idField: string, nameField?: string
     const nameIndex = new Map<string, number>();
     const initialIdIndex = new Map<string, number>();
 
-    const indexItem = (item: any, idx: number) => {
-        if (!isObject(item)) return;
-        const typedItem = item as Record<string, unknown>;
+    const indexItem = (item: unknown, idx: number) => {
+        const typedItem = asRecord(item);
+        if (!typedItem) return;
 
         if (compositeKey) {
             const key = compositeKey(typedItem);
@@ -182,11 +190,13 @@ const mergeById = (arr1: any[], arr2: any[], idField: string, nameField?: string
             
             if (matchIndex === undefined && nameField && typedItem[nameField]) {
                 if (strictIdentity) {
-                    const candidates = mergedList.map((value, index) => ({ value, index })).filter(({ value, index }) =>
-                        (!matchOnlyExistingByName || index < arr1.length) &&
-                        value?.[nameField] === typedItem[nameField] &&
-                        !(typedItem[idField] && value[idField] && typedItem[idField] !== value[idField]) &&
-                        !(typedItem.initialId && value.initialId && typedItem.initialId !== value.initialId));
+                    const candidates = mergedList.map((value, index) => ({ value, index })).filter(({ value, index }) => {
+                        const other = asRecord(value);
+                        return (!matchOnlyExistingByName || index < arr1.length) &&
+                            other?.[nameField] === typedItem[nameField] &&
+                            !(typedItem[idField] && other?.[idField] && typedItem[idField] !== other[idField]) &&
+                            !(typedItem.initialId && other?.initialId && typedItem.initialId !== other.initialId);
+                    });
                     if (candidates.length === 1) matchIndex = candidates[0].index;
                 } else {
                     matchIndex = nameIndex.get(String(typedItem[nameField]));
@@ -205,7 +215,7 @@ const mergeById = (arr1: any[], arr2: any[], idField: string, nameField?: string
             mergedList[matchIndex] = deepMergeResponses(mergedList[matchIndex], typedItem);
             indexItem(mergedList[matchIndex], matchIndex);
         } else {
-            const newIdx = mergedList.push(typedItem) - 1;
+            const newIdx = mergedList.push(typedItem as T) - 1;
             indexItem(typedItem, newIdx);
         }
     }
@@ -215,14 +225,14 @@ const mergeById = (arr1: any[], arr2: any[], idField: string, nameField?: string
 
 // New locations and items can share names. Merge stage fragments only when
 // a shared ID or turn-local tag identifies the same entity; retain conflicts.
-const mergeIdentifiedStageEntities = (existing: any[], incoming: any[], idField: string): any[] => {
+const mergeIdentifiedStageEntities = <T>(existing: T[], incoming: T[], idField: string): T[] => {
     const result = [...existing];
     for (const item of incoming) {
         if (!isObject(item)) { result.push(item); continue; }
         const location = item as Record<string, unknown>;
         const candidates = result.map((value, index) => ({ value, index })).filter(({ value }) => {
-            if (!isObject(value)) return false;
-            const other = value as Record<string, unknown>;
+            const other = asRecord(value);
+            if (!other) return false;
             const sharedId = location[idField] && other[idField] && location[idField] === other[idField];
             const sharedTag = location.initialId && other.initialId && location.initialId === other.initialId;
             const conflictingId = location[idField] && other[idField] && location[idField] !== other[idField];
@@ -231,7 +241,7 @@ const mergeIdentifiedStageEntities = (existing: any[], incoming: any[], idField:
         });
         if (candidates.length === 1) {
             const index = candidates[0].index;
-            result[index] = deepMergeResponses(result[index], item);
+            result[index] = deepMergeResponses(result[index], item) as T;
         } else {
             result.push(item);
         }
@@ -291,8 +301,8 @@ const removeEffectsForHealedWounds = (effects: Effect[] | undefined, wounds: Wou
     return (effects || []).filter(effect => !effect?.sourceWoundId || !healed.has(effect.sourceWoundId));
 };
 
-export const deepMergeResponses = (target: any, source: any): any => {
-    const output = { ...target };
+export const deepMergeResponses = <T>(target: T, source: unknown): T => {
+    const output: Record<string, unknown> = isObject(target) ? { ...target } : {};
 
     if (isObject(target) && isObject(source)) {
         Object.keys(source).forEach(key => {
@@ -367,10 +377,10 @@ export const deepMergeResponses = (target: any, source: any): any => {
             }
         });
     } else if (isObject(source)) {
-        return { ...source };
+        return { ...source } as T;
     }
-    
-    return output;
+
+    return output as T;
 };
 
 const experienceForLevelTransition = (level: number): number => {
@@ -508,7 +518,7 @@ function preProcessAndAssignIds(response: GameResponse, currentState: GameState,
 
     // 4. Locations (worldMapUpdates - locationUpdates)
     if (mutableResponse.worldMapUpdates?.locationUpdates) {
-        asArray(mutableResponse.worldMapUpdates.locationUpdates).forEach((locUpdate: any) => {
+        asArray(mutableResponse.worldMapUpdates.locationUpdates).forEach(locUpdate => {
              // Note: 'locationUpdate' structure might have flattened fields in the response object (e.g. newImagePrompt), 
              // but our types define it as LocationUpdate interface. The response actually sends 'image_prompt' inside the update object sometimes if structure allows.
              // Based on `updateWorldMap` function logic, it seems location updates usually use specific fields prefixed with 'new'.
@@ -537,10 +547,11 @@ function preProcessAndAssignIds(response: GameResponse, currentState: GameState,
          }
     }
 
-    const assignIdIfNeeded = (items: any[] | undefined | null, idField: string, prefix: string) => {
+    const assignIdIfNeeded = (items: unknown[] | undefined | null, idField: string, prefix: string) => {
         asArray(items).forEach(item => {
-            if (item && (item[idField] === null || item[idField] === undefined)) {
-                item[idField] = generateId(prefix);
+            const record = asRecord(item);
+            if (record && (record[idField] === null || record[idField] === undefined)) {
+                record[idField] = generateId(prefix);
             }
         });
     };
@@ -645,9 +656,9 @@ function preProcessAndAssignIds(response: GameResponse, currentState: GameState,
     // Older guide versions also described { NPCId, NPCName, wounds: [...] }.
     // Accept that form as well as the canonical flat objects before assigning IDs.
     if (mutableResponse.NPCWoundChanges) {
-        mutableResponse.NPCWoundChanges = asArray(mutableResponse.NPCWoundChanges).flatMap((entry: any) => {
+        mutableResponse.NPCWoundChanges = asArray(mutableResponse.NPCWoundChanges).flatMap(entry => {
             if (!Array.isArray(entry?.wounds)) return [entry];
-            const nested = entry.wounds.filter(isObject).map((wound: any) => ({
+            const nested = entry.wounds.filter(isObject).map(wound => ({
                 ...wound, NPCId: entry.NPCId, NPCName: entry.NPCName
             }));
             if (entry.woundId || entry.woundName) {
@@ -679,7 +690,7 @@ function preProcessAndAssignIds(response: GameResponse, currentState: GameState,
     return mutableResponse;
 }
 
-function resolveInitialIds(obj: any, idMap: Map<string, string>, idKinds: Map<string, string>) {
+function resolveInitialIds(obj: unknown, idMap: Map<string, string>, idKinds: Map<string, string>) {
     if (!obj) return;
 
     if (Array.isArray(obj)) {
@@ -687,21 +698,22 @@ function resolveInitialIds(obj: any, idMap: Map<string, string>, idKinds: Map<st
         return;
     }
 
-    if (typeof obj === 'object') {
+    const record = asRecord(obj);
+    if (record) {
         const resolveReference = (source: string, destination: string, expectedKind: string) => {
-            const tag = obj[source];
-            if (!tag || !idMap.has(tag)) return;
+            const tag = record[source];
+            if (typeof tag !== 'string' || !idMap.has(tag)) return;
             // An existing permanent target is authoritative. Historical objects
             // may retain an old turn-local tag; reusing it in a later response
             // must not redirect an already resolved relationship or location.
-            if (source !== destination && obj[destination]) return;
+            if (source !== destination && record[destination]) return;
             const actualKind = idKinds.get(tag);
             if (actualKind !== expectedKind) {
                 // Fail before applying any state: an ID from another entity
                 // type is never a safe substitute for the requested target.
                 throw new Error(`Temporary reference "${tag}" in ${source} expects ${expectedKind}, but refers to ${actualKind || 'unknown'}`);
             }
-            obj[destination] = idMap.get(tag);
+            record[destination] = idMap.get(tag);
         };
 
         resolveReference('initialFactionId', 'factionId', 'faction');
@@ -713,11 +725,7 @@ function resolveInitialIds(obj: any, idMap: Map<string, string>, idKinds: Map<st
         // _clear_; only tags declared in this response need resolution.
         resolveReference('newBreakthroughQuestId', 'newBreakthroughQuestId', 'quest');
 
-        for (const key in obj) {
-            if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                resolveInitialIds(obj[key], idMap, idKinds);
-            }
-        }
+        Object.keys(record).forEach(key => resolveInitialIds(record[key], idMap, idKinds));
     }
 }
 
@@ -734,7 +742,7 @@ const findNpcForUpdate = (update: { NPCId?: string | null; name?: string; NPCNam
 
 // Preserve unambiguous named-NPC health and independent combat effects before
 // a later stage clears a combat roster. Use normal NPC update commands.
-export const mergeStageResponses = (previous: any, next: any, context: { encounteredNPCs?: NPC[] }): any => {
+export const mergeStageResponses = (previous: GameResponse | Partial<GameResponse> | undefined, next: Partial<GameResponse>, context: { encounteredNPCs?: NPC[] }): GameResponse => {
     const merged = deepMergeResponses(previous, next);
     const cleared = ['enemiesData', 'alliesData'].filter(key => Array.isArray(next?.[key]) && next[key].length === 0);
     if (!cleared.length) return merged;
@@ -780,7 +788,7 @@ export const mergeStageResponses = (previous: any, next: any, context: { encount
         // Only mint an ID for an independently described effect that cannot
         // already be the same stored or explicitly reported effect. Duration is
         // deliberately excluded from the identity comparison because it ticks.
-        const signature = (e: any) => JSON.stringify([e?.effectType, e?.targetType, e?.value, e?.description, e?.sourceSkill || null]);
+        const signature = (e: Partial<Effect> | undefined) => JSON.stringify([e?.effectType, e?.targetType, e?.value, e?.description, e?.sourceSkill || null]);
         const mintable = reported.filter(effect => effect && !effect.effectId && !effect.sourceWoundId &&
             typeof effect.duration === 'number' && Number.isFinite(effect.duration) && effect.duration > 0 &&
             typeof effect.effectType === 'string' && !!effect.effectType && typeof effect.targetType === 'string' && !!effect.targetType &&
@@ -793,7 +801,7 @@ export const mergeStageResponses = (previous: any, next: any, context: { encount
             typeof effect.effectType === 'string' && typeof effect.targetType === 'string' && typeof effect.value === 'string' &&
             typeof effect.description === 'string' && reported.filter(e => e?.effectId === effect.effectId).length === 1 &&
             !asArray(existing?.effectsToRemove).includes(effect.effectId) &&
-            !asArray(existing?.effectsApplied).some((e: any) => e?.effectId === effect.effectId));
+            !asArray(existing?.effectsApplied).some(e => e?.effectId === effect.effectId));
         // A reported duration of zero is an explicit expiration, not merely an
         // absent effect. Remove only the same identified effect already on this
         // NPC, and never override an explicit later application or a wound.
@@ -801,7 +809,7 @@ export const mergeStageResponses = (previous: any, next: any, context: { encount
             typeof effect.duration === 'number' && Number.isFinite(effect.duration) && effect.duration <= 0 &&
             reported.filter(e => e?.effectId === effect.effectId).length === 1 &&
             (npc.activeEffects || []).some(e => e.effectId === effect.effectId && !e.sourceWoundId) &&
-            !asArray(existing?.effectsApplied).some((e: any) => e?.effectId === effect.effectId) &&
+            !asArray(existing?.effectsApplied).some(e => e?.effectId === effect.effectId) &&
             !asArray(existing?.effectsToRemove).includes(effect.effectId)).map(effect => effect.effectId);
         if (!allowed.length && !mintable.length && !expired.length) continue;
         const update = { ...(existing || { NPCId: npc.NPCId, NPCName: npc.name }),
@@ -1069,7 +1077,7 @@ export const processAndApplyResponse = (
     // Reject malformed coordinates atomically rather than committing dangling IDs.
     const newLocationIds = new Set<string>();
     const newLocationTags = new Set<string>();
-    asArray(mutableResponse.worldMapUpdates?.newLocations).forEach((location: any) => {
+    asArray(mutableResponse.worldMapUpdates?.newLocations).forEach(location => {
         if (!location?.coordinates || !Number.isFinite(location.coordinates.x) || !Number.isFinite(location.coordinates.y)) {
             throw new Error(`New location "${location?.name || location?.initialId || 'unknown'}" has invalid or missing coordinates`);
         }
@@ -1085,7 +1093,7 @@ export const processAndApplyResponse = (
     // A name-only partial NPC update cannot select between namesakes. Keep
     // explicitly identified and turn-local new NPCs, but skip ambiguous edits.
     if (mutableResponse.NPCsData) {
-        mutableResponse.NPCsData = asArray(mutableResponse.NPCsData).filter((update: any) =>
+        mutableResponse.NPCsData = asArray(mutableResponse.NPCsData).filter(update =>
             update?.NPCId || update?.initialId || !update?.name ||
             baseState.encounteredNPCs.filter(npc => npc.name === update.name).length <= 1);
     }
@@ -1151,17 +1159,19 @@ export const processAndApplyResponse = (
     const initialIdToGeneratedIdMap = new Map<string, string>();
     const initialIdKinds = new Map<string, string>();
 
-    const processForIdMapping = (items: any[] | undefined, idField: string, initialIdField: string, prefix: string) => {
+    const processForIdMapping = (items: unknown[] | undefined, idField: string, initialIdField: string, prefix: string) => {
         asArray(items).forEach(item => {
-            if (item && item[initialIdField]) {
-                const matchingCurrent = prefix === 'loc' && mutableResponse.currentLocationData?.initialId === item[initialIdField]
+            const record = asRecord(item);
+            const initialId = record?.[initialIdField];
+            if (record && typeof initialId === 'string' && initialId) {
+                const matchingCurrent = prefix === 'loc' && mutableResponse.currentLocationData?.initialId === initialId
                     ? mutableResponse.currentLocationData.locationId : undefined;
-                const id = item[idField] || matchingCurrent || generateId(prefix);
-                const prior = initialIdToGeneratedIdMap.get(item[initialIdField]);
-                if (prior && (prior !== id || initialIdKinds.get(item[initialIdField]) !== prefix)) throw new Error(`Conflicting temporary initialId "${item[initialIdField]}"`);
-                initialIdToGeneratedIdMap.set(item[initialIdField], id);
-                initialIdKinds.set(item[initialIdField], prefix);
-                item[idField] = id;
+                const id = (typeof record[idField] === 'string' && record[idField]) || matchingCurrent || generateId(prefix);
+                const prior = initialIdToGeneratedIdMap.get(initialId);
+                if (prior && (prior !== id || initialIdKinds.get(initialId) !== prefix)) throw new Error(`Conflicting temporary initialId "${initialId}"`);
+                initialIdToGeneratedIdMap.set(initialId, id);
+                initialIdKinds.set(initialId, prefix);
+                record[idField] = id;
             }
         });
     };
@@ -1253,7 +1263,7 @@ export const processAndApplyResponse = (
     // An explicit transfer must not be combined with legacy inventory commands:
     // without linkage they may represent a second copy of the same operation.
     const legacyInventoryKeys = ['inventoryItemsData', 'removeInventoryItems', 'updateItemTextContents', 'itemBondLevelChanges', 'itemFateCardUnlocks', 'equipmentChanges', 'inventoryItemsResources', 'moveInventoryItems'];
-    const hasLegacyCommands = (value: any) => legacyInventoryKeys.some(key => asArray(value?.[key]).length > 0);
+    const hasLegacyCommands = (value: unknown) => legacyInventoryKeys.some(key => asArray(value?.[key]).length > 0);
     const transferBatchConflict = asArray(changes.inventoryTransfers).length > 0 && (
         hasLegacyCommands(mutableResponse) || ambiguousTopItems.length > 0 ||
         Object.values(changes.otherPlayersInteractions || {}).some(commands => asArray(commands).some(hasLegacyCommands)) ||
@@ -1351,7 +1361,7 @@ export const processAndApplyResponse = (
             // repeated arrays and add numeric deltas before applying once, so
             // level-up and other per-turn processing still run only once.
             const deltaKeys = new Set(['currentHealthChange', 'currentEnergyChange', 'moneyChange', 'experienceGained']);
-            const mergedChanges = changes.otherPlayersInteractions[playerId].reduce((acc: Record<string, unknown>, cmd: any) => {
+            const mergedChanges = changes.otherPlayersInteractions[playerId].reduce((acc: Record<string, unknown>, cmd) => {
                 if (!isObject(cmd)) return acc;
                 for (const [key, value] of Object.entries(cmd)) {
                     if (value === null || value === undefined) continue;
@@ -1468,7 +1478,7 @@ export const processAndApplyResponse = (
 
     newState.worldStateFlags = mergeById(newState.worldStateFlags || [], asArray(changes.worldStateFlags), 'flagId', 'displayName');
     newState.worldEventsLog = mergeById(newState.worldEventsLog || [], asArray(changes.worldEventsLog), 'eventId');    
-    newState.encounteredFactions = mergeById(newState.encounteredFactions || [], asArray(changes.factionDataChanges), 'factionId', 'name', undefined, true).map(f => (f && !f.color) ? { ...f, color: generateFactionColor(f.factionId || f.name) } : f);
+    newState.encounteredFactions = (mergeById(newState.encounteredFactions || [], asArray(changes.factionDataChanges), 'factionId', 'name', undefined, true) as Faction[]).map(f => (f && !f.color) ? { ...f, color: generateFactionColor(f.factionId || f.name) } : f);
 
     asArray(changes.factionChronicleUpdates).forEach(update => { const f = findFactionForUpdate(update, newState.encounteredFactions); if (f) { if (!f.scribeChronicle) f.scribeChronicle = []; f.scribeChronicle.unshift(update.entryToAppend); } });
     asArray(changes.factionBonusChanges).forEach(change => { const f = findFactionForUpdate(change, newState.encounteredFactions); if (f) { if (change.bonusesToRemove) f.structuredBonuses = (f.structuredBonuses || []).filter(b => !b.bonusId || !asArray(change.bonusesToRemove).includes(b.bonusId)); if (change.bonusesToAddOrUpdate) f.structuredBonuses = mergeById(f.structuredBonuses || [], asArray(change.bonusesToAddOrUpdate), 'bonusId', 'description'); } });
@@ -1513,7 +1523,7 @@ export const processAndApplyResponse = (
     });
 
     const archiveCompletedFactionProjects = () => {
-        const findFactionForCompletion = (completion: any): Faction | undefined => {
+        const findFactionForCompletion = (completion: CompleteFactionProject): Faction | undefined => {
             const directFaction = findFactionForUpdate(completion, newState.encounteredFactions);
             if (directFaction) return directFaction;
             if (completion.factionId || completion.initialFactionId || completion.factionName) return undefined;
@@ -1523,7 +1533,7 @@ export const processAndApplyResponse = (
             return matches.length === 1 ? matches[0] : undefined;
         };
 
-        const archiveProject = (faction: Faction, completion: any) => {
+        const archiveProject = (faction: Faction, completion: Partial<CompletedProject> & Partial<CompleteFactionProject>) => {
             if (!faction.activeProjects) faction.activeProjects = [];
             if (!faction.completedProjects) faction.completedProjects = [];
 
@@ -1635,7 +1645,7 @@ export const processAndApplyResponse = (
     // A crisis can end an activity and start a different one in NPCsData in
     // the same turn. Archive the old activity before merging the replacement,
     // otherwise its fields leak into the new activity and completion is lost.
-    const archiveNpcActivity = (completion: any, npc: NPC | undefined) => {
+    const archiveNpcActivity = (completion: CompleteNPCActivity, npc: NPC | undefined) => {
         if (!npc?.currentActivity || npc.currentActivity.activityName !== completion.activityName) return;
         if (!npc.completedActivities) npc.completedActivities = [];
         npc.completedActivities.unshift({ activityName: npc.currentActivity.activityName, completionTurn: currentTurnNumber, finalOutcome: completion.finalState === 'Completed' ? 'Success' : 'Failure', narrativeSummary: completion.narrativeSummary });
@@ -1676,7 +1686,7 @@ export const processAndApplyResponse = (
         }
         return update;
     });
-    newState.encounteredNPCs = mergeById(newState.encounteredNPCs || [], npcUpdates, 'NPCId', 'name', undefined, true);
+    newState.encounteredNPCs = mergeById(newState.encounteredNPCs || [], npcUpdates, 'NPCId', 'name', undefined, true) as NPC[];
     // Initial inline effects on a newly created NPC are reported this turn,
     // just like NPCEffectChanges, and must not immediately lose a turn.
     for (const update of npcUpdates) {
@@ -1793,7 +1803,7 @@ export const processAndApplyResponse = (
                 for (const effect of asArray(ec.effectsApplied)) {
                     if (effect.effectId && effect.duration !== undefined) recordNpcEffect(actorEffectKey(npc.NPCId, npc.name), effect.effectId);
                 }
-                npc.activeEffects = mergeById(npc.activeEffects || [], asArray(ec.effectsApplied), 'effectId');
+                npc.activeEffects = mergeById(npc.activeEffects || [], asArray(ec.effectsApplied) as Effect[], 'effectId');
             }
             if (ec.effectsToRemove) {
                 const toRemove = new Set(asArray(ec.effectsToRemove));
@@ -1807,7 +1817,7 @@ export const processAndApplyResponse = (
         const npc = findNpcForUpdate(wu, newState.encounteredNPCs);
         if (npc?.activeEffects) npc.activeEffects = removeEffectsForHealedWounds(npc.activeEffects, npc.wounds, [wu]);
     });
-    asArray(changes.NPCCustomStateChanges).forEach(sc => { const npc = findNpcForUpdate(sc, newState.encounteredNPCs); if (npc) npc.customStates = mergeById(npc.customStates || [], asArray(sc.stateChanges), 'stateId'); });
+    asArray(changes.NPCCustomStateChanges).forEach(sc => { const npc = findNpcForUpdate(sc, newState.encounteredNPCs); if (npc) npc.customStates = mergeById(npc.customStates || [], asArray(sc.stateChanges) as CustomState[], 'stateId'); });
     const acceptedNpcItems: Array<{ npc: NPC; item: Item }> = [];
     if (!deferNpcTransferBatch) {
         for (const update of npcUpdates) {
@@ -1890,14 +1900,18 @@ export const processAndApplyResponse = (
     // Each side is addressed by a permanent actor ID, never by a name.
     if (!transferBatchConflict) {
         const transfers = asArray(changes.inventoryTransfers);
-        const fingerprint = (x: any) => JSON.stringify([x?.source?.type, x?.source?.id, x?.source?.itemId, x?.destination?.type, x?.destination?.id, x?.quantity]);
+        const fingerprint = (transfer: InventoryTransfer) => {
+            const source = asRecord(transfer?.source);
+            const destination = asRecord(transfer?.destination);
+            return JSON.stringify([source?.type, source?.id, source?.itemId, destination?.type, destination?.id, transfer?.quantity]);
+        };
         const fingerprints = new Map<string, Set<string>>();
         for (const x of transfers) if (typeof x?.transferId === 'string') {
             const set = fingerprints.get(x.transferId) || new Set<string>();
             set.add(fingerprint(x));
             fingerprints.set(x.transferId, set);
         }
-        const actor = (endpoint: any): PlayerCharacter | NPC | undefined => {
+        const actor = (endpoint: InventoryTransfer['source'] | InventoryTransfer['destination']): PlayerCharacter | NPC | undefined => {
             if (!endpoint || typeof endpoint.id !== 'string' || !endpoint.id.trim()) return undefined;
             const list = endpoint.type === 'player' ? newState.players.filter(p => p.playerId === endpoint.id)
                 : endpoint.type === 'npc' ? newState.encounteredNPCs.filter(n => n.NPCId === endpoint.id) : [];
