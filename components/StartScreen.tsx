@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
+import { PlusIcon } from '@heroicons/react/24/solid';
 import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, ExclamationTriangleIcon, CloudArrowDownIcon } from '@heroicons/react/24/outline';
 import Modal from './Modal';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, loadStartScreenDraft, saveStartScreenFormDraft, saveStartScreenWorldDraft, clearStartScreenDraft, type PreparedSaveFile } from '../utils/fileManager';
@@ -8,7 +8,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import { useWorldTranslations } from '../hooks/useWorldTranslations';
 import { gameData } from '../utils/localizationGameData';
 import AboutContent from './AboutContent';
-import { DBSaveSlotInfo, Calendar, Month, DayInfo } from '../types';
+import { DBSaveSlotInfo, Calendar } from '../types';
 import { cultivationSystemDescEn, cultivationSystemDescRu } from '../utils/translations/presetRules/fantasy/cultivation';
 import { magicSystemDescEn, magicSystemDescRu } from '../utils/translations/presetRules/fantasy/magic';
 import { priesthoodSystemDescEn, priesthoodSystemDescRu } from '../utils/translations/presetRules/fantasy/priesthood';
@@ -25,7 +25,6 @@ import { deathNoteSystemDescEn, deathNoteSystemDescRu } from '../utils/translati
 import { initializeAndPreviewSound } from '../utils/soundManager';
 import { UniverseCustomizer } from './UniverseCustomizer';
 import { weather as weatherTranslations } from '../utils/translations/ui/weather';
-import { PlayerCharacter } from '../types';
 import type { CrashRecoveryMarker, CrashRecoveryMetadata } from '../utils/fileManager';
 import { notifyError, notifyWarning } from '../utils/notifications';
 
@@ -215,10 +214,9 @@ const CreationForm: React.FC<CreationFormProps> = ({
     currentWorld,
     customGameData,
     setIsCreatingUniverse,
-    setFormData
 }) => {
     const { t } = useLocalization();
-    const { universe, race, charClass, cooperativeGameType, multiplePersonalitiesSettings, hardMode, impossibleMode, startingMonth, startingDay } = formData;
+    const { race, charClass, cooperativeGameType, multiplePersonalitiesSettings, hardMode, impossibleMode, startingMonth } = formData;
     const isSubmitDisabled = submitButtonText === t('Begin Your Adventure') && formData.universe === 'custom' && !formData.selectedEra;
 
     const FULL_WEATHER_OPTIONS = useMemo(() => Object.keys(weatherTranslations.en), []);

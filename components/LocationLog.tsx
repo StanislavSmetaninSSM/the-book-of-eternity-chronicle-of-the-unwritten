@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Location, LocationData, GameSettings, ImageCacheEntry } from '../types';
+import { Location, GameSettings, ImageCacheEntry } from '../types';
 import { MapIcon, FireIcon, GlobeAltIcon, UserGroupIcon, MapPinIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -172,7 +172,7 @@ const LocationItem: React.FC<{
   );
 };
 
-export default function LocationLog({ locations, currentLocation, onOpenModal, allowHistoryManipulation, onEditLocationData, imageCache, onImageGenerated, forgetLocation, gameSettings }: LocationLogProps): React.ReactNode {
+export default function LocationLog({ locations, currentLocation, onOpenModal, allowHistoryManipulation, imageCache, onImageGenerated, forgetLocation, gameSettings }: LocationLogProps): React.ReactNode {
   const { t } = useLocalization();
   const [locationToDelete, setLocationToDelete] = useState<Location | null>(null);
 

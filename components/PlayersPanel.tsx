@@ -21,7 +21,7 @@ interface PlayersPanelProps {
     updatePlayerPortrait?: (playerId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
 }
 
-const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, gameSettings, onAddPlayer, onViewCharacterSheet, removePlayer, passTurnToPlayer, allowHistoryManipulation, imageCache, onImageGenerated, updatePlayerPortrait }) => {
+const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, gameSettings, onAddPlayer, onViewCharacterSheet, removePlayer, passTurnToPlayer, allowHistoryManipulation, imageCache, onImageGenerated }) => {
     const { t } = useLocalization();
     const [isCreating, setIsCreating] = useState(false);
     const [templatePlayer, setTemplatePlayer] = useState<PlayerCharacter | null>(null);

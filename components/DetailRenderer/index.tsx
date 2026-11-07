@@ -1,10 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
-import { Item, Quest, NPC, Location, PlayerCharacter, CombatAction, Faction, CustomState, PassiveSkill, ActiveSkill, Effect, Wound, UnlockedMemory, WorldEvent, CompletedProject, CompletedActivity, LocationStorage } from '../../types';
+import React, { useState } from 'react';
+import { Item, Quest, NPC, Location, PlayerCharacter, CombatAction, Faction, CustomState, PassiveSkill, ActiveSkill, Effect, Wound, WorldEvent } from '../../types';
 import { DetailRendererProps } from './types';
 import ConfirmationModal from '../ConfirmationModal';
 import { useLocalization } from '../../context/LocalizationContext';
-import { generateEffectDescription } from './utils';
 
 // Import all the new renderer components
 import ItemDetailsRenderer from './ItemDetailsRenderer';
@@ -131,7 +130,7 @@ const CustomStateDetailsRenderer: React.FC<{ state: CustomState; onOpenDetailMod
 
 
 export default function DetailRenderer(props: DetailRendererProps) {
-    const { onForgetNpc, onClearNpcJournal, onCloseModal, onForgetQuest, onForgetLocation, currentLocationId, onRegenerateId, deleteNpcCustomState, onEditNpcMemory, onDeleteNpcMemory, onDeleteNpcJournalEntry, forgetHealedWound, forgetActiveWound, clearAllHealedWounds, allNpcs, allFactions, allLocations, updatePlayerPortrait, clearAllCompletedFactionProjects, deleteFactionCompletedProject, deleteFactionCustomState, clearAllCompletedNpcActivities, onDeleteCurrentActivity, onDeleteCompletedActivity, onViewCharacterSheet, onOpenTextReader, onOpenStorage, placeAsStorage, isLoading, deleteFactionProject, deleteFactionBonus } = props;
+    const { onForgetNpc, onClearNpcJournal, onCloseModal, onForgetQuest, onForgetLocation, currentLocationId, onRegenerateId, forgetHealedWound, forgetActiveWound, clearAllHealedWounds, allNpcs, updatePlayerPortrait, clearAllCompletedFactionProjects, deleteFactionCompletedProject, deleteFactionCustomState, clearAllCompletedNpcActivities, onDeleteCurrentActivity, onDeleteCompletedActivity, onViewCharacterSheet, onOpenTextReader, placeAsStorage, isLoading, deleteFactionProject, deleteFactionBonus } = props;
     const { data: _data, ...rest } = props;
     const [confirmation, setConfirmation] = useState<{ type: string | null; data: any }>({ type: null, data: null });
     const { t } = useLocalization();

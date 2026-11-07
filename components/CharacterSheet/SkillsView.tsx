@@ -230,7 +230,7 @@ const SkillsView: React.FC<SkillsViewProps> = ({
                 <div className="mt-6">
                     <SectionHeader title={t('Active Skills')} icon={SparklesIcon} />
                     <div className="space-y-3 text-gray-300">
-                        {filteredActiveSkills.length > 0 ? filteredActiveSkills.map((skill, index) => {
+                        {filteredActiveSkills.length > 0 ? filteredActiveSkills.map((skill, _index) => {
                             const masteryData = character.skillMasteryData?.find(m => m.skillName.toLowerCase() === skill.skillName.toLowerCase());
                             const masteryProgress = (masteryData && masteryData.masteryProgressNeeded > 0) 
                                 ? (masteryData.currentMasteryProgress / masteryData.masteryProgressNeeded) * 100 

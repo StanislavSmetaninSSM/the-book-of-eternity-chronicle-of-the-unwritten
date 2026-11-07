@@ -23,7 +23,7 @@ import { withLiveActivePlayer } from './utils/partyView';
 import TurnIndicator from './components/TurnIndicator';
 import { useLocalization } from './context/LocalizationContext';
 import { useGameLogic } from './hooks/useGameLogic';
-import { ChatMessage, Cinematic, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, Project, LocationData, ImageCacheEntry } from './types';
+import { ChatMessage, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, LocationData, ImageCacheEntry } from './types';
 import TextReaderModal from './components/TextReaderModal';
 import { useSpeech } from './context/SpeechContext';
 import { consumeStartupLoadRequest, migrateInlineImagesToImageStore, releasePreparedSaveFiles, type PreparedSaveFiles } from './utils/fileManager';

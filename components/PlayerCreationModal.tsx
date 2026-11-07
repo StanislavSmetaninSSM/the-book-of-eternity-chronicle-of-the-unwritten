@@ -39,7 +39,7 @@ interface PlayerCreationModalProps {
     shareCharacteristics: boolean;
 }
 
-const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClose, onSubmit, templatePlayer, universe, currentWorldData, gameSettings, partyLevel, shareCharacteristics }) => {
+const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClose, onSubmit, templatePlayer, currentWorldData, partyLevel, shareCharacteristics }) => {
     const { t } = useLocalization();
     const [formData, setFormData] = useState(initialFormData);
     const { attributePoints, customAttributes, isCustomRace, isCustomClass, customClassAttributePoints, customClassAttributes } = formData;
@@ -52,7 +52,7 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
         if (templatePlayer) {
             const isStandardRace = Object.keys(currentWorldData.races).includes(templatePlayer.race);
             const isStandardClass = Object.keys(currentWorldData.classes).includes(templatePlayer.class);
-            setFormData(prev => ({
+            setFormData(_prev => ({
                 ...initialFormData,
                 race: isStandardRace ? templatePlayer.race : Object.keys(currentWorldData.races)[0] || 'Human',
                 charClass: isStandardClass ? templatePlayer.class : Object.keys(currentWorldData.classes)[0] || 'Warrior',
@@ -66,7 +66,7 @@ const PlayerCreationModal: React.FC<PlayerCreationModalProps> = ({ isOpen, onClo
         } else {
             const defaultRace = Object.keys(currentWorldData.races)[0] || 'Human';
             const defaultClass = Object.keys(currentWorldData.classes)[0] || 'Warrior';
-            setFormData(prev => ({ ...initialFormData, race: defaultRace, charClass: defaultClass }));
+            setFormData(_prev => ({ ...initialFormData, race: defaultRace, charClass: defaultClass }));
         }
     }, [templatePlayer, currentWorldData]);
 

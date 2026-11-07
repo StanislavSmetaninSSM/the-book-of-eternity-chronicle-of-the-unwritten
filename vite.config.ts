@@ -1,5 +1,5 @@
 import { defineConfig, Plugin } from 'vite';
-import { access, mkdir, open, readFile, rename, rm, writeFile, readdir } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rm, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 // @ts-ignore -- server-only JS module
 import { ensureRuleBundle, verifyRuleBundle } from './utils/arenaRuleBundle.js';

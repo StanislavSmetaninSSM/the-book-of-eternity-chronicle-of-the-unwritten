@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import { PlayerCharacter, GameSettings, ImageCacheEntry } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { UserCircleIcon, ChevronUpIcon, ChevronDownIcon, BoltIcon } from '@heroicons/react/24/solid';
@@ -24,7 +24,6 @@ export const PartyStatus: React.FC<PartyStatusProps> = ({
     players,
     activePlayerIndex,
     gameSettings,
-    onPassTurn,
     imageCache,
     onImageGenerated,
     onOpenImageModal,

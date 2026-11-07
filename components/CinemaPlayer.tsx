@@ -49,7 +49,7 @@ const CinemaPlayer: React.FC<CinemaPlayerProps> = ({ isOpen, onClose, cinematic 
     const [isPlaying, setIsPlaying] = useState(true);
     const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
-    const [isMuted, setIsMuted] = useState(false); // Local state for mute
+    const [isMuted] = useState(false); // Local state for mute
 
     const frames = cinematic?.frames || null;
 

@@ -6,25 +6,23 @@
 
 
 
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Location, LocationData, PlayerCharacter, AdjacencyMapEntry, Faction, LocationStorage, DifficultyProfile } from '../../types';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Location, PlayerCharacter, AdjacencyMapEntry, LocationStorage, DifficultyProfile } from '../../types';
 import { DetailRendererProps } from './types';
 import { useLocalization } from '../../context/LocalizationContext';
 import Section from './Shared/Section';
 import EditableField from './Shared/EditableField';
 import IdDisplay from './Shared/IdDisplay';
 import ImageRenderer from '../ImageRenderer';
-import MarkdownRenderer from '../MarkdownRenderer';
 import {
     InformationCircleIcon, MapPinIcon, ExclamationTriangleIcon, GlobeAltIcon, SunIcon, BuildingOfficeIcon,
-    HomeModernIcon, ClockIcon, LinkIcon, CogIcon, TrashIcon, BookOpenIcon, FireIcon, UserGroupIcon, ChevronDownIcon, ChevronUpIcon, PhotoIcon, ArchiveBoxIcon, ArrowUturnLeftIcon,
+    HomeModernIcon, ClockIcon, LinkIcon, CogIcon, TrashIcon, FireIcon, UserGroupIcon, ChevronDownIcon, ChevronUpIcon, ArchiveBoxIcon, ArrowUturnLeftIcon,
     SparklesIcon
 } from '@heroicons/react/24/outline';
 import { useSpeech } from '../../context/SpeechContext';
 import { stripMarkdown } from '../../utils/textUtils';
 import ConfirmationModal from '../ConfirmationModal';
 import { 
-    BookOpenIcon as BookOpenSolidIcon, 
     SpeakerWaveIcon, 
     StopCircleIcon, 
     MinusIcon, 

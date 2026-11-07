@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { PlayerCharacter, NPC, Item, GameSettings, ImageCacheEntry } from '../../types';
+import { PlayerCharacter, NPC, Item, ImageCacheEntry } from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import ItemCard from './Shared/ItemCard';
 import { ArchiveBoxIcon as ArchiveBoxSolidIcon } from '@heroicons/react/24/solid';

@@ -1,12 +1,12 @@
 import React, { useMemo } from 'react';
-import { WorldEvent, NPC, Faction, Location, InvolvedNPC, AffectedFaction, AffectedLocation, GameSettings, ImageCacheEntry } from '../../types';
+import { WorldEvent, InvolvedNPC, AffectedFaction, AffectedLocation } from '../../types';
 import { DetailRendererProps } from './types';
 import Section from './Shared/Section';
 import DetailRow from './Shared/DetailRow';
 import MarkdownRenderer from '../MarkdownRenderer';
 import { useLocalization } from '../../context/LocalizationContext';
 import {
-    InformationCircleIcon, ClockIcon, GlobeAltIcon, EyeIcon,
+    InformationCircleIcon, ClockIcon,
     UserIcon, UserGroupIcon, MapPinIcon,
     ScaleIcon as PoliticalIcon, ShieldExclamationIcon as MilitaryIcon,
     CurrencyDollarIcon as EconomicIcon, BuildingLibraryIcon as SocialIcon, BoltIcon as MysticalIcon,

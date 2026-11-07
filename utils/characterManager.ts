@@ -1,5 +1,4 @@
-import { PlayerCharacter, Characteristics, GameSettings, Item, ActiveSkill, PassiveSkill, SkillMastery, Recipe } from '../types';
-import { gameData } from './localizationGameData';
+import { PlayerCharacter, Characteristics, GameSettings } from '../types';
 import { recalculateDerivedStats } from './gameContext';
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];

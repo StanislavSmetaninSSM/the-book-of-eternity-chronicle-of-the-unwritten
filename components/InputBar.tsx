@@ -14,8 +14,6 @@ import {
     MusicalNoteIcon,
     ChevronUpIcon,
     ChevronDownIcon,
-    UserGroupIcon,
-    BoltIcon as SimultaneousIcon,
     PaperClipIcon,
     PlayIcon,
     PauseIcon
@@ -147,7 +145,7 @@ const MarkdownToolbar: React.FC<{
     );
 }
 
-export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, gameSettings, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
+export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest, onClearHalfHistory, isLoading, history, suggestedActions, gameState, playerCharacter, onGetMusicSuggestion, isMusicLoading, isMusicPlayerVisible, onToggleStealth, isMusicPlayerDocked, undockMusicPlayer, isMusicPlaying, musicStatus, playPauseMusicRef }: InputBarProps): React.ReactNode {
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);

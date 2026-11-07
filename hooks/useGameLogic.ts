@@ -4,7 +4,7 @@ import { isLocalPreferenceKey, sharedSettingsEqual } from '../utils/localGamePre
 import { beginGameplayMutation, gameplayMutationCommitted, guardGameplayActions } from '../utils/gameplayMutationGate';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // FIX: Imported missing types to resolve multiple "Cannot find name" errors.
-import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Quest, Wound, CustomState, WorldStateFlag, UnlockedMemory, WorldEvent, Effect, LocationStorage, Item, CompletedActivity, AdjacencyMapEntry, Project, CompletedProject, StructuredBonus, ActiveThreat, Cinematic, FactionRank, CinemaFrame, SkillMastery, ImageCacheEntry, DayInfo, Month } from '../types';
+import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Wound, WorldStateFlag, UnlockedMemory, Effect, LocationStorage, Item, CompletedActivity, Cinematic, FactionRank, CinemaFrame, ImageCacheEntry, DayInfo, Month } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { getCinemaPrompt, getContinueCinemaPrompt } from '../prompts/cinemaPrompt';
@@ -17,13 +17,12 @@ import { createSaveLoadManager } from './logic/saveLoad';
 import { createInventoryActions } from './logic/inventoryActions';
 import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
-import { processAndApplyResponse } from '../utils/responseProcessor';
 import { restorePlayerStats } from '../utils/restorePlayer';
 import { cloneGameStateForEdit } from '../utils/gameStateClone';
 import { migrateGameSettings } from '../utils/settingsMigration';
 import { withLiveActivePlayer } from '../utils/partyView';
 import { recalculateAllWeights } from '../utils/inventoryManager';
-import { recalculateDerivedStats, buildNextContext, createInitialContext, calculateDate, calculateTotalMinutes, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
+import { recalculateDerivedStats, calculateDate, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
 import {
     clearCrashRecoveryMarker,
     getAutosaveTimestampFromDB,
@@ -42,8 +41,7 @@ import type { CrashRecoveryMarker, CrashRecoveryMetadata, CrashRecoveryReason, I
 import { initializeAndPreviewSound, playNotificationSound } from '../utils/soundManager';
 import { createNewPlayerCharacter } from '../utils/characterManager';
 import { generateFactionColor } from '../utils/colorUtils';
-import { executeCancellableJsonGeneration, RegenerationRequiredError } from '../utils/gemini';
-import { deepStripModerationSymbols } from '../utils/textUtils';
+import { executeCancellableJsonGeneration } from '../utils/gemini';
 import { gameData } from '../utils/localizationGameData';
 import { translate } from '../utils/localization';
 import { cancelInterruptedArenaGmRequest, requestArenaGmImage } from '../utils/arenaGmRelay';
@@ -72,11 +70,6 @@ const asArray = <T>(value: T | T[] | null | undefined): T[] => {
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-const formatTime = (totalMinutes: number) => {
-    const hours = Math.floor((totalMinutes / 60) % 24);
-    const minutes = Math.floor(totalMinutes % 60);
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-};
 
 
 export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
@@ -902,7 +895,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastSavedTurnRef = useRef<number | null>(null);
-    const prevPlayersLengthRef = useRef<number | undefined>(undefined);
 
     const onImageGenerated = useCallback((cacheKey: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => {
         setPresentationState(prev => {
@@ -1044,7 +1036,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             let newActivePlayerCharacter: PlayerCharacter;
 
             if (gameSettings.cooperativeGameType === 'MultiplePersonalities') {
-                const { shareCharacteristics, shareSkills, shareNpcReputation, shareFactionReputation, shareInventory } = gameSettings.multiplePersonalitiesSettings || {};
+                const { shareCharacteristics, shareSkills, shareInventory } = gameSettings.multiplePersonalitiesSettings || {};
                 newActivePlayerCharacter = {
                     ...incomingPlayerSnapshot,
                     characteristics: shareCharacteristics ? outgoingPlayerCharacterState.characteristics : incomingPlayerSnapshot.characteristics,
@@ -1319,7 +1311,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [allManagers, saveCrashRecoveryFromData]);
 
     const loadCrashRecovery = useCallback(async (): Promise<boolean> => {
-        const metadata = getCrashRecoveryMetadata();
         const initialState = gameStateRef.current;
         const initialRevision = syncRevisionRef.current;
         const initialGameplayRevision = gameplayMutationRevisionRef.current;
@@ -2143,7 +2134,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 prompt,
                 cinemaContext,
                 cinemaController.signal,
-                (text) => { /* streaming not needed here */ }
+                (_text) => { /* streaming not needed here */ }
             );
 
             const newCinematic: Cinematic = {
@@ -2225,7 +2216,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 prompt,
                 cinemaContext,
                 cinemaController.signal,
-                (text) => { /* streaming not needed here */ }
+                (_text) => { /* streaming not needed here */ }
             );
 
             const newFrames: CinemaFrame[] = result.frames;

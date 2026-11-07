@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocalization } from '../context/LocalizationContext';
 import { FilmIcon, PlayIcon, ArrowDownTrayIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon, DocumentArrowUpIcon, ArrowPathIcon, XCircleIcon, PencilIcon, CheckIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, SpeakerWaveIcon } from '@heroicons/react/24/solid';
 import { Cinematic, CinemaFrame } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 import LoadingSpinner from './LoadingSpinner';
-import ImageRenderer from './ImageRenderer';
 import Modal from './Modal';
 
 interface CinemaHallProps {

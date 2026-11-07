@@ -1,5 +1,5 @@
 
-import { Item, Quest, NPC, Location, PlayerCharacter, Faction, GameSettings, Wound, UnlockedMemory, WorldEvent, CompletedActivity, LocationStorage, Project, ActiveThreat, ImageCacheEntry } from '../../types';
+import { Item, Quest, NPC, Location, PlayerCharacter, Faction, GameSettings, Wound, UnlockedMemory, CompletedActivity, LocationStorage, ImageCacheEntry } from '../../types';
 
 export interface WoundDetailsProps extends Omit<DetailRendererProps, 'data'> {
     wound: Wound & { characterType?: 'player' | 'npc', characterId?: string | null };

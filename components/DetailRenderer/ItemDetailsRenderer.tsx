@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { Item, GameSettings, StructuredBonus } from '../../types';
+import { Item } from '../../types';
 import { DetailRendererProps } from './types';
 import SectionHeader from '../CharacterSheet/Shared/SectionHeader';
 import EditableField from './Shared/EditableField';
@@ -9,18 +9,15 @@ import IdDisplay from './Shared/IdDisplay';
 import { qualityColorMap, qualityGlowMap } from './utils';
 import ImageRenderer from '../ImageRenderer';
 import { useLocalization } from '../../context/LocalizationContext';
-import MarkdownRenderer from '../MarkdownRenderer';
 import ConfirmationModal from '../ConfirmationModal';
 import FateCardDetailsRenderer from './Shared/FateCardDetailsRenderer';
 import {
-    InformationCircleIcon, TagIcon, PuzzlePieceIcon, CurrencyDollarIcon, HashtagIcon, ScaleIcon, CubeIcon,
+    InformationCircleIcon, TagIcon, CurrencyDollarIcon, HashtagIcon, ScaleIcon, CubeIcon,
     ShieldCheckIcon, CogIcon, FireIcon, PaperClipIcon, HandRaisedIcon, BoltIcon, BeakerIcon, ArchiveBoxIcon,
     CheckCircleIcon, MinusCircleIcon, MapPinIcon, SparklesIcon, StarIcon, Cog6ToothIcon, BookOpenIcon, UserPlusIcon, WrenchIcon,
-    Squares2X2Icon, WrenchScrewdriverIcon, TrashIcon, AcademicCapIcon, PhotoIcon, XCircleIcon, ArrowUturnLeftIcon, ChevronUpIcon, ChevronDownIcon
+    Squares2X2Icon, WrenchScrewdriverIcon, XCircleIcon, ArrowUturnLeftIcon, ChevronUpIcon, ChevronDownIcon
 } from '@heroicons/react/24/outline';
-import { ShieldCheckIcon as ShieldCheckSolidIcon, WrenchScrewdriverIcon as WrenchScrewdriverSolidIcon } from '@heroicons/react/24/solid';
 import InfoRow from './Shared/InfoRow';
-import ReadableEditableField from '../CharacterSheet/Shared/ReadableEditableField';
 import ItemJournalView from './Shared/ItemJournalView';
 import ItemTextContentView from './Shared/ItemTextContentView';
 import BonusCard from './Shared/BonusCard';
