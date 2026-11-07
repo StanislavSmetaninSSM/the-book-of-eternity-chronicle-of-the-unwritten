@@ -420,9 +420,11 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         const newReward = Math.floor(meaningfulRewardThreshold);
                         if (oldReward < newReward) { // Only scale up
                             questsWereUpdated = true;
-                            const logMessage = language === 'ru'
-                              ? `Мир становится опаснее. Награда за квест «${quest.questName}» была увеличена с ${oldReward} XP до ${newReward} XP, чтобы оставаться актуальной.`
-                              : `The world grows more dangerous. The reward for quest '${quest.questName}' has been increased from ${oldReward} XP to ${newReward} XP to remain relevant.`;
+                            const logMessage = t('quest_reward_scaled_for_danger', {
+                              name: quest.questName,
+                              old: oldReward,
+                              new: newReward
+                            });
                             newLogs.push(logMessage);
 
                             const newRewards = { ...quest.rewards, experience: newReward };
@@ -443,7 +445,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return currentGameState;
             });
         }
-    }, [gameState, language, setGameState, setPresentationGameLog, t]);
+    }, [gameState, setGameState, setPresentationGameLog, t]);
 
     useEffect(() => {
         // This effect is the SINGLE SOURCE OF TRUTH for synchronizing all relevant states to gameContextRef.
@@ -1126,15 +1128,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
                 gameplayMutationRevisionRef.current !== initialGameplayRevision;
             if (blocked) {
-                setError(language === 'ru'
-                    ? 'Загрузка недоступна во время хода или изменения игры. Дождитесь завершения действия и повторите загрузку.'
-                    : 'Loading is unavailable while the game is changing. Wait for the current action and retry.');
+                setError(t('load_unavailable_while_game_changing'));
                 return false;
             }
             return true;
         };
         return canCommit() ? canCommit : null;
-    }, [language, setError]);
+    }, [t, setError]);
 
     const allManagers = useMemo(() => {
         const saveLoadManager = createSaveLoadManager({
@@ -1193,16 +1193,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // session: the checkpoint's role is not the current connection's role.
     const resumeInterruptedTurnSafely = useCallback((recovery: Parameters<typeof allManagers.resumeInterruptedTurn>[0]) => {
         if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none') || activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current) {
-            setError(language === 'ru'
-                ? 'Возобновление доступно только для локального прерванного хода, когда игра не занята.'
-                : 'Interrupted-turn recovery requires a local checkpoint and an idle game.');
+            setError(t('interrupted_turn_recovery_needs_local_idle_game'));
             return;
         }
         try {
             const localized = localizeLegacyState(recovery.baseState, recovery.context);
             return allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
         } catch (error) { setError(formatError(error)); return; }
-    }, [allManagers, language, setError]);
+    }, [allManagers, t, setError]);
 
     const resumeInterruptedGameTurn = useCallback(async () => {
         const initialState = gameStateRef.current;
@@ -1212,9 +1210,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             gameStateRef.current !== initialState || syncRevisionRef.current !== initialSyncRevision ||
             gameplayMutationRevisionRef.current !== initialGameplayRevision;
         const reject = () => {
-            setError(language === 'ru'
-                ? 'Состояние изменилось или игра занята; повторите запрос позже.'
-                : 'The state changed or the game is busy; try again later.');
+            setError(t('interrupted_turn_recovery_resume_state_changed'));
             return false;
         };
         if (blocked()) return reject();
@@ -1222,9 +1218,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (blocked()) return reject();
         if (!recovery) return false;
         if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none')) {
-            setError(language === 'ru'
-                ? 'Этот контрольный пункт создан в прежней сетевой версии игры, поэтому ход не возобновляется автоматически. Загрузите последнее сохранение вручную.'
-                : 'This checkpoint was created by the former networked version of the game, so the turn is not resumed automatically. Load the latest save manually.');
+            setError(t('interrupted_turn_recovery_legacy_network_checkpoint'));
             return false;
         }
         let localized: ReturnType<typeof localizeLegacyState>;
@@ -1238,7 +1232,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setError(null);
         void allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
         return true;
-    }, [allManagers, interruptedTurnRecovery, language, setError]);
+    }, [allManagers, interruptedTurnRecovery, t, setError]);
 
     const discardInterruptedGameTurn = useCallback(async () => {
         const initialState = gameStateRef.current;
@@ -1246,15 +1240,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const gameplayRevision = gameplayMutationRevisionRef.current;
         const blocked = () => !!activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current ||
             gameStateRef.current !== initialState || syncRevisionRef.current !== syncRevision || gameplayMutationRevisionRef.current !== gameplayRevision;
-        const reject = () => setError(language === 'ru'
-            ? 'Отмена сохранённого прерванного хода недоступна во время изменения игры. Повторите запрос после завершения текущего действия.'
-            : 'Discarding an interrupted turn is unavailable while the game is changing. Try again after the current action.');
+        const reject = () => setError(t('interrupted_turn_discard_unavailable'));
         if (blocked()) { reject(); return; }
         try {
             const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
             if (blocked()) { reject(); return; }
             if (!recovery) {
-                setError(language === 'ru' ? 'Сохранённый прерванный ход не найден.' : 'No interrupted-turn checkpoint was found.');
+                setError(t('interrupted_turn_checkpoint_not_found'));
                 return;
             }
             await cancelInterruptedArenaGmRequest();
@@ -1263,16 +1255,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             // checkpoint cannot be removed even if it appears while awaiting IO.
             const deleted = await clearInterruptedTurnRecoveryIfUnchanged(recovery);
             if (!deleted) {
-                setError(language === 'ru'
-                    ? 'Сохранённый ход изменился или был удалён. Проверьте текущее восстановление перед повтором.'
-                    : 'The checkpoint changed or was removed. Review the current recovery before trying again.');
+                setError(t('interrupted_turn_checkpoint_changed'));
                 return;
             }
             setInterruptedTurnRecovery(current => current === recovery ? null : current);
         } catch (error) {
             setError(formatError(error));
         }
-    }, [interruptedTurnRecovery, language, setError]);
+    }, [interruptedTurnRecovery, t, setError]);
 
     const recordCrash = useCallback((source: string, errorToRecord: unknown, componentStack?: string) => {
         const marker = markCrashDetected(source, errorToRecord, componentStack);
@@ -1318,9 +1308,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             gameplayMutationPendingRef.current ||
             gameplayMutationRevisionRef.current !== initialGameplayRevision;
         const rejectBusy = () => {
-            setError(language === 'ru'
-                ? 'Восстановление недоступно во время хода или изменения игры. Дождитесь завершения и повторите запрос.'
-                : 'Recovery is unavailable during a turn or game update. Wait for it to finish and try again.');
+            setError(t('crash_recovery_unavailable_while_game_busy'));
             return false;
         };
         if (recoveryBusy()) return rejectBusy();
@@ -1333,9 +1321,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         try {
             const data = await loadCrashRecoveryPoint();
             if (!data) {
-                setError(language === 'ru'
-                    ? 'Стабильное состояние для восстановления не найдено.'
-                    : 'No stable crash recovery state was found.');
+                setError(t('crash_recovery_state_not_found'));
                 return false;
             }
 
@@ -1344,9 +1330,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             // a local restore replaces the snapshot or overwrites newer state.
             if (recoveryBusy()) return rejectBusy();
             if (gameStateRef.current !== initialState || syncRevisionRef.current !== initialRevision) {
-                setError(language === 'ru'
-                    ? 'Состояние игры изменилось во время чтения восстановления. Повторите запрос, если хотите загрузить сохранение.'
-                    : 'The game state changed while recovery was loading. Retry if you want to load the checkpoint.');
+                setError(t('crash_recovery_state_changed'));
                 return false;
             }
             if (data.missingImageCount) {
@@ -1358,7 +1342,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             setError(formatError(e));
             return false;
         }
-    }, [language, restoreFromSaveData, setError]);
+    }, [t, restoreFromSaveData, setError]);
 
     useEffect(() => {
         if (turnNumber && turnNumber > 0 && gameState && lastSavedTurnRef.current !== turnNumber) {

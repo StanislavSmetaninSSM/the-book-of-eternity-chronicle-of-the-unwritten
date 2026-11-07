@@ -16,6 +16,7 @@ import { startScreen } from './startScreen';
 import { settings } from './settings';
 import { help } from './help';
 import { calendar } from './calendar';
+import { gameErrors } from './gameErrors';
 
 export const ui = {
   en: {
@@ -36,7 +37,8 @@ export const ui = {
     ...players.en,
     ...startScreen.en,
     ...settings.en,
-    ...calendar.en,    
+    ...calendar.en,
+    ...gameErrors.en,    
   },
   ru: {
     ...common.ru,
@@ -56,6 +58,7 @@ export const ui = {
     ...players.ru,
     ...startScreen.ru,
     ...settings.ru,
-    ...calendar.ru,    
+    ...calendar.ru,
+    ...gameErrors.ru,    
   }
 };
