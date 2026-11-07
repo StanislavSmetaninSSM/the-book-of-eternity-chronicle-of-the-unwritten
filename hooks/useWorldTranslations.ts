@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  areAllWorldTranslationsLoaded,
   ensureAllWorldTranslations,
   ensureWorldTranslations,
   isWorldTranslationsLoaded,
@@ -12,11 +13,14 @@ import {
  * the recorded universe (every dictionary is loaded then).
  */
 export function useWorldTranslations(universe: string | null | undefined): boolean {
-  const [ready, setReady] = useState(() => (universe === null ? false : isWorldTranslationsLoaded(universe)));
+  // `null` means "a save without a recorded universe": every dictionary is needed, so the
+  // gate may only open once all of them are in (or have failed).
+  const isReady = () => (universe === null ? areAllWorldTranslationsLoaded() : isWorldTranslationsLoaded(universe));
+  const [ready, setReady] = useState(isReady);
 
   useEffect(() => {
     let cancelled = false;
-    const sync = () => { if (!cancelled) setReady(universe === null ? false : isWorldTranslationsLoaded(universe)); };
+    const sync = () => { if (!cancelled) setReady(universe === null ? areAllWorldTranslationsLoaded() : isWorldTranslationsLoaded(universe)); };
     const unsubscribe = subscribeToWorldTranslations(sync);
     sync();
     const task = universe === null ? ensureAllWorldTranslations() : ensureWorldTranslations(universe);

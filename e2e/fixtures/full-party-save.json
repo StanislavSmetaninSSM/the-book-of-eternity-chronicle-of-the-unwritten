@@ -2630,6 +2630,7 @@
       },
       "allowHistoryManipulation": true,
       "cooperativeGameType": "FullParty",
+      "autoPassTurn": true,
       "uiControlScale": 1,
       "uiFontScale": 1,
       "showImageSourceInfo": false,
@@ -2921,7 +2922,7 @@
       }
     ],
     "currentLocation": {
-      "locationId": "loc-1793903351567-tp8zi5r",
+      "locationId": "loc-1794031449477-3gao1ox",
       "initialId": "start-loc-01",
       "name": "A New Beginning",
       "coordinates": {
@@ -2952,11 +2953,6 @@
     "npcSkillMasteryData": [],
     "lootForCurrentTurn": [
       {
-        "baseName": "item_1",
-        "quality": "Common",
-        "bonuses": []
-      },
-      {
         "baseName": "item_2",
         "quality": "Common",
         "bonuses": []
@@ -2964,72 +2960,67 @@
       {
         "baseName": "item_3",
         "quality": "Common",
-        "bonuses": []
-      },
-      {
-        "baseName": "item_4",
-        "quality": "Common",
-        "bonuses": []
+        "bonuses": [
+          "generate_stat_bonus_from_1_to_1 (Rule 5.11.2.2)"
+        ]
       },
       {
         "baseName": "item_5",
         "quality": "Common",
-        "bonuses": [
-          "generate_stat_bonus_from_1_to_1 (Rule 5.11.2.2)"
-        ]
+        "bonuses": []
       }
     ],
     "preGeneratedDices1d20": [
-      14,
       18,
-      13,
+      4,
       14,
+      8,
+      16,
+      4,
+      13,
+      10,
+      6,
       15,
+      17,
+      12,
+      12,
+      11,
+      8,
       18,
-      8,
-      14,
-      15,
-      13,
-      8,
+      19,
+      17,
+      16,
+      20,
+      9,
+      2,
+      16,
+      3,
+      1,
+      2,
+      4,
       15,
       19,
-      18,
-      13,
-      14,
+      6,
+      12,
       9,
       11,
-      15,
+      10,
+      3,
+      10,
+      5,
+      3,
       14,
+      5,
       19,
-      7,
-      6,
-      20,
-      6,
-      8,
-      6,
-      16,
-      10,
-      10,
-      8,
-      12,
-      16,
-      15,
-      8,
-      19,
+      9,
       1,
-      7,
-      13,
-      20,
-      5,
-      14,
-      5,
-      4,
-      6,
-      12,
-      10,
-      5,
-      12,
-      4
+      9,
+      19,
+      3,
+      2,
+      19,
+      9,
+      12
     ],
     "worldState": {
       "day": 1,
@@ -3347,7 +3338,7 @@
     ],
     "activePlayerIndex": 0,
     "currentLocationData": {
-      "locationId": "loc-1793903351567-tp8zi5r",
+      "locationId": "loc-1794031449477-3gao1ox",
       "initialId": "start-loc-01",
       "name": "A New Beginning",
       "coordinates": {

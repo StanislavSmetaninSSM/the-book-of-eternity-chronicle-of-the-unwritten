@@ -41,6 +41,9 @@ export const translations: Record<string, Record<string, string>> = {
 };
 
 const loadedPacks = new Set<WorldTranslationPackId>();
+// A dictionary that failed to download must not keep the game behind a loading gate:
+// strings fall back to their keys, and the next app start retries the download.
+const failedPacks = new Set<WorldTranslationPackId>();
 const loadingPacks = new Map<WorldTranslationPackId, Promise<void>>();
 const packListeners = new Set<() => void>();
 
@@ -63,10 +66,18 @@ export function worldPackIdForUniverse(universe: unknown): WorldTranslationPackI
   }
 }
 
-/** True when the dictionary for this universe is already merged (or none is needed). */
+/** True when the dictionary for this universe is merged or no longer worth waiting for. */
 export function isWorldTranslationsLoaded(universe: unknown): boolean {
   const packId = worldPackIdForUniverse(universe);
-  return !packId || loadedPacks.has(packId);
+  return !packId || loadedPacks.has(packId) || failedPacks.has(packId);
+}
+
+/**
+ * True once every dictionary has been merged or has failed. Saves written before the
+ * universe was recorded need this: they show keys for whatever is missing.
+ */
+export function areAllWorldTranslationsLoaded(): boolean {
+  return (Object.keys(worldTranslationPacks) as WorldTranslationPackId[]).every(isWorldTranslationsLoaded);
 }
 
 function loadPack(packId: WorldTranslationPackId): Promise<void> {
@@ -79,8 +90,10 @@ function loadPack(packId: WorldTranslationPackId): Promise<void> {
       loadedPacks.add(packId);
     })
     .catch(error => {
-      // A missing dictionary must not break the game: messages fall back to keys.
+      // A missing dictionary must not break the game: messages fall back to keys and the
+      // gate opens, while `loadingPacks`/`failedPacks` keep a later call free to retry.
       console.error(`Could not load the ${packId} translation pack`, error);
+      failedPacks.add(packId);
     })
     .finally(() => {
       loadingPacks.delete(packId);

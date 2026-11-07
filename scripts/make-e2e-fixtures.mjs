@@ -79,9 +79,25 @@ try {
     },
   });
 
+  // A one-pixel PNG: enough to prove that an image survives the store round trip.
+  const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const imagePrompt = localSave.gameState.players[0].image_prompt;
+  const imageSave = {
+    ...localSave,
+    gameState: {
+      ...localSave.gameState,
+      playerCharacter: {...localSave.gameState.playerCharacter, image_prompt: imagePrompt},
+      imageCache: {[imagePrompt]: {src: tinyPng, sourceProvider: 'Custom Upload'}},
+    },
+  };
+  // Saves written before the universe was recorded need every dictionary: the app must
+  // still open them, and this fixture keeps that path covered.
+  delete imageSave.gameContext.gameSettings.gameWorldInformation.universe;
+
   await mkdir(new URL('../e2e/fixtures/', import.meta.url), {recursive: true});
   await writeFile(new URL('../e2e/fixtures/full-party-save.json', import.meta.url), JSON.stringify(localSave, null, 2));
   await writeFile(new URL('../e2e/fixtures/legacy-network-save.json', import.meta.url), JSON.stringify(legacySave, null, 2));
+  await writeFile(new URL('../e2e/fixtures/save-with-image.json', import.meta.url), JSON.stringify(imageSave, null, 2));
   console.log('Wrote e2e fixtures.');
 } finally {
   await vite.close();

@@ -244,6 +244,8 @@ export const general = {
 
     "item_consumed_creating_empty": "{itemName} was consumed. An empty container has been added to your inventory.",
     "npc_item_consumed_creating_empty": "{npcName} consumed {itemName}. An empty container has been added to their inventory.",
+    "item_consumed_creating_empty_npc": "{npcName} consumed {itemName}. An empty container has been added to their inventory.",
+    "turn_passed_to": "Turn passed to {name}.",
     "empty_item_name": "Empty {itemName}",
     "empty_item_desc": "An empty container, formerly a {itemName}.",
 
@@ -499,6 +501,8 @@ export const general = {
     
     "item_consumed_creating_empty": "{itemName} был использован. В ваш инвентарь добавлен пустой контейнер.",
     "npc_item_consumed_creating_empty": "{npcName} использовал(а) {itemName}. В его/ее инвентарь добавлен пустой контейнер.",
+    "item_consumed_creating_empty_npc": "{npcName} использовал(а) {itemName}. В его/ее инвентарь добавлен пустой контейнер.",
+    "turn_passed_to": "Ход переходит к {name}.",
     "empty_item_name": "Пустой {itemName}",
     "empty_item_desc": "Пустой контейнер, ранее бывший {itemName}.",
 
