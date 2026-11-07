@@ -25,7 +25,18 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       - name: Unit and integration tests
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/unit-tests.log
+      # The raw log lives behind a signed Azure URL, so surface the failing cases as
+      # annotations: they are readable from the pull request without downloading it.
+      - name: Report failing tests
+        if: failure()
+        run: |
+          if [ -f /tmp/unit-tests.log ]; then
+            grep -E "^not ok" /tmp/unit-tests.log | head -20 | sed 's/^/::error::/' || true
+            tail -25 /tmp/unit-tests.log | sed 's/^/::error::log: /' || true
+          fi
       - name: Production build
         run: npm run build
 
