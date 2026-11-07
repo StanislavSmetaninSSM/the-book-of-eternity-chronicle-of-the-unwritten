@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
-import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, GlobeAltIcon, PaintBrushIcon, ExclamationTriangleIcon, CloudArrowDownIcon } from '@heroicons/react/24/outline';
 import Modal from './Modal';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, loadStartScreenDraft, saveStartScreenFormDraft, saveStartScreenWorldDraft, clearStartScreenDraft, type PreparedSaveFile } from '../utils/fileManager';
 import ConfirmationModal from './ConfirmationModal';
@@ -1282,6 +1282,40 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                         {t("Load Autosave")} ({formatTimestamp(autosaveTimestamp, t) || t('Never')})
                     </button>
                 </div>
+                {dbSaveSlots.length > 0 && (
+                    <div className="mt-4 rounded-md border border-gray-700 bg-gray-900/40 p-4 text-left" data-testid="start-screen-slots">
+                        <h4 className="mb-3 font-semibold text-gray-300">{t('Database Saves')}</h4>
+                        <div className="max-h-48 space-y-2 overflow-y-auto pr-2">
+                            {dbSaveSlots.map(slot => (
+                                <div key={slot.slotId} className="flex items-center gap-2 rounded-md bg-gray-800/50 p-2">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate font-semibold text-white">
+                                            {t('Slot')} {slot.slotId}: {slot.playerName} ({t('Lvl {level}', { level: slot.playerLevel })})
+                                        </p>
+                                        <p className="truncate text-xs text-gray-400">
+                                            {slot.locationName} - {t('Turn')} {slot.turnNumber} - {formatTimestamp(slot.timestamp, t)}
+                                        </p>
+                                        {slot.imagesOmitted && (
+                                            <p className="text-xs text-yellow-300/90" data-testid={`start-screen-slot-without-images-${slot.slotId}`}>
+                                                {t('slot_without_images')}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => onLoadFromSlot(slot.slotId)}
+                                        className="rounded-md bg-cyan-600/20 p-2 text-cyan-300 transition-colors hover:bg-cyan-600/40"
+                                        title={t('Load')}
+                                        aria-label={`${t('Load')}: ${t('Slot')} ${slot.slotId}`}
+                                        data-testid={`start-screen-load-slot-${slot.slotId}`}
+                                    >
+                                        <CloudArrowDownIcon className="h-5 w-5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 <div className="mt-4 border-t border-gray-700 pt-4 space-y-4">
                     <div className="flex flex-col sm:flex-row gap-4">
                         <button type="button" onClick={handleSaveConfiguration} className="flex-1 bg-gray-700/60 text-gray-300 font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-colors">{t("Save Configuration")}</button>

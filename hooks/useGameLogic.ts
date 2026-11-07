@@ -35,6 +35,8 @@ import {
     saveCrashRecoveryPoint,
     loadInterruptedTurnRecovery,
     clearInterruptedTurnRecoveryIfUnchanged,
+    listDBSlots,
+    sweepUnusedImages,
 } from '../utils/fileManager';
 import type { CrashRecoveryMarker, CrashRecoveryMetadata, CrashRecoveryReason, InterruptedTurnRecovery } from '../utils/fileManager';
 import { initializeAndPreviewSound, playNotificationSound } from '../utils/soundManager';
@@ -922,6 +924,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 setCrashRecoveryMarker(getCrashRecoveryMarker());
                 const interruptedTurn = await loadInterruptedTurnRecovery();
                 if (interruptedTurn) setInterruptedTurnRecovery(interruptedTurn);
+                // Database slots are offered on the start screen, so read them before
+                // the game begins instead of only after the first save or delete.
+                setDbSaveSlots(await listDBSlots());
             } catch (e) {
                 console.error("Failed to fetch initial save data from DB", e);
             }
@@ -1569,6 +1574,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             return { ...prev, imageCache: newCache };
         });
+        // The blob stays while an autosave or slot still points at it; a forced sweep
+        // frees the ones nothing references any more instead of waiting for a save.
+        void sweepUnusedImages({ force: true }).catch(() => undefined);
     }, [setPresentationState]);
 
     // FIX: Added clearImageCache function and exported it from the useGameLogic hook.
@@ -1577,6 +1585,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (!prev) return null;
             return { ...prev, imageCache: {} };
         });
+        void sweepUnusedImages({ force: true }).catch(() => undefined);
     }, [setPresentationState]);
 
     const regenerateLastResponse = useCallback(async (): Promise<boolean> => {

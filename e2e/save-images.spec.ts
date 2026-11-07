@@ -198,6 +198,7 @@ test.describe('images across a real browser session', () => {
     await importFiles(page, fixturePath('save-with-image.json'));
     await expect(page.getByTestId('chat-window')).toBeVisible();
 
+    await expect(page.locator('[data-testid^="side-tab-"]').first()).toBeVisible();
     const tabIds = await page.locator('[data-testid^="side-tab-"]')
       .evaluateAll(nodes => nodes.map(node => node.getAttribute('data-testid') as string));
     expect(tabIds.length).toBeGreaterThan(5);
@@ -225,16 +226,14 @@ test.describe('database slots and cache maintenance', () => {
     await expect(page.getByText(/^Slot 1:/)).toBeVisible();
     expect(await page.getByTestId('slot-without-images-1').count()).toBe(0);
 
+    // The slot must be reachable again from a fresh start screen, not only in-game.
     await page.reload();
-    await page.getByRole('button', { name: /^Load Autosave/ }).click();
-    await expect(page.getByTestId('chat-window')).toBeVisible();
+    await expect(page.getByTestId('start-screen-slots')).toBeVisible();
+    await expect(page.getByTestId('start-screen-slots')).toContainText('Slot 1:');
+    expect(await page.getByTestId('start-screen-slot-without-images-1').count()).toBe(0);
 
-    await page.getByTestId('side-tab-System').click();
-    await page.getByRole('button', { name: 'Load', exact: true }).first().click();
+    await page.getByTestId('start-screen-load-slot-1').click();
     await expect(page.getByTestId('chat-window')).toBeVisible();
-
-    // Loading keeps the System panel open, so step back to the tab grid first.
-    await page.getByRole('button', { name: 'Back to Menu' }).click();
     await page.getByTestId('side-tab-ImageCache').click();
     await expect(page.locator('img[src^="data:image/png"]').first()).toBeVisible();
   });
@@ -246,7 +245,7 @@ test.describe('database slots and cache maintenance', () => {
     await page.goto('/');
     await importFiles(page, fixturePath('save-with-image.json'));
     await expect(page.getByTestId('chat-window')).toBeVisible();
-    expect(await countStoredImages(page)).toBeGreaterThan(0);
+    await expect.poll(() => countStoredImages(page), { timeout: 15_000 }).toBeGreaterThan(0);
 
     await page.getByTestId('side-tab-ImageCache').click();
     const thumbnail = page.locator('img[src^="data:image/png"]').first();
@@ -275,6 +274,7 @@ test.describe('database slots and cache maintenance', () => {
     await expect(page.getByTestId('chat-window')).toBeVisible();
 
     await page.getByRole('button', { name: 'Switch Language' }).click();
+    await expect(page.locator('[data-testid^="side-tab-"]').first()).toBeVisible();
     const tabIds = await page.locator('[data-testid^="side-tab-"]')
       .evaluateAll(nodes => nodes.map(node => node.getAttribute('data-testid') as string));
     expect(tabIds.length).toBeGreaterThan(5);
