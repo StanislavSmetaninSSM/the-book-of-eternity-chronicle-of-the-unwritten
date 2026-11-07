@@ -135,7 +135,7 @@ const ActiveSkillDetailsRenderer: React.FC<ActiveSkillDetailsProps> = ({ skill, 
                 <div className="bg-gray-800/50 p-3 rounded-md space-y-2 text-sm">
                     <DetailRow label={t("Base Value/Duration")} value={`${scalingCalculations.baseValue}% ${scalingCalculations.baseDuration != null ? `/ ${t('{duration} turns', { duration: scalingCalculations.baseDuration })}` : ''}`} />
                     <div className="pl-4 border-l-2 border-gray-700 space-y-1">
-                        <DetailRow label={t("Bonus from {char}", { char: t(skill.scalingCharacteristic as any) })} value={`+${scalingCalculations.charBonusPercent}% (${t('Value')}: ${scalingCalculations.relevantCharValue})`} />
+                        <DetailRow label={t("Bonus from {char}", { char: t(skill.scalingCharacteristic) })} value={`+${scalingCalculations.charBonusPercent}% (${t('Value')}: ${scalingCalculations.relevantCharValue})`} />
                         <DetailRow label={t("Bonus from Level")} value={`+${scalingCalculations.levelBonusPercent}% (${t('Level')} ${playerCharacter?.level})`} />
                         <DetailRow label={t("Bonus from Mastery")} value={`+${scalingCalculations.masteryBonusPercent}% (${t('Level')} ${masteryLevel})`} />
                     </div>

@@ -3,7 +3,7 @@
 
 
 
-import { GameState, GameResponse, PlayerCharacter, Characteristics, GameSettings, Quest, Location, Item, NPC, Faction, ActiveSkill, PassiveSkill, Wound, QuestUpdate, UnlockedMemory, ActiveThreat, Project, CompletedProject, NPCSkillChange, FactionRank, Effect, EnemyCombatObject, AllyCombatObject, Combatant, NpcRelationship } from '../types';
+import { CurrentActivity, GameState, GameResponse, PlayerCharacter, Characteristics, GameSettings, Quest, Location, Item, NPC, Faction, ActiveSkill, PassiveSkill, Wound, QuestUpdate, UnlockedMemory, ActiveThreat, Project, CompletedProject, NPCSkillChange, FactionRank, Effect, EnemyCombatObject, AllyCombatObject, Combatant, NpcRelationship } from '../types';
 import { recalculateAllWeights } from './inventoryManager';
 import { recalculateDerivedStats } from './gameContext';
 import { generateFactionColor } from './colorUtils';
@@ -140,7 +140,7 @@ const mergeById = (arr1: any[], arr2: any[], idField: string, nameField?: string
 
     const indexItem = (item: any, idx: number) => {
         if (!isObject(item)) return;
-        const typedItem = item as any;
+        const typedItem = item as Record<string, unknown>;
 
         if (compositeKey) {
             const key = compositeKey(typedItem);
@@ -168,7 +168,7 @@ const mergeById = (arr1: any[], arr2: any[], idField: string, nameField?: string
             mergedList.push(item);
             continue;
         }
-        const typedItem = item as any; // Explicit cast to any to avoid TS errors on dynamic property access
+        const typedItem = item as Record<string, unknown>;
 
         let matchIndex: number | undefined;
 
@@ -219,10 +219,10 @@ const mergeIdentifiedStageEntities = (existing: any[], incoming: any[], idField:
     const result = [...existing];
     for (const item of incoming) {
         if (!isObject(item)) { result.push(item); continue; }
-        const location = item as any;
+        const location = item as Record<string, unknown>;
         const candidates = result.map((value, index) => ({ value, index })).filter(({ value }) => {
             if (!isObject(value)) return false;
-            const other = value as any;
+            const other = value as Record<string, unknown>;
             const sharedId = location[idField] && other[idField] && location[idField] === other[idField];
             const sharedTag = location.initialId && other.initialId && location.initialId === other.initialId;
             const conflictingId = location[idField] && other[idField] && location[idField] !== other[idField];
@@ -738,9 +738,9 @@ export const mergeStageResponses = (previous: any, next: any, context: { encount
     const merged = deepMergeResponses(previous, next);
     const cleared = ['enemiesData', 'alliesData'].filter(key => Array.isArray(next?.[key]) && next[key].length === 0);
     if (!cleared.length) return merged;
-    const allPriorCombatants = [...asArray(previous?.enemiesData), ...asArray(previous?.alliesData)] as any[];
-    const candidates = cleared.flatMap(key => asArray(previous?.[key])) as any[];
-    const updates = [...asArray(merged.NPCsData)] as any[];
+    const allPriorCombatants = [...asArray(previous?.enemiesData), ...asArray(previous?.alliesData)];
+    const candidates = cleared.flatMap(key => asArray(previous?.[key]));
+    const updates = [...asArray(merged.NPCsData)];
     const parseHealth = (value: unknown): number | undefined => {
         if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : undefined;
         if (typeof value !== 'string' || !/^\d+(?:\.\d+)?%?$/.test(value.trim())) return undefined;
@@ -766,7 +766,7 @@ export const mergeStageResponses = (previous: any, next: any, context: { encount
     }
     if (changed) merged.NPCsData = updates;
 
-    const effectUpdates = [...asArray(merged.NPCEffectChanges)] as any[];
+    const effectUpdates = [...asArray(merged.NPCEffectChanges)];
     let effectsChanged = false;
     for (const combatant of candidates) {
         if (!combatant?.NPCId || combatant.isGroup || allPriorCombatants.filter(c => c?.NPCId === combatant.NPCId).length !== 1) continue;
@@ -776,7 +776,7 @@ export const mergeStageResponses = (previous: any, next: any, context: { encount
         const matching = effectUpdates.filter(u => u?.NPCId === npc.NPCId || (!u?.NPCId && u?.NPCName === npc.name && (context.encounteredNPCs || []).filter(n => n.name === npc.name).length === 1));
         if (matching.length > 1) continue;
         const existing = matching[0];
-        const reported = [...asArray(combatant.activeBuffs), ...asArray(combatant.activeDebuffs)] as any[];
+        const reported = [...asArray(combatant.activeBuffs), ...asArray(combatant.activeDebuffs)];
         // Only mint an ID for an independently described effect that cannot
         // already be the same stored or explicitly reported effect. Duration is
         // deliberately excluded from the identity comparison because it ticks.
@@ -862,18 +862,18 @@ const applyChangesToPlayer = (player: PlayerCharacter, changes: Partial<GameResp
                 const xpCompensation = Math.max(25, Math.round(newPlayer.experienceForNextLevel * 0.05));
                 newPlayer.experience += xpCompensation;
                 logs.push(t('stats_increased_capped', { 
-                    statName: t(charName as any),
+                    statName: t(charName),
                     statCap: statCap,
                     xp: xpCompensation 
                 }));
             } else {
                 (newPlayer.characteristics[charKey] as number) += 1;
-                logs.push(t('stats_increased_success', { statName: t(charName as any) }));
+                logs.push(t('stats_increased_success', { statName: t(charName) }));
             }
         });
     }
     if (changes.statsDecreased) asArray(changes.statsDecreased).forEach(charName => { (newPlayer.characteristics[`standard${charName.charAt(0).toUpperCase() + charName.slice(1)}` as keyof Characteristics] as number) -= 1; });
-    if (changes.setCharacteristics) for (const charName in changes.setCharacteristics) { (newPlayer.characteristics[`standard${charName.charAt(0).toUpperCase() + charName.slice(1)}` as keyof Characteristics] as number) = (changes.setCharacteristics as any)[charName]; }
+    if (changes.setCharacteristics) for (const charName in changes.setCharacteristics) { (newPlayer.characteristics[`standard${charName.charAt(0).toUpperCase() + charName.slice(1)}` as keyof Characteristics] as number) = changes.setCharacteristics[charName]; }
 
     const levelUpResult = checkAndApplyLevelUp(newPlayer, t);
     newPlayer = levelUpResult.pc;
@@ -991,7 +991,7 @@ const applyChangesToPlayer = (player: PlayerCharacter, changes: Partial<GameResp
         itemsToAdd.forEach(newItem => {
             const existingStack = newPlayer.inventory.find((i: Item) => i.name === newItem.name && !i.equipmentSlot);
             if (existingStack) existingStack.count += 1;
-            else { (newItem as any).existedId = generateId('item'); newPlayer.inventory.push(newItem); }
+            else { newItem.existedId = generateId('item'); newPlayer.inventory.push(newItem); }
         });
     }
     
@@ -1257,7 +1257,7 @@ export const processAndApplyResponse = (
     const transferBatchConflict = asArray(changes.inventoryTransfers).length > 0 && (
         hasLegacyCommands(mutableResponse) || ambiguousTopItems.length > 0 ||
         Object.values(changes.otherPlayersInteractions || {}).some(commands => asArray(commands).some(hasLegacyCommands)) ||
-        ['NPCInventoryAdds', 'NPCInventoryUpdates', 'NPCInventoryRemovals', 'NPCEquipmentChanges', 'NPCInventoryResourcesChanges'].some(key => asArray((changes as any)[key]).length > 0) ||
+        ['NPCInventoryAdds', 'NPCInventoryUpdates', 'NPCInventoryRemovals', 'NPCEquipmentChanges', 'NPCInventoryResourcesChanges'].some(key => asArray(changes[key as keyof typeof changes] as unknown).length > 0) ||
         asArray(changes.NPCsData).some(npc => !findNpcForUpdate(npc, newState.encounteredNPCs) && asArray(npc.inventory).length > 0)
     );
     // The other changes may be consequences of the deferred inventory command
@@ -1307,8 +1307,8 @@ export const processAndApplyResponse = (
             baseForMerge = newState.currentLocationData;
         }
 
-        const newEvent = (changes.currentLocationData as any).lastEventsDescription;
-        const { eventDescriptions, lastEventsDescription, ...restOfLocationData } = changes.currentLocationData as any;
+        const newEvent = changes.currentLocationData.lastEventsDescription;
+        const { eventDescriptions, lastEventsDescription, ...restOfLocationData } = changes.currentLocationData;
         
         let mergedLocation = deepMergeResponses(baseForMerge, restOfLocationData) as Location;
         
@@ -1351,7 +1351,7 @@ export const processAndApplyResponse = (
             // repeated arrays and add numeric deltas before applying once, so
             // level-up and other per-turn processing still run only once.
             const deltaKeys = new Set(['currentHealthChange', 'currentEnergyChange', 'moneyChange', 'experienceGained']);
-            const mergedChanges = (changes.otherPlayersInteractions as any)[playerId].reduce((acc: any, cmd: any) => {
+            const mergedChanges = changes.otherPlayersInteractions[playerId].reduce((acc: Record<string, unknown>, cmd: any) => {
                 if (!isObject(cmd)) return acc;
                 for (const [key, value] of Object.entries(cmd)) {
                     if (value === null || value === undefined) continue;
@@ -1950,29 +1950,32 @@ export const processAndApplyResponse = (
             Object.defineProperty(newState.completedInventoryTransfers, id, { value: signature, enumerable: true, writable: true, configurable: true });
         }
     }
+    // One resource change patches one NPC item; a change already spent must not patch a second
+    // item with the same name.
+    const patchedResourceItems = new Set<Item>();
     if (!deferNpcTransferBatch) asArray(changes.NPCInventoryResourcesChanges).forEach(change => {
         const npc = findNpcForUpdate(change, newState.encounteredNPCs);
         if (npc && npc.inventory) {
-            const itemIndex = npc.inventory.findIndex(item => 
-                ((change.itemId && item.existedId === change.itemId) || 
-                (!change.itemId && item.name === change.itemName)) && !(item as any)._patched_resource_consumption
+            const itemIndex = npc.inventory.findIndex(item =>
+                ((change.itemId && item.existedId === change.itemId) ||
+                (!change.itemId && item.name === change.itemName)) && !patchedResourceItems.has(item)
             );
     
             if (itemIndex > -1) {
                 const item = npc.inventory[itemIndex];
                 const oldResource = item.resource;
-                const resourceValue = (change as any).newResourceValue ?? (change as any).resource;
+                const resourceValue = change.newResourceValue ?? change.resource;
     
                 if (resourceValue !== undefined) {
                     item.resource = resourceValue;
                 }
-                if ((change as any).maximumResource !== undefined) {
-                    item.maximumResource = (change as any).maximumResource;
+                if (change.maximumResource !== undefined) {
+                    item.maximumResource = change.maximumResource;
                 }
-                if ((change as any).resourceType !== undefined) {
-                    item.resourceType = (change as any).resourceType;
+                if (change.resourceType !== undefined) {
+                    item.resourceType = change.resourceType;
                 }
-                (item as any)._patched_resource_consumption = true;
+                patchedResourceItems.add(item);
     
                 if (item.isConsumption && oldResource !== undefined && oldResource > 0 && item.resource === 0) {
                     logsToAdd.push(t('item_consumed_creating_empty_npc', { itemName: item.name, npcName: npc.name }));
@@ -2018,7 +2021,7 @@ export const processAndApplyResponse = (
 
     asArray(changes.NPCActiveSkillChanges).forEach(c => { const npc = findNpcForUpdate(c, newState.encounteredNPCs); if(npc) applySkillChanges(npc, c, false); });
     asArray(changes.NPCPassiveSkillChanges).forEach(c => { const npc = findNpcForUpdate(c, newState.encounteredNPCs); if(npc) applySkillChanges(npc, c, true); });
-    asArray(changes.NPCActivityUpdates).forEach(u => { const npc = findNpcForUpdate(u, newState.encounteredNPCs); if (npc) npc.currentActivity = !npc.currentActivity ? u.activityUpdate as any : deepMergeResponses(npc.currentActivity, u.activityUpdate); });
+    asArray(changes.NPCActivityUpdates).forEach(u => { const npc = findNpcForUpdate(u, newState.encounteredNPCs); if (npc) npc.currentActivity = !npc.currentActivity ? u.activityUpdate as CurrentActivity : deepMergeResponses(npc.currentActivity, u.activityUpdate); });
     asArray(changes.completeNPCActivities).forEach(c => archiveNpcActivity(c, findNpcForUpdate(c, newState.encounteredNPCs)));
     
     // --- HANDLING NEW COMMANDS ---
@@ -2227,7 +2230,7 @@ export const processAndApplyResponse = (
         if (index < 0) continue;
         const previousIds = new Set<string>(asArray(baseState.players[index]?.inventory)
             .map(item => item?.existedId).filter((id): id is string => !!id));
-        for (const command of asArray(commands as any)) {
+        for (const command of asArray(commands)) {
             if (command?.itemJournalUpdates) {
                 applyItemJournals(asArray(command.itemJournalUpdates), newState.players[index].inventory || [], previousIds);
                 delete command.itemJournalUpdates;
@@ -2301,14 +2304,6 @@ export const processAndApplyResponse = (
             };
         }
         return ally;
-    });
-
-    newState.encounteredNPCs.forEach(npc => {
-        if (npc?.inventory) {
-            npc.inventory.forEach(item => {
-                delete (item as any)._patched_resource_consumption;
-            });
-        }
     });
 
     // --- AUTO-LOCK LOGIC START ---

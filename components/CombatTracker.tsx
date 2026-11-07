@@ -212,7 +212,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                                 )}
                             </div>
                              {isGroup ? (
-                                <p className="text-xs text-gray-400 uppercase tracking-wider">{t('{count}x {unitName} ({type})', { count: combatant.count || 0, unitName: t(combatant.unitName as any), type: t(combatant.type as any) })}</p>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider">{t('{count}x {unitName} ({type})', { count: combatant.count || 0, unitName: t(combatant.unitName), type: t(combatant.type) })}</p>
                             ) : (
                                 <p className="text-xs text-gray-400 uppercase tracking-wider">{t(combatant.type)}</p>
                             )}

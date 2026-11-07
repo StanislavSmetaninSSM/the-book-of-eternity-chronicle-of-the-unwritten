@@ -149,7 +149,7 @@ export const PartyStatus: React.FC<PartyStatusProps> = ({
                                     </div>
                                     <div className="overflow-hidden">
                                         <p className={`font-bold truncate ${isActive ? 'text-yellow-200' : 'text-white'}`}>{player.name}</p>
-                                        <p className="text-xs text-gray-400 truncate">{t('Level {level} {charClass}', { level: player.level, charClass: t(player.class as any) })}</p>
+                                        <p className="text-xs text-gray-400 truncate">{t('Level {level} {charClass}', { level: player.level, charClass: t(player.class) })}</p>
                                     </div>
                                 </div>
                                 <div className="space-y-2 text-sm">

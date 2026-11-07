@@ -90,7 +90,7 @@ const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, g
                                     </div>
                                     <div className="flex-1">
                                         <p className="font-semibold text-gray-200">{player.name}</p>
-                                        <p className="text-sm text-gray-400">{t('Level {level} {charClass}', { level: player.level, charClass: t(player.class as any) })}</p>
+                                        <p className="text-sm text-gray-400">{t('Level {level} {charClass}', { level: player.level, charClass: t(player.class) })}</p>
                                     </div>
                                 </button>
                                 <div className="mt-2 pt-2 border-t border-gray-700/50 flex flex-wrap gap-2">
