@@ -362,7 +362,7 @@ const ItemDetailsRenderer: React.FC<ItemDetailsProps> = (props) => {
                         <div>
                              <SectionHeader title={t("Disassembles To")} icon={WrenchIcon} />
                              <ul className="list-disc list-inside space-y-1 text-gray-300 pl-2">
-                                {item.disassembleTo.map((m: any) => <li key={m.materialName}>{m.quantity}x {m.materialName}</li>)}
+                                {item.disassembleTo.map(m => <li key={m.materialName}>{m.quantity}x {m.materialName}</li>)}
                              </ul>
                              <div className="pt-2">
                                 <button

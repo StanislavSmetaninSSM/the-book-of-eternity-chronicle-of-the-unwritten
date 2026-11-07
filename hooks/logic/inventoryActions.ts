@@ -253,7 +253,7 @@ export const createInventoryActions = (
                 return prevState;
             }
 
-            itemToDisassemble.disassembleTo.forEach((material: any) => {
+            itemToDisassemble.disassembleTo.forEach(material => {
                 const existingStackIndex = inventory.findIndex(i => 
                     i.name === material.materialName &&
                     !i.equipmentSlot &&
@@ -330,7 +330,7 @@ export const createInventoryActions = (
                 return prevState;
             }
 
-            itemToDisassemble.disassembleTo.forEach((material: any) => {
+            itemToDisassemble.disassembleTo.forEach(material => {
                 const existingStackIndex = inventory.findIndex(i => 
                     i.name === material.materialName &&
                     !i.equipmentSlot &&

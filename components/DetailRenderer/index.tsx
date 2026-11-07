@@ -25,30 +25,62 @@ import MarkdownRenderer from '../MarkdownRenderer';
 import RelationshipDetailsRenderer from './RelationshipDetailsRenderer';
 import PlayerCharacterDetailsRenderer from './PlayerCharacterDetailsRenderer';
 import BonusCard from './Shared/BonusCard';
+import type { CustomStateThreshold, RelationshipTier, StructuredBonus } from '../../types';
+import { asRecord } from '../../utils/typeGuards';
 
 // Type guards
-const isItem = (data: any): data is Item & { ownerType?: 'player' | 'npc', ownerId?: string, isEquippedByOwner?: boolean } => data && typeof data === 'object' && data.quality !== undefined && data.weight !== undefined;
-const isQuest = (data: any): data is Quest => data && typeof data === 'object' && data.questGiver !== undefined && Array.isArray(data.objectives);
-const isPassiveSkill = (data: any): data is PassiveSkill => data && typeof data === 'object' && data.skillName !== undefined && data.masteryLevel !== undefined;
-const isActiveSkill = (data: any): data is ActiveSkill => data && typeof data === 'object' && data.skillName !== undefined && data.masteryLevel === undefined && !isPassiveSkill(data);
-const isEffect = (data: any): data is Effect => data && typeof data === 'object' && data.effectType !== undefined && data.duration !== undefined;
-const isWound = (data: any): data is Wound & { type: 'wound' } => data && typeof data === 'object' && data.type === 'wound';
-const isNpc = (d: any): d is NPC => d && typeof d === 'object' && !Array.isArray(d) && (d.relationshipLevel !== undefined || d.NPCId !== undefined);
-const isCharacteristic = (data: any): data is { type: 'characteristic', name: string, value: number, description?: string } => data && typeof data === 'object' && data.type === 'characteristic';
-const isPrimaryStat = (data: any): data is { type: 'primaryStat', name: string, description: string } => data && typeof data === 'object' && data.type === 'primaryStat';
-const isLocation = (data: any): data is Location & { type: 'location' } => data && typeof data === 'object' && data.type === 'location' && data.externalDifficultyProfile !== undefined;
-const isPlayerCharacter = (d: any): d is PlayerCharacter & { type: 'playerCharacter' } => d && typeof d === 'object' && !Array.isArray(d) && d.type === 'playerCharacter';
-const isDerivedStat = (data: any): data is { type: 'derivedStat', name: string, value: string, breakdown: { label: string, value: string }[], description: string } => data && typeof data === 'object' && data.type === 'derivedStat';
-const isCombatAction = (data: any): data is CombatAction => data && typeof data === 'object' && Array.isArray(data.effects) && data.actionName !== undefined && data.quality === undefined && data.skillName === undefined;
-const isFaction = (data: any): data is Faction & { type: 'faction', perspectiveFor?: { name: string; rank: string } } => data && typeof data === 'object' && data.type === 'faction' && data.reputation !== undefined;
-const isCustomState = (data: any): data is CustomState & { type: 'customState' } => data && typeof data === 'object' && data.type === 'customState' && data.stateName !== undefined;
-const isCustomStateThreshold = (data: any): data is any & { type: 'customStateThreshold' } => data && data.type === 'customStateThreshold';
-const isWorldEvent = (data: any): data is WorldEvent & { type: 'worldEvent' } => data && typeof data === 'object' && data.type === 'worldEvent';
-const isMemory = (data: any): data is { type: 'memory', content: string } => data && data.type === 'memory';
-const isRelationship = (data: any): data is { type: 'relationship', tiers: any[], current: number } => data && data.type === 'relationship';
+const isItem = (data: unknown): data is Item & { ownerType?: 'player' | 'npc', ownerId?: string, isEquippedByOwner?: boolean } => {
+    const record = asRecord(data);
+    return !!record && record.quality !== undefined && record.weight !== undefined;
+};
+const isQuest = (data: unknown): data is Quest => {
+    const record = asRecord(data);
+    return !!record && record.questGiver !== undefined && Array.isArray(record.objectives);
+};
+const isPassiveSkill = (data: unknown): data is PassiveSkill => {
+    const record = asRecord(data);
+    return !!record && record.skillName !== undefined && record.masteryLevel !== undefined;
+};
+const isActiveSkill = (data: unknown): data is ActiveSkill => {
+    const record = asRecord(data);
+    return !!record && record.skillName !== undefined && record.masteryLevel === undefined && !isPassiveSkill(data);
+};
+const isEffect = (data: unknown): data is Effect => {
+    const record = asRecord(data);
+    return !!record && record.effectType !== undefined && record.duration !== undefined;
+};
+const isWound = (data: unknown): data is Wound & { type: 'wound' } => asRecord(data)?.type === 'wound';
+const isNpc = (data: unknown): data is NPC => {
+    const record = asRecord(data);
+    return !!record && (record.relationshipLevel !== undefined || record.NPCId !== undefined);
+};
+const isCharacteristic = (data: unknown): data is { type: 'characteristic', name: string, value: number, description?: string } => asRecord(data)?.type === 'characteristic';
+const isPrimaryStat = (data: unknown): data is { type: 'primaryStat', name: string, description: string } => asRecord(data)?.type === 'primaryStat';
+const isLocation = (data: unknown): data is Location & { type: 'location' } => {
+    const record = asRecord(data);
+    return !!record && record.type === 'location' && record.externalDifficultyProfile !== undefined;
+};
+const isPlayerCharacter = (data: unknown): data is PlayerCharacter & { type: 'playerCharacter' } => asRecord(data)?.type === 'playerCharacter';
+const isDerivedStat = (data: unknown): data is { type: 'derivedStat', name: string, value: string, breakdown: { label: string, value: string }[], description: string } => asRecord(data)?.type === 'derivedStat';
+const isCombatAction = (data: unknown): data is CombatAction => {
+    const record = asRecord(data);
+    return !!record && Array.isArray(record.effects) && record.actionName !== undefined && record.quality === undefined && record.skillName === undefined;
+};
+const isFaction = (data: unknown): data is Faction & { type: 'faction', perspectiveFor?: { name: string; rank: string } } => {
+    const record = asRecord(data);
+    return !!record && record.type === 'faction' && record.reputation !== undefined;
+};
+const isCustomState = (data: unknown): data is CustomState & { type: 'customState' } => {
+    const record = asRecord(data);
+    return !!record && record.type === 'customState' && record.stateName !== undefined;
+};
+const isCustomStateThreshold = (data: unknown): data is CustomStateThreshold & { type: 'customStateThreshold' } => asRecord(data)?.type === 'customStateThreshold';
+const isWorldEvent = (data: unknown): data is WorldEvent & { type: 'worldEvent' } => asRecord(data)?.type === 'worldEvent';
+const isMemory = (data: unknown): data is { type: 'memory', content: string } => asRecord(data)?.type === 'memory';
+const isRelationship = (data: unknown): data is { type: 'relationship', tiers: RelationshipTier[], current: number } => asRecord(data)?.type === 'relationship';
 
 // Renderer for the Threshold Modal
-const CustomStateThresholdDetailsRenderer: React.FC<{ threshold: any }> = ({ threshold }) => {
+const CustomStateThresholdDetailsRenderer: React.FC<{ threshold: CustomStateThreshold }> = ({ threshold }) => {
     const { t } = useLocalization();
     return (
         <div className="space-y-4">
@@ -64,12 +96,12 @@ const CustomStateThresholdDetailsRenderer: React.FC<{ threshold: any }> = ({ thr
             {threshold.associatedEffects && threshold.associatedEffects.length > 0 && (
                 <Section title={t("Associated Effects")} icon={ExclamationTriangleIcon}>
                     <div className="space-y-4">
-                        {threshold.associatedEffects.map((effect: any, j: number) => {
+                        {threshold.associatedEffects.map((effect, j) => {
                             if (effect.bonusType) { // This is a StructuredBonus-like object for factions
-                                return <BonusCard key={j} bonus={effect} />;
+                                return <BonusCard key={j} bonus={effect as StructuredBonus} />;
                             }
                             if (effect.effectType) { // This is an Effect object for players
-                                return <EffectDetailsRenderer key={j} effect={effect} />;
+                                return <EffectDetailsRenderer key={j} effect={effect as Effect} />;
                             }
                             // Fallback for unknown or simple descriptions
                             if (typeof effect.description === 'string') {
@@ -106,7 +138,7 @@ const CustomStateDetailsRenderer: React.FC<{ state: CustomState; onOpenDetailMod
             {state.thresholds && state.thresholds.length > 0 && (
                 <Section title={t("Thresholds")} icon={ExclamationTriangleIcon}>
                      <div className="space-y-2">
-                        {state.thresholds.map((threshold: any, i) => (
+                        {state.thresholds.map((threshold, i) => (
                             <button
                                 key={i}
                                 onClick={() => onOpenDetailModal(t("Threshold: {name}", { name: threshold.levelName }), { ...threshold, type: 'customStateThreshold' })}

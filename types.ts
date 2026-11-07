@@ -51,6 +51,27 @@ export interface WorldBaseInfo extends WorldData {
     selectedEra?: string | null;
 }
 
+/** A state an item reacts to, e.g. "increases damage against Burning targets". */
+export interface ItemCustomProperty {
+    interactionType?: string;
+    targetStateName?: string;
+    changeValue?: number;
+}
+
+/** A material an item breaks down into; the model may prefill its item stats. */
+export interface DisassemblyMaterial extends Partial<Item> {
+    materialName: string;
+    quantity: number;
+}
+
+/** A combat resistance of a combatant. */
+export interface CombatResistance {
+    resistanceName?: string;
+    resistanceValue?: string;
+    resistType?: string;
+    resistTypeDisplayName?: string;
+}
+
 /** How strongly a faction holds a location. */
 export interface FactionControlEntry {
     factionId?: string;
@@ -209,7 +230,7 @@ export interface Item {
     textContent?: (string | null)[];
     bonuses: string[];
     structuredBonuses?: StructuredBonus[];
-    customProperties?: any[];
+    customProperties?: ItemCustomProperty[];
     contentsPath: string[] | null;
     isContainer: boolean;
     capacity: number | null;
@@ -220,7 +241,7 @@ export interface Item {
     combatEffect?: CombatAction[];
     equipmentSlot: string | string[] | null;
     requiresTwoHands?: boolean;
-    disassembleTo?: any[];
+    disassembleTo?: DisassemblyMaterial[];
     fateCards?: FateCard[];
     ownerBondLevelCurrent?: number;
     resource?: number;
@@ -328,6 +349,26 @@ export interface Wound {
     };
 }
 
+/** What crossing one custom-state threshold does: a trimmed effect or a plain description. */
+export type CustomStateThresholdEffect = Partial<Effect> & Partial<StructuredBonus>;
+
+/** One named level of a custom state, reached at a trigger value. */
+export interface CustomStateThreshold {
+    levelName: string;
+    triggerCondition?: string;
+    triggerValue?: number;
+    description?: string;
+    associatedEffects?: CustomStateThresholdEffect[];
+}
+
+/** One band of an NPC's relationship scale. */
+export interface RelationshipTier {
+    lowerBound: number;
+    upperBound: number;
+    name: string;
+    desc: string;
+}
+
 export interface CustomState {
     stateId: string;
     stateName: string;
@@ -338,7 +379,7 @@ export interface CustomState {
     progressionRule: {
         description: string;
     };
-    thresholds: any[];
+    thresholds: CustomStateThreshold[];
 }
 
 export interface PlayerCharacter {
@@ -729,8 +770,8 @@ export interface Project {
     timeSpentMinutes: number;
     currentStep: number;
     totalSteps: number;
-    totalResourceCost?: any[];
-    resourcesSpent?: any[];
+    totalResourceCost?: { resourceName: string; totalAmount: number }[];
+    resourcesSpent?: { resourceName: string; amountSpent: number }[];
     activeState?: 'Active' | 'Completed' | 'Abandoned';
 }
 
@@ -786,7 +827,7 @@ export interface Faction {
 export interface WorldStateFlag {
     flagId: string;
     displayName: string;
-    value: any;
+    value: string | number | boolean | null;
     description: string;
 }
 
@@ -1050,12 +1091,19 @@ export interface StorageRemoval {
   storageId: string;
 }
 
+/** A change to the description or state of one link between locations. */
+export interface LocationLinkUpdate {
+    sourceLocationId: string;
+    targetCoordinates?: { x: number; y: number };
+    updatedLink?: { newShortDescription?: string; newLinkState?: string };
+}
+
 interface WorldMapUpdates {
     newLocations?: Partial<Location>[];
     newLinks?: { sourceLocationId: string; link: AdjacencyMapEntry }[];
     locationUpdates?: LocationUpdate[];
-    linkUpdates?: any[];
-    linksToRemove?: any[];
+    linkUpdates?: LocationLinkUpdate[];
+    linksToRemove?: { sourceLocationId: string; targetCoordinates: { x: number; y: number } }[];
     threatsToAdd?: { targetLocationId?: string; initialTargetLocationId?: string; threat: ActiveThreat }[];
     threatsToUpdate?: { targetLocationId: string, threatUpdate: Partial<ActiveThreat> & { threatId: string } }[];
     threatsToRemove?: { targetLocationId: string, threatId: string }[];
@@ -1306,14 +1354,22 @@ export interface Combatant {
     maxHealth: string;
     currentHealth: string | null;
     actions: CombatAction[];
-    resistances?: any[];
-    activeBuffs?: any[];
-    activeDebuffs?: any[];
+    resistances?: CombatResistance[];
+    activeBuffs?: Effect[];
+    activeDebuffs?: Effect[];
     wounds?: Wound[];
 }
 
 export type EnemyCombatObject = Combatant;
 export type AllyCombatObject = Combatant;
+
+/** Mastery progress of one NPC skill, handed to the model each turn. */
+export interface NpcSkillMasteryEntry {
+    NPCId?: string;
+    skillName?: string;
+    currentMasteryLevel?: number;
+    [key: string]: unknown;
+}
 
 export interface GameContext {
     message: string;
@@ -1328,7 +1384,7 @@ export interface GameContext {
     activeQuests: Quest[];
     completedQuests: Quest[];
     encounteredNPCs: NPC[];
-    npcSkillMasteryData: any[]; // Or more specific type
+    npcSkillMasteryData: NpcSkillMasteryEntry[];
     lootForCurrentTurn: LootTemplate[];
     preGeneratedDices1d20: number[];
     worldState: WorldState;
