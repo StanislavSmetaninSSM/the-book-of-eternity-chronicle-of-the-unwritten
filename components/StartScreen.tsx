@@ -7,6 +7,7 @@ import ConfirmationModal from './ConfirmationModal';
 import { useLocalization } from '../context/LocalizationContext';
 import { useWorldTranslations } from '../hooks/useWorldTranslations';
 import { gameData } from '../utils/localizationGameData';
+import { getUniverseWorld, resolveWorldFor, type WorldData, type WorldSource } from '../utils/worldData';
 import AboutContent from './AboutContent';
 import { DBSaveSlotInfo, Calendar } from '../types';
 import { loadPresetRuleTexts, type PresetRuleTexts } from '../utils/translations/presetRules';
@@ -130,16 +131,6 @@ const formatTimestamp = (timestamp: string | null, t: (key: string) => string): 
     }
 };
 
-interface WorldData {
-    name: string;
-    description: string;
-    currencyName: string;
-    currencyOptions?: string[];
-    races: Record<string, { description: string; bonuses: Record<string, number>; availableClasses?: string[] }>;
-    classes: Record<string, { description: string; bonuses: Record<string, number> }>;
-    calendar?: Calendar;
-}
-
 const universeDisplayNames: Record<string, string> = {
     fantasy: "Fantasy",
     sci_fi: "Sci-Fi",
@@ -173,6 +164,7 @@ const ToggleSwitch: React.FC<{
 interface CreationFormProps {
     formData: typeof initialFormData;
     handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
+    applyFieldChange: (name: string, value: string) => void;
     handleCheckboxChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
     handleAdultModeClick: () => void;
     handleNonMagicModeClick: () => void;
@@ -182,7 +174,7 @@ interface CreationFormProps {
     onSubmit: (e: React.FormEvent) => void;
     onLoadGame: () => void;
     submitButtonText: string;
-    currentWorld: any;
+    currentWorld: WorldData;
     customGameData: typeof gameData;
     setIsCreatingUniverse: (isCreating: boolean) => void;
     setFormData: React.Dispatch<React.SetStateAction<typeof initialFormData>>;
@@ -191,6 +183,7 @@ interface CreationFormProps {
 const CreationForm: React.FC<CreationFormProps> = ({
     formData,
     handleInputChange,
+    applyFieldChange,
     handleCheckboxChange,
     handleAdultModeClick,
     handleNonMagicModeClick,
@@ -213,7 +206,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
     const raceOptions = useMemo(() => Object.keys(currentWorld.races), [currentWorld]);
 
     const availableClassesForRace = useMemo(() => {
-        const selectedRaceData = (currentWorld as any).races[race];
+        const selectedRaceData = currentWorld.races[race];
         return selectedRaceData?.availableClasses || null;
     }, [race, currentWorld]);
 
@@ -296,7 +289,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                         <button
                             key={key}
                             type="button"
-                            onClick={() => handleInputChange({ target: { name: 'universe', value: key } } as any)}
+                            onClick={() => applyFieldChange('universe', key)}
                             className={`p-3 rounded-md transition-all border flex items-center justify-center whitespace-normal min-h-[4rem] ${formData.universe === key ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}
                         >
                             {t(universeDisplayNames[key])}
@@ -340,7 +333,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                             <button
                                 key={key}
                                 type="button"
-                                onClick={() => handleInputChange({ target: { name: 'selectedEra', value: key } } as any)}
+                                onClick={() => applyFieldChange('selectedEra', key)}
                                 className={`p-3 rounded-md transition-all border flex items-center justify-center whitespace-normal min-h-[4rem] ${formData.selectedEra === key ? 'bg-purple-500/30 border-purple-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}
                             >
                                 {world.name}
@@ -873,17 +866,14 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
         const loadedData = await loadConfigurationFromFile(t);
         if (loadedData && loadedData.customGameData) {
             // Start with the loaded data as the base. It is the source of truth.
-            const newGameData = JSON.parse(JSON.stringify(loadedData.customGameData));
+            const newGameData: typeof gameData = JSON.parse(JSON.stringify(loadedData.customGameData));
+            const universeTable: WorldSource = newGameData;
 
             // Now, fill in any missing universes from the default gameData.
-            for (const key in gameData) {
-                if (Object.prototype.hasOwnProperty.call(gameData, key)) {
-                    // If the loaded data does NOT have this universe, add it from the default.
-                    if (!(newGameData as any)[key]) {
-                        (newGameData as any)[key] = (gameData as any)[key];
-                    }
-                }
-            }
+            Object.entries(gameData).forEach(([key, shippedUniverse]) => {
+                // If the loaded data does NOT have this universe, add it from the default.
+                if (!universeTable[key]) universeTable[key] = shippedUniverse;
+            });
 
             const addDefaultCalendarRecursively = (obj: any, defaultCalendar: any) => {
                 if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return;
@@ -922,23 +912,16 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
 
     const currentWorld: WorldData = useMemo(() => {
         const { universe, selectedEra } = formData;
-        const gameDataSource = customGameData || gameData;
-        let world;
-
-        if (universe === 'custom') {
-            world = (gameDataSource.custom && (gameDataSource.custom as any)[selectedEra])
-                || { name: selectedEra || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] };
-        } else if (universe === 'history') {
-            world = gameDataSource.history[selectedEra as keyof typeof gameDataSource.history];
-        } else if (universe === 'myths') {
-            world = gameDataSource.myths[selectedEra as keyof typeof gameDataSource.myths];
-        } else {
-            world = (gameDataSource as any)[universe];
-        }
+        const gameDataSource = (customGameData || gameData) as WorldSource;
+        const world = resolveWorldFor(gameDataSource, universe, selectedEra)
+            // A custom universe without an era is still being invented: show the empty shell.
+            || (universe === 'custom'
+                ? { name: selectedEra || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] }
+                : undefined);
 
         if (!world) {
             console.warn(`Could not find world data for universe: ${universe}, era: ${selectedEra}. Falling back to fantasy.`);
-            return gameDataSource.fantasy;
+            return getUniverseWorld(gameDataSource, 'fantasy') || gameData.fantasy;
         }
 
         return world;
@@ -982,7 +965,10 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
     }, [currentWorld, isConfigLoading]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
+        applyFieldChange(e.target.name, e.target.value);
+    };
+
+    const applyFieldChange = (name: string, value: string) => {
 
         if (name === 'universe' || name === 'selectedEra') {
             let newUniverse = formData.universe;
@@ -1003,18 +989,11 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
             }
 
             const getNewWorldData = (universe: string, era: string) => {
-                const gameDataSource = customGameData || gameData;
-                if (universe === 'custom') {
-                    return ((gameDataSource.custom as any) && (gameDataSource.custom as any)[era])
-                        || { name: era || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] };
-                }
-                if (universe === 'history') {
-                    return gameDataSource.history[era as keyof typeof gameDataSource.history];
-                }
-                if (universe === 'myths') {
-                    return gameDataSource.myths[era as keyof typeof gameDataSource.myths];
-                }
-                return (gameDataSource as any)[universe];
+                const gameDataSource = (customGameData || gameData) as WorldSource;
+                return resolveWorldFor(gameDataSource, universe, era)
+                    || (universe === 'custom'
+                        ? { name: era || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] }
+                        : undefined);
             };
 
             const newWorld = getNewWorldData(newUniverse, newEra);
@@ -1213,6 +1192,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                             {worldTranslationsReady && <CreationForm
                                 formData={formData}
                                 handleInputChange={handleInputChange}
+                                applyFieldChange={applyFieldChange}
                                 handleCheckboxChange={handleCheckboxChange}
                                 handleAdultModeClick={handleAdultModeClick}
                                 handleNonMagicModeClick={handleNonMagicModeClick}

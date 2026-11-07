@@ -12,6 +12,7 @@ import AboutContent from './AboutContent';
 import Modal from './Modal';
 import { UniverseCustomizer } from './UniverseCustomizer';
 import { gameData as defaultGameData } from '../utils/localizationGameData';
+import { getEraWorlds, getUniverseWorld, isEraUniverse, resolveWorldFor, type WorldSource } from '../utils/worldData';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP } from '../utils/fileManager';
 
 
@@ -145,16 +146,17 @@ export default function GameMenuView({
             return { universe: baseInfo.universe, selectedEra: baseInfo.selectedEra };
         }
 
-        for (const uniKey of Object.keys(defaultGameData)) {
-            const uniData = (defaultGameData as any)[uniKey];
-            if (uniKey === 'history' || uniKey === 'myths') {
-                for (const eraKey in uniData) {
-                    if (uniData[eraKey].name === baseInfo.name) {
+        const universeTable: WorldSource = defaultGameData;
+        for (const uniKey of Object.keys(universeTable)) {
+            if (isEraUniverse(uniKey) && uniKey !== 'custom') {
+                const eras = getEraWorlds(universeTable, uniKey) || {};
+                for (const eraKey of Object.keys(eras)) {
+                    if (eras[eraKey]?.name === baseInfo.name) {
                         return { universe: uniKey, selectedEra: eraKey };
                     }
                 }
             } else if (uniKey !== 'custom') {
-                if (uniData.name === baseInfo.name) {
+                if (getUniverseWorld(universeTable, uniKey)?.name === baseInfo.name) {
                     return { universe: uniKey, selectedEra: null };
                 }
             }
@@ -165,15 +167,11 @@ export default function GameMenuView({
 
     }, [gameSettings]);
 
-    const handleUpdateGameData = (newGameData: any) => {
+    const handleUpdateGameData = (newGameData: WorldSource) => {
         if (!gameSettings || !universeInfo.universe) return;
         const { universe, selectedEra } = universeInfo;
 
-        let world;
-        if (universe === 'history' && selectedEra) world = newGameData.history[selectedEra];
-        else if (universe === 'myths' && selectedEra) world = newGameData.myths[selectedEra];
-        else if (universe === 'custom' && selectedEra) world = newGameData.custom[selectedEra];
-        else world = newGameData[universe];
+        const world = resolveWorldFor(newGameData, universe, selectedEra);
 
         if (world) {
             const finalWorldData = {
@@ -197,17 +195,18 @@ export default function GameMenuView({
         }
         const { universe, selectedEra } = universeInfo;
         const baseInfo = gameSettings.gameWorldInformation.baseInfo;
-        const gameDataState = JSON.parse(JSON.stringify(defaultGameData));
+        const gameDataState: typeof defaultGameData = JSON.parse(JSON.stringify(defaultGameData));
+        const universeTable: WorldSource = gameDataState;
 
-        if (universe === 'history' && selectedEra) {
-            gameDataState.history[selectedEra as keyof typeof gameDataState.history] = baseInfo;
-        } else if (universe === 'myths' && selectedEra) {
-            gameDataState.myths[selectedEra as keyof typeof gameDataState.myths] = baseInfo;
-        } else if (universe === 'custom' && selectedEra) {
-            if (!gameDataState.custom) (gameDataState as any).custom = {};
-            (gameDataState as any).custom[selectedEra] = baseInfo;
-        } else if ((gameDataState as any)[universe as keyof typeof gameDataState]) {
-            (gameDataState as any)[universe] = baseInfo;
+        if (isEraUniverse(universe)) {
+            if (selectedEra) {
+                // The custom table may still be empty in the shipped data.
+                if (!getEraWorlds(universeTable, universe)) universeTable[universe] = {};
+                const eras = getEraWorlds(universeTable, universe)!;
+                eras[selectedEra] = baseInfo as typeof eras[string];
+            }
+        } else if (universeTable[universe]) {
+            universeTable[universe] = baseInfo;
         }
         return gameDataState;
     }, [gameSettings, universeInfo]);
