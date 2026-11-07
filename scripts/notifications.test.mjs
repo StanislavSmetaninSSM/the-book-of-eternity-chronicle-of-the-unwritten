@@ -4,8 +4,27 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {createServer} from 'vite';
-import {readFile} from 'node:fs/promises';
-import {execFileSync} from 'node:child_process';
+import {readFile,readdir} from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const rootDir=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+/** Every application source file, excluding tests, scripts and build output. */
+async function collectSources(){
+  const files=[];
+  const walk=async(directory)=>{
+    for(const entry of await readdir(directory,{withFileTypes:true})){
+      const full=path.join(directory,entry.name);
+      if(entry.isDirectory())await walk(full);
+      else if(/\.(ts|tsx)$/.test(entry.name))files.push(full);
+    }
+  };
+  for(const directory of ['components','hooks','utils','context'])await walk(path.join(rootDir,directory));
+  for(const file of ['App.tsx','index.tsx'])files.push(path.join(rootDir,file));
+  return files.filter(file=>!file.endsWith(path.join('utils','notifications.ts'))
+    &&!file.endsWith(path.join('components','NotificationHost.tsx')));
+}
 
 // alert() is blocked inside the Arena iframe, so user-facing messages must go through
 // the in-app notification host. These checks cover the bus, the toast behaviour and the
@@ -59,12 +78,14 @@ test('notifications render as dismissible toasts instead of blocking dialogs',as
   await act(async()=>{await new Promise(resolve=>setTimeout(resolve,6300))});
   assert.equal(host.textContent.includes('short lived'),false,'info toasts auto-dismiss');
 
-  // The source no longer contains blocking dialogs in app code.
-  const files=execFileSync('rg',['-l','alert\\(','--glob','!node_modules','--glob','!scripts/**','--glob','!dist*','components','hooks','utils','context','App.tsx','index.tsx'],{encoding:'utf8'})
-    .split('\n').filter(Boolean)
-    .filter(file=>!file.endsWith('utils/notifications.ts'))
-    .filter(file=>!file.endsWith('components/NotificationHost.tsx'));
-  assert.deepEqual(files,[],'use notify()/notifyError() instead of alert()');
+  // The source no longer contains blocking dialogs in app code. The scan walks the tree
+  // itself: requiring ripgrep made this test depend on a tool the CI runner does not ship.
+  const sources=await collectSources();
+  const offenders=[];
+  for(const file of sources){
+    if(/(^|[^.\w$])alert\s*\(/.test(await readFile(file,'utf8')))offenders.push(path.relative(rootDir,file));
+  }
+  assert.deepEqual(offenders,[],'use notify()/notifyError() instead of alert()');
   const indexSource=await readFile(new URL('../index.tsx',import.meta.url),'utf8');
   assert.match(indexSource,/NotificationHost/,'the toast host must be mounted in the app root');
  }finally{
