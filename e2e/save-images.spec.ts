@@ -120,6 +120,21 @@ test.describe('images across a real browser session', () => {
     expect(errors).toEqual([]);
   });
 
+  // A crash-recovery or autosave reload stores a request before the app boots. The shell must
+  // pass it to the game host on its own: the player never sees the start screen.
+  test('a pending startup autosave request opens the chronicle without a click', async ({ page }) => {
+    await page.goto('/');
+    await importFiles(page, fixturePath('save-with-image.json'));
+    await expect(page.getByTestId('chat-window')).toBeVisible();
+    await expect.poll(() => readAutosave(page), { timeout: 15_000 }).toContain('blob:');
+
+    await page.evaluate(() => localStorage.setItem('gemini-rpg-startup-load-request', 'autosave'));
+    await page.reload();
+
+    await expect(page.getByTestId('chat-window')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('start-screen')).toHaveCount(0);
+  });
+
   test('an autosave written with inline base64 is migrated on startup', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByTestId('start-screen')).toBeVisible();

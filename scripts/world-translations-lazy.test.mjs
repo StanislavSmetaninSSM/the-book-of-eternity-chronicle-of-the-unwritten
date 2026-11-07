@@ -60,7 +60,7 @@ test('world dictionaries load only for the universe in play',async()=>{
   const source=await readFile(new URL('../utils/localizationTranslations.ts',import.meta.url),'utf8');
   assert.equal(/^import .*worlds\/.*_loc/m.test(source),false,'world dictionaries must not be static imports');
   assert.equal((source.match(/import\('\.\/translations\/worlds\//g)||[]).length,6);
-  const app=await readFile(new URL('../App.tsx',import.meta.url),'utf8');
+  const app=await readFile(new URL('../components/GameHost.tsx',import.meta.url),'utf8');
   assert.match(app,/useWorldTranslations\(activeUniverse\)/);
   assert.match(app,/if \(!worldTranslationsReady\)/);
   const start=await readFile(new URL('../components/StartScreen.tsx',import.meta.url),'utf8');

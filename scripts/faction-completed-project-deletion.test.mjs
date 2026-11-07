@@ -19,7 +19,8 @@ test('completed faction projects can actually be deleted',async()=>{
   assert.match(renderer,/bucket === 'completed' \? deleteFactionCompletedProject : deleteFactionProject/);
   const hook=await readFile(new URL('../hooks/useGameLogic.ts',import.meta.url),'utf8');
   assert.match(hook,/^\s*deleteFactionCompletedProject,$/m,'the hook exposes the completed-project handler');
-  const app=await readFile(new URL('../App.tsx',import.meta.url),'utf8');
+  // The in-game tree lives in the game host; the shell only owns the start screen.
+  const app=await readFile(new URL('../components/GameHost.tsx',import.meta.url),'utf8');
   const passes=(app.match(/deleteFactionCompletedProject=\{deleteFactionCompletedProject\}/g)||[]).length;
   assert.ok(passes>=2,`the handler reaches the side panel and both detail renderer mounts (found ${passes})`);
   const sidePanel=await readFile(new URL('../components/SidePanel.tsx',import.meta.url),'utf8');

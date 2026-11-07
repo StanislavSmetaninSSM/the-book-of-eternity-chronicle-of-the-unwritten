@@ -128,4 +128,24 @@ test.describe('single-player chronicle', () => {
     const portable = await readExport('Download save file');
     expect(JSON.stringify(portable!.body)).toContain('data:image/png;base64,');
   });
+
+  // The start screen hands a request to the game host instead of mounting the game itself.
+  test('a new chronicle starts from the creation form and reaches the game host', async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+
+    await page.goto('/');
+    await expect(page.getByTestId('start-screen')).toBeVisible();
+
+    await page.locator('#playerName').fill('Wanderer');
+    await page.locator('#characterDescription').fill('A traveller of the unwritten roads.');
+    await page.locator('#initialPrompt').fill('I open the book.');
+    await page.getByTestId('begin-adventure').click();
+
+    await expect(page.getByTestId('chat-window')).toBeVisible({ timeout: 20_000 });
+    // The creation data reached the game host: the lone adventurer's tab shows the name.
+    await page.getByTestId('side-tab-Character').click();
+    await expect(page.getByText('Wanderer').first()).toBeVisible();
+    expect(pageErrors).toEqual([]);
+  });
 });
