@@ -131,7 +131,7 @@ const CustomStateDetailsRenderer: React.FC<{ state: CustomState; onOpenDetailMod
 
 
 export default function DetailRenderer(props: DetailRendererProps) {
-    const { onForgetNpc, onClearNpcJournal, onCloseModal, onForgetQuest, onForgetLocation, currentLocationId, onRegenerateId, deleteNpcCustomState, onEditNpcMemory, onDeleteNpcMemory, onDeleteNpcJournalEntry, forgetHealedWound, forgetActiveWound, clearAllHealedWounds, allNpcs, allFactions, allLocations, updatePlayerPortrait, clearAllCompletedFactionProjects, deleteFactionCustomState, clearAllCompletedNpcActivities, onDeleteCurrentActivity, onDeleteCompletedActivity, onViewCharacterSheet, onOpenTextReader, onOpenStorage, placeAsStorage, isLoading, deleteFactionProject, deleteFactionBonus } = props;
+    const { onForgetNpc, onClearNpcJournal, onCloseModal, onForgetQuest, onForgetLocation, currentLocationId, onRegenerateId, deleteNpcCustomState, onEditNpcMemory, onDeleteNpcMemory, onDeleteNpcJournalEntry, forgetHealedWound, forgetActiveWound, clearAllHealedWounds, allNpcs, allFactions, allLocations, updatePlayerPortrait, clearAllCompletedFactionProjects, deleteFactionCompletedProject, deleteFactionCustomState, clearAllCompletedNpcActivities, onDeleteCurrentActivity, onDeleteCompletedActivity, onViewCharacterSheet, onOpenTextReader, onOpenStorage, placeAsStorage, isLoading, deleteFactionProject, deleteFactionBonus } = props;
     const { data: _data, ...rest } = props;
     const [confirmation, setConfirmation] = useState<{ type: string | null; data: any }>({ type: null, data: null });
     const { t } = useLocalization();
@@ -270,6 +270,7 @@ export default function DetailRenderer(props: DetailRendererProps) {
             allNpcs={allNpcs!}
             clearAllCompletedFactionProjects={clearAllCompletedFactionProjects!}
             deleteFactionProject={deleteFactionProject}
+            deleteFactionCompletedProject={deleteFactionCompletedProject}
             deleteFactionCustomState={deleteFactionCustomState}
             deleteFactionBonus={deleteFactionBonus}
             clearAllCompletedNpcActivities={clearAllCompletedNpcActivities!}

@@ -136,6 +136,7 @@ interface SidePanelProps {
   onDeleteCurrentActivity: (npcId: string) => void;
   onDeleteCompletedActivity: (npcId: string, activity: CompletedActivity) => void;
   deleteFactionProject: (factionId: string, projectId: string) => void;
+  deleteFactionCompletedProject?: (factionId: string, projectId: string) => void;
   deleteFactionCustomState: (factionId: string, stateId: string) => void;
   sidePanelView: string;
   onSetSidePanelView: (view: string) => void;

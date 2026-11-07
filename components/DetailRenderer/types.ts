@@ -61,6 +61,7 @@ export interface DetailRendererProps {
     updateNpcPortrait?: (npcId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
     clearAllCompletedFactionProjects?: (factionId: string) => void;
     deleteFactionProject?: (factionId: string, projectId: string) => void;
+    deleteFactionCompletedProject?: (factionId: string, projectId: string) => void;
     deleteFactionCustomState?: (factionId: string, stateId: string) => void;
     deleteFactionBonus?: (factionId: string, bonusIdentifier: string) => void;
     clearAllCompletedNpcActivities?: (npcId: string) => void;

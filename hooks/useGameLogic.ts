@@ -291,8 +291,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     const syncRevisionRef = useRef(0);
     const activeTurnRef = useRef<symbol | null>(null);
     const turnPhaseRef = useRef<'idle' | 'generating' | 'committed'>('idle');
-    const lastBroadcastedStateRef = useRef<{ turn: number; playerIndex: number } | null>(null);
-    const lastBroadcastedCoopState = useRef<string | null>(null);
 
     const wasLoadingRef = useRef(false);
     const isTurnSubmitPendingRef = useRef(false);
@@ -2493,6 +2491,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         onDeleteCurrentActivity,
         onDeleteCompletedActivity,
         deleteFactionProject,
+        deleteFactionCompletedProject,
         deleteFactionCustomState,
         worldMap,
         updateNpcPortrait,
