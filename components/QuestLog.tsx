@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { Quest } from '../types';
+import { Quest, DetailData} from '../types';
 import { CheckCircleIcon, XCircleIcon, ClockIcon } from '@heroicons/react/24/solid';
 import { TrashIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
@@ -9,7 +9,7 @@ import ConfirmationModal from './ConfirmationModal';
 interface QuestLogProps {
   activeQuests: Quest[];
   completedQuests: Quest[];
-  onOpenModal: (title: string, data: any) => void;
+  onOpenModal: (title: string, data: DetailData) => void;
   lastUpdatedQuestId?: string | null;
   allowHistoryManipulation?: boolean;
   forgetQuest?: (questId: string) => void;
@@ -18,7 +18,7 @@ interface QuestLogProps {
 const QuestItem: React.FC<{ 
     quest: Quest, 
     isCompleted?: boolean, 
-    onOpenModal: (title: string, data: any) => void,
+    onOpenModal: (title: string, data: DetailData) => void,
     allowHistoryManipulation?: boolean;
     onDelete: () => void;
 }> = ({ quest, isCompleted = false, onOpenModal, allowHistoryManipulation, onDelete }) => {

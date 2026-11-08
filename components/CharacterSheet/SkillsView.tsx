@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { PlayerCharacter, NPC, ActiveSkill, PassiveSkill } from '../../types';
+import { PlayerCharacter, NPC, ActiveSkill, PassiveSkill, DetailData} from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import SectionHeader from './Shared/SectionHeader';
 import ConfirmationModal from '../ConfirmationModal';
@@ -22,12 +22,12 @@ interface SkillsViewProps {
     isPlayer: boolean;
     isViewOnly?: boolean;
     isAdminEditable: boolean;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onDeleteActiveSkill: (skillName: string) => void;
     onDeletePassiveSkill: (skillName: string) => void;
     updateActiveSkillSortOrder: (newOrder: string[]) => void;
     updatePassiveSkillSortOrder: (newOrder: string[]) => void;
-    onEditNpcData?: (npcId: string, field: keyof NPC, value: any) => void;
+    onEditNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
 }
 
 const SkillsView: React.FC<SkillsViewProps> = ({

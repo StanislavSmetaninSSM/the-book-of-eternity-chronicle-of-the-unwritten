@@ -14,7 +14,7 @@ import { withLiveActivePlayer } from '../utils/partyView';
 import TurnIndicator from './TurnIndicator';
 import { useLocalization } from '../context/LocalizationContext';
 import { useGameLogic } from '../hooks/useGameLogic';
-import { ChatMessage, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, LocationData, ImageCacheEntry, CharacterCreationData } from '../types';
+import { ChatMessage, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, LocationData, ImageCacheEntry, CharacterCreationData, DetailData } from '../types';
 import { asRecord } from '../utils/typeGuards';
 import { useSpeech } from '../context/SpeechContext';
 import { releasePreparedSaveFiles, type PreparedSaveFiles } from '../utils/fileManager';
@@ -307,7 +307,7 @@ export default function GameHost({ request, onSettled }: GameHostProps): React.R
     const [textReaderState, setTextReaderState] = useState<{ title: string; content: string } | null>(null);
     const [imageModalInfo, setImageModalInfo] = useState<ImageModalInfo | null>(null);
     const [preparedSaveFiles, setPreparedSaveFiles] = useState<PreparedSaveFiles | null>(null);
-    const [detailModalStack, setDetailModalStack] = useState<{ title: string; data: any }[]>([]);
+    const [detailModalStack, setDetailModalStack] = useState<{ title: string; data: DetailData }[]>([]);
 
     const [isDetailModalFullScreen, setIsDetailModalFullScreen] = useState(false);
     const [editModalData, setEditModalData] = useState<{ index: number, message: ChatMessage } | null>(null);
@@ -489,7 +489,7 @@ export default function GameHost({ request, onSettled }: GameHostProps): React.R
             setDetailModalStack(prev => {
                 const newStack = [...prev];
                 if (newStack.length > 0) {
-                    newStack[newStack.length - 1] = { ...newStack[newStack.length - 1], data: updatedData };
+                    newStack[newStack.length - 1] = { ...newStack[newStack.length - 1], data: updatedData as DetailData };
                 }
                 return newStack;
             });
@@ -705,7 +705,7 @@ export default function GameHost({ request, onSettled }: GameHostProps): React.R
         }
     }, []);
 
-    const handleOpenDetailModal = useCallback((title: string, data: any) => {
+    const handleOpenDetailModal = useCallback((title: string, data: DetailData) => {
         setDetailModalStack(prev => [...prev, { title, data }]);
     }, []);
 

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Item, Quest, NPC, Location, PlayerCharacter, CombatAction, Faction, CustomState, PassiveSkill, ActiveSkill, Effect, Wound, WorldEvent } from '../../types';
+import { Item, Quest, NPC, Location, PlayerCharacter, CombatAction, Faction, CustomState, PassiveSkill, ActiveSkill, Effect, Wound, WorldEvent, DetailData} from '../../types';
 import { DetailRendererProps } from './types';
 import ConfirmationModal from '../ConfirmationModal';
 import { useLocalization } from '../../context/LocalizationContext';
@@ -118,7 +118,7 @@ const CustomStateThresholdDetailsRenderer: React.FC<{ threshold: CustomStateThre
 
 
 // Local component for Custom State Details
-const CustomStateDetailsRenderer: React.FC<{ state: CustomState; onOpenDetailModal: (title: string, data: any) => void; }> = ({ state, onOpenDetailModal }) => {
+const CustomStateDetailsRenderer: React.FC<{ state: CustomState; onOpenDetailModal: (title: string, data: DetailData) => void; }> = ({ state, onOpenDetailModal }) => {
     const { t } = useLocalization();
     return (
         <div className="space-y-4">
@@ -161,10 +161,20 @@ const CustomStateDetailsRenderer: React.FC<{ state: CustomState; onOpenDetailMod
 };
 
 
+/** What a confirmation dialog is about; each case reads only the fields it needs. */
+type ConfirmationData = DetailData & {
+    name?: string;
+    NPCId?: string;
+    locationId?: string;
+    questId?: string;
+    entity?: unknown;
+    entityType?: string;
+};
+
 export default function DetailRenderer(props: DetailRendererProps) {
     const { onForgetNpc, onClearNpcJournal, onCloseModal, onForgetQuest, onForgetLocation, currentLocationId, onRegenerateId, forgetHealedWound, forgetActiveWound, clearAllHealedWounds, allNpcs, updatePlayerPortrait, clearAllCompletedFactionProjects, deleteFactionCompletedProject, deleteFactionCustomState, clearAllCompletedNpcActivities, onDeleteCurrentActivity, onDeleteCompletedActivity, onViewCharacterSheet, onOpenTextReader, placeAsStorage, isLoading, deleteFactionProject, deleteFactionBonus } = props;
     const { data: _data, ...rest } = props;
-    const [confirmation, setConfirmation] = useState<{ type: string | null; data: any }>({ type: null, data: null });
+    const [confirmation, setConfirmation] = useState<{ type: string | null; data: ConfirmationData | null }>({ type: null, data: null });
     const { t } = useLocalization();
 
     
@@ -215,12 +225,12 @@ export default function DetailRenderer(props: DetailRendererProps) {
                 break;
             case 'regenerateId':
                 if (onRegenerateId) {
-                    onRegenerateId(confirmation.data.entity, confirmation.data.entityType);
+                    if (confirmation.data.entityType) onRegenerateId(confirmation.data.entity, confirmation.data.entityType);
                 }
                 break;
             case 'placeAsStorage':
                  if (placeAsStorage) {
-                    placeAsStorage(confirmation.data);
+                    placeAsStorage(confirmation.data as Item);
                 }
                 break;
         }

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { EnemyCombatObject, AllyCombatObject, NPC, PlayerCharacter, GameSettings, ImageCacheEntry } from '../types';
+import { EnemyCombatObject, AllyCombatObject, NPC, PlayerCharacter, GameSettings, ImageCacheEntry, DetailData} from '../types';
 import { ShieldExclamationIcon, BoltIcon, ShieldCheckIcon, SunIcon, CloudIcon, DocumentTextIcon, ArchiveBoxIcon, Cog6ToothIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { FireIcon } from '@heroicons/react/24/solid';
 import ImageRenderer from './ImageRenderer';
@@ -58,7 +58,7 @@ const HealthGrid: React.FC<{ healthStates: string[], maxHealth: string }> = ({ h
 interface CombatantCardProps {
     combatant: Combatant;
     fullNpcData: NPC | null;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
@@ -374,7 +374,7 @@ interface CombatTrackerProps {
     allNpcs: NPC[];
     playerCharacter: PlayerCharacter;
     setAutoCombatSkill: (skillName: string | null) => void;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
     onSendMessage: (message: string) => void;
     isLoading: boolean;

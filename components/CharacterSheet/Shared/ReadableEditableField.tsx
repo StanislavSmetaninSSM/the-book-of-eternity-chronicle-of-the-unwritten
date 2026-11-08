@@ -9,7 +9,7 @@ interface ReadableEditableFieldProps {
     label: string;
     value: string;
     isEditable: boolean;
-    onSave: (value: any) => void;
+    onSave: (value: unknown) => void;
     onRead: () => void;
     as?: 'input' | 'textarea';
     t: TFunction;

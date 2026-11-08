@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { PlayerCharacter, NPC, Location, Faction, FactionAffiliation, ImageCacheEntry, Quest, GameSettings } from '../../types';
+import { PlayerCharacter, NPC, Location, Faction, FactionAffiliation, ImageCacheEntry, Quest, GameSettings, DetailData} from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import SectionHeader from './Shared/SectionHeader';
 import ReadableEditableField from './Shared/ReadableEditableField';
@@ -31,7 +31,7 @@ interface ProfileViewProps {
     updatePlayerPortrait?: (playerId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
     updateNpcPortrait?: (npcId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
     allLocations: Location[];
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onSwitchView: (view: string) => void;
     onRegenerateId?: (entity: unknown, entityType: string) => void;
     gameSettings: GameSettings | null; 
@@ -41,7 +41,7 @@ interface ProfileViewProps {
     activeQuests?: Quest[];
 }
 
-const FactionAffiliationDisplay: React.FC<{ affiliations: FactionAffiliation[], allFactions: Faction[], onOpenDetailModal: (title: string, data: any) => void, character: PlayerCharacter | NPC }> = ({ affiliations, allFactions, onOpenDetailModal, character }) => {
+const FactionAffiliationDisplay: React.FC<{ affiliations: FactionAffiliation[], allFactions: Faction[], onOpenDetailModal: (title: string, data: DetailData) => void, character: PlayerCharacter | NPC }> = ({ affiliations, allFactions, onOpenDetailModal, character }) => {
     const { t } = useLocalization();
     if (!affiliations || affiliations.length === 0) {
         return <p className="text-sm text-gray-400 italic">{t('No known faction affiliations.')}</p>;

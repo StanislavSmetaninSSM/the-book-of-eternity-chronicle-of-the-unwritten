@@ -178,7 +178,7 @@ export const createSaveLoadManager = (
 
         // Filter the cache
         if (gameState.imageCache) {
-            const cleanedCache: any = {};
+            const cleanedCache: GameState['imageCache'] = {};
             let keptCount = 0;
             let removedCount = 0;
 

@@ -60,7 +60,7 @@ export function createNewPlayerCharacter(
             newPlayer.raceDescription = isCustomRace ? customRaceDescription : currentWorld?.races[race]?.description || '';
             newPlayer.classDescription = isCustomClass ? customClassDescription : currentWorld?.classes[charClass]?.description || '';
             
-            const standardCharacteristics: any = {};
+            const standardCharacteristics: Record<string, number> = {};
             const isLevelSyncedCreation = partyLevel > 1;
 
             if (isLevelSyncedCreation) {
@@ -127,7 +127,7 @@ export function createNewPlayerCharacter(
 
     const currentWorld = asWorld(gameSettings.gameWorldInformation.baseInfo);
 
-    const standardCharacteristics: any = {};
+    const standardCharacteristics: Record<string, number> = {};
     const finalLevel = (partyLevel > 1 && !shareCharacteristics) ? partyLevel : 1;
 
     if (finalLevel > 1) {
@@ -206,7 +206,7 @@ export function createNewPlayerCharacter(
             modifiedPerception: standardCharacteristics.standardPerception,
             modifiedLuck: standardCharacteristics.standardLuck,
             modifiedSpeed: standardCharacteristics.standardSpeed,
-        },
+        } as Characteristics,
         activeSkills: [],
         passiveSkills: [],
         skillMasteryData: [],

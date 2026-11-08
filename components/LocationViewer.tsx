@@ -2,7 +2,7 @@
 import { coordinateKey, resolveLinkTarget } from '../utils/locationLinks.js';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { Location, GameSettings, Faction, ImageCacheEntry } from '../types';
+import { Location, GameSettings, Faction, ImageCacheEntry, DetailData} from '../types';
 import type { DifficultyProfile } from '../types';
 import { 
     MapPinIcon, QuestionMarkCircleIcon, HomeModernIcon, BuildingStorefrontIcon, 
@@ -234,7 +234,7 @@ const CompassRose = () => (
 interface LocationViewerProps {
   visitedLocations: Location[];
   currentLocation: Location;
-  onOpenModal: (title: string, data: any) => void;
+  onOpenModal: (title: string, data: DetailData) => void;
   imageCache: Record<string, ImageCacheEntry>;
   onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
   isFullScreen?: boolean;

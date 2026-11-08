@@ -21,11 +21,16 @@ interface ActivityViewerModalProps {
   npcId: string;
 }
 
+/** Which activity the delete confirmation is about. */
+type ActivityToDelete =
+  | { type: 'current'; data: CurrentActivity }
+  | { type: 'completed'; data: CompletedActivity };
+
 const ActivityViewerModal: React.FC<ActivityViewerModalProps> = ({ isOpen, onClose, npcName, currentActivity, completedActivities, allowHistoryManipulation, onDeleteCurrentActivity, onDeleteCompletedActivity, onClearAllCompletedActivities, npcId }) => {
   const { t } = useLocalization();
   const [activeTab, setActiveTab] = useState<'current' | 'completed'>(currentActivity ? 'current' : 'completed');
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
-  const [activityToDelete, setActivityToDelete] = useState<{ type: 'current' | 'completed', data: any } | null>(null);
+  const [activityToDelete, setActivityToDelete] = useState<ActivityToDelete | null>(null);
 
   const timeProgress = currentActivity && currentActivity.totalTimeCostMinutes > 0
     ? (currentActivity.timeSpentMinutes / currentActivity.totalTimeCostMinutes) * 100

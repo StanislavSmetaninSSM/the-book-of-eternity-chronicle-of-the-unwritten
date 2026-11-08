@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { PlayerCharacter, NPC, GameSettings, Item, StructuredBonus, Faction, Location, UnlockedMemory, CompletedActivity, ImageCacheEntry, Quest } from '../types';
+import { PlayerCharacter, NPC, GameSettings, Item, StructuredBonus, Faction, Location, UnlockedMemory, CompletedActivity, ImageCacheEntry, Quest, DetailData} from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import CharacterSheetHeader from './CharacterSheet/Header';
 import ProfileView from './CharacterSheet/ProfileView';
@@ -51,7 +51,7 @@ export interface CharacterSheetProps {
     activeQuests?: Quest[];
     isViewOnly: boolean;
     gameSettings: GameSettings;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onShowMessageModal: (title: string, content: string) => void;
     onOpenTextReader: (title: string, content: string) => void;
     onOpenInventory: () => void;

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { NPC, Faction, GameState, GameSettings, ImageCacheEntry } from '../types';
+import { NPC, Faction, GameState, GameSettings, ImageCacheEntry, DetailData} from '../types';
 import { UserGroupIcon, UserIcon, UserPlusIcon, ArrowsUpDownIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { CheckIcon, Bars3Icon } from '@heroicons/react/24/solid';
 import { useLocalization } from '../context/LocalizationContext';
@@ -10,7 +10,7 @@ interface NpcLogProps {
   gameState: GameState | null;
   npcs: NPC[];
   encounteredFactions: Faction[];
-  onOpenModal: (title: string, data: any) => void;
+  onOpenModal: (title: string, data: DetailData) => void;
   onOpenJournalModal: (npc: NPC) => void;
   onViewCharacterSheet: (character: NPC) => void;
   imageCache: Record<string, ImageCacheEntry>;

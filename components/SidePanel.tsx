@@ -7,7 +7,7 @@
 import React, { useState, useMemo } from 'react';
 import CharacterSheet from './CharacterSheet';
 import QuestLog from './QuestLog';
-import { GameState, Location, WorldState, GameSettings, PlayerCharacter, Faction, Item, DBSaveSlotInfo, WorldStateFlag, UnlockedMemory, NPC, Quest, CompletedActivity, LocationStorage, Cinematic, ImageCacheEntry, CharacterCreationData } from '../types';
+import { GameState, Location, WorldState, GameSettings, PlayerCharacter, Faction, Item, DBSaveSlotInfo, WorldStateFlag, UnlockedMemory, NPC, Quest, CompletedActivity, LocationStorage, Cinematic, ImageCacheEntry, CharacterCreationData, DetailData} from '../types';
 import { UserCircleIcon, BookOpenIcon, CodeBracketIcon, DocumentTextIcon, UsersIcon, ShieldExclamationIcon, Cog6ToothIcon, MapIcon, MapPinIcon, QuestionMarkCircleIcon, UserGroupIcon, GlobeAltIcon, ArchiveBoxXMarkIcon, BeakerIcon, TrashIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ArrowsPointingOutIcon, FilmIcon, PhotoIcon } from '@heroicons/react/24/outline';
 import { ChevronDoubleRightIcon, ChevronDoubleLeftIcon, UserIcon as UserIconSolid } from '@heroicons/react/24/solid';
 import JsonDebugView from './JsonDebugView';
@@ -47,7 +47,7 @@ interface SidePanelProps {
   onLoadAutosave: () => void;
   autosaveTimestamp: string | null;
   visitedLocations: Location[];
-  onOpenDetailModal: (title: string, data: any) => void;
+  onOpenDetailModal: (title: string, data: DetailData) => void;
   onOpenJournalModal: (npc: NPC) => void;
   onOpenImageModal: (prompt: string, originalTextPrompt: string, onClearCustom?: () => void, onUpload?: (base64: string) => void) => void;
   onShowMessageModal: (title: string, content: string) => void;
@@ -189,7 +189,7 @@ type TFunction = (key: string, replacements?: Record<string, string | number>) =
 
 const FactionItem: React.FC<{
     faction: Faction;
-    onOpenModal: (title: string, data: any) => void;
+    onOpenModal: (title: string, data: DetailData) => void;
     allowHistoryManipulation: boolean;
     onDelete: () => void;
     gameSettings: GameSettings | null;
@@ -234,7 +234,7 @@ const FactionItem: React.FC<{
 
 const FactionLog: React.FC<{
     factions: Faction[];
-    onOpenModal: (title: string, data: any) => void;
+    onOpenModal: (title: string, data: DetailData) => void;
     allowHistoryManipulation: boolean;
     forgetFaction: (factionId: string) => void;
     imageCache: Record<string, ImageCacheEntry>;

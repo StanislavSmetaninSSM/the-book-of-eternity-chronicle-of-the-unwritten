@@ -113,7 +113,7 @@ export function applyImageBudget<T>(cache: T, options: ImageBudgetOptions = {}):
 }
 
 /** Copy of a save without any cached images, used when storage reports a full quota. */
-export function stripImagesForQuota<TSave extends { gameState?: any; omittedImageCount?: number }>(save: TSave): TSave {
+export function stripImagesForQuota<TSave extends { gameState?: { imageCache?: Record<string, unknown> }; omittedImageCount?: number }>(save: TSave): TSave {
     if (!save?.gameState?.imageCache) return save;
     const cachedCount = Object.keys(save.gameState.imageCache).length;
     return {

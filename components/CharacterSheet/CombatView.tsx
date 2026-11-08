@@ -1,4 +1,5 @@
 import React from 'react';
+import type { DetailData } from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import SectionHeader from './Shared/SectionHeader';
 import { 
@@ -31,7 +32,7 @@ interface CombatViewProps {
         totalDivineAttackBonus: number;
         totalGeneralResistance: number;
     } | null;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
 }
 
 const CombatView: React.FC<CombatViewProps> = ({ derivedStats, onOpenDetailModal }) => {

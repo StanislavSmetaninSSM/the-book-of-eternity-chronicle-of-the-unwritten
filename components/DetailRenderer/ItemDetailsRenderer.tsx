@@ -502,7 +502,7 @@ const ItemDetailsRenderer: React.FC<ItemDetailsProps> = (props) => {
                     <div className="mt-4 text-left">
                         <h4 className="font-semibold text-gray-300">{t("You will receive the following materials:")}</h4>
                         <ul className="list-disc list-inside text-sm text-gray-400 mt-2">
-                            {item.disassembleTo.map((mat: any, i) => (
+                            {item.disassembleTo.map((mat, i) => (
                                 <li key={i}>{mat.quantity}x {mat.materialName}</li>
                             ))}
                         </ul>

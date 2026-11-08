@@ -114,7 +114,7 @@ const ChallengeAssessment: React.FC<{
 const EventsView: React.FC<{
   location: Location;
   isEditable: boolean;
-  onEditLocationData: (locationId: string, field: keyof Location, value: any) => void;
+  onEditLocationData: (locationId: string, field: keyof Location, value: unknown) => void;
 }> = ({ location, isEditable, onEditLocationData }) => {
     const { t } = useLocalization();
     const { speak, isSpeaking, currentlySpeakingText } = useSpeech();

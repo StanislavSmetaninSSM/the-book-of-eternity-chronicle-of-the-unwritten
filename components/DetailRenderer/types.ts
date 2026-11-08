@@ -1,12 +1,12 @@
 
-import { Item, Quest, NPC, Location, PlayerCharacter, Faction, GameSettings, Wound, UnlockedMemory, CompletedActivity, LocationStorage, ImageCacheEntry } from '../../types';
+import { Item, Quest, NPC, Location, PlayerCharacter, Faction, GameSettings, Wound, UnlockedMemory, CompletedActivity, LocationStorage, ImageCacheEntry, DetailData} from '../../types';
 
 export interface WoundDetailsProps extends Omit<DetailRendererProps, 'data'> {
     wound: Wound & { characterType?: 'player' | 'npc', characterId?: string | null };
 }
 
 export interface DetailRendererProps {
-    data: any;
+    data: DetailData;
     onForgetNpc?: (npcId: string) => void;
     onClearNpcJournal?: (npcId: string) => void;
     onDeleteOldestNpcJournalEntries?: (npcId: string, count: number) => void;
@@ -17,7 +17,7 @@ export interface DetailRendererProps {
     onForgetQuest?: (questId: string) => void;
     playerCharacter: PlayerCharacter | null;
     setAutoCombatSkill?: (skillName: string | null) => void;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onOpenJournalModal?: (npc: NPC) => void;
     onShowMessageModal?: (title: string, content: string) => void;
     disassembleItem?: (item: Item) => void;

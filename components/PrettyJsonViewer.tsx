@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ChevronRightIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 
 interface JsonNodeProps {
-  data: any;
+  data: unknown;
   level: number;
 }
 
@@ -61,7 +61,7 @@ const JsonObject: React.FC<{ data: object; level: number }> = ({ data, level }) 
   );
 };
 
-const JsonArray: React.FC<{ data: any[]; level: number }> = ({ data, level }) => {
+const JsonArray: React.FC<{ data: unknown[]; level: number }> = ({ data, level }) => {
   const [isCollapsed, setIsCollapsed] = useState(level > 0); // Collapse nested arrays by default
   
   if (data.length === 0) {

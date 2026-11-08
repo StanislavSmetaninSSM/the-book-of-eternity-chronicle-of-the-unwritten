@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 // FIX: Add missing import for ImageCacheEntry
-import { NPC, Location, Faction, ImageCacheEntry, WorldState, WorldStateFlag, WorldEvent, GameSettings } from '../types';
+import { NPC, Location, Faction, ImageCacheEntry, WorldState, WorldStateFlag, WorldEvent, GameSettings, DetailData} from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import ImageRenderer from './ImageRenderer';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -42,7 +42,7 @@ interface WorldPanelProps {
     allNpcs: NPC[];
     allFactions: Faction[];
     allLocations: Location[];
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onDeleteEvent: (eventId: string) => void;
     deleteWorldEventsByTurnRange: (startTurn: number, endTurn: number) => void;
     onShowMessageModal: (title: string, content: string) => void;
@@ -282,7 +282,7 @@ interface WorldEventCardProps {
     event: WorldEvent;
     onDelete: (event: WorldEvent) => void;
     allowHistoryManipulation: boolean;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
     gameSettings: GameSettings | null;

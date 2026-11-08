@@ -36,7 +36,7 @@ interface GameMenuViewProps {
     gameState: GameState | null;
 }
 
-const formatTimestamp = (timestamp: string | null, t: (key: string, replacements?: any) => string): string => {
+const formatTimestamp = (timestamp: string | null, t: (key: string, replacements?: Record<string, string | number>) => string): string => {
     if (!timestamp) return t('Never');
     if (timestamp === UNKNOWN_AUTOSAVE_TIMESTAMP) return t('Available');
     try {

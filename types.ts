@@ -277,7 +277,8 @@ export interface StructuredBonus {
     bonusType: 'Characteristic' | 'ActionCheck' | 'Utility' | 'Other' | 'PowerProfileScale' | 'Resource' | 'CustomStatePower';
     target: string;
     valueType: 'Flat' | 'Percentage' | 'String' | 'Boolean' | 'Reference';
-    value: any;
+    /** Number for flat/percentage bonuses, the referenced name for references, a flag otherwise. */
+    value: string | number | boolean;
     application: 'Permanent' | 'Conditional';
     condition: string | null;
 }
@@ -1241,9 +1242,48 @@ export interface NPCRelationshipLockUpdate {
     };
 }
 
+/** What a step tells the turn loop to do next; the model fills these in as it plans. */
+export interface InternalTurnFlags {
+    isCombatActive?: boolean;
+    isSimpleTurn?: boolean;
+    needsSelfCorrection?: boolean;
+    needsFactionProgression?: boolean;
+    needsWorldProgression?: boolean;
+    needsInventoryProcessing?: boolean;
+    needsNPCProcessing?: boolean;
+    [key: string]: unknown;
+}
+
+/**
+ * Anything the detail modal can be asked to show: an entity from the save, or a
+ * decorated copy a log builds on the spot (`{ ...item, type: 'item' }`).
+ */
+export type DetailData =
+    | Record<string, unknown>
+    | Item
+    | Quest
+    | NPC
+    | Location
+    | PlayerCharacter
+    | Faction
+    | Wound
+    | Effect
+    | PassiveSkill
+    | ActiveSkill
+    | CombatAction
+    | NpcPersonalQuest
+    | CustomState
+    | CustomStateThreshold
+    | WorldEvent
+    | UnlockedMemory;
+
 export interface GameResponse {
     response?: string;
     thoughtSignature?: string; // Opaque token for preserving reasoning context
+    /** Routing flags a step sets for the turn loop. */
+    _internal_flags_?: InternalTurnFlags;
+    /** Set by the relay when the step asked for a rule bundle it could not read. */
+    _arenaRuleBundleUnavailable?: boolean;
     image_prompt?: string;
     items_and_stat_calculations?: string[];
     inventoryItemsData?: Partial<Item>[];

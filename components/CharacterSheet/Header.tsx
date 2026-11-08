@@ -55,7 +55,7 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
         }
     }, [character.age, isEditingAge]);
 
-    const handleNameSave = (val: any) => {
+    const handleNameSave = (val: unknown) => {
         if (isPlayer && onEditPlayerData) onEditPlayerData('name', val);
         else if (!isPlayer && onEditNpcData) onEditNpcData((character as NPC).NPCId, 'name', val);
     };

@@ -671,7 +671,7 @@ export async function migrateInlineImagesToImageStore(): Promise<{ records: numb
       stores.forEach((name, index) => collect(index, transaction.objectStore(name).getAll()));
     });
 
-    const pending: Array<{ store: string; key: string | number; value: any; stamp: string | undefined }> = [];
+    const pending: Array<{ store: string; key: string | number; value: unknown; stamp: string | undefined }> = [];
     for (const row of autosaves) {
       const record = asRecord(row);
       const saveData = asRecord(record?.saveData);

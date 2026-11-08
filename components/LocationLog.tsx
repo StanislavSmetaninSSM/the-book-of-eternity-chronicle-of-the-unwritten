@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Location, GameSettings, ImageCacheEntry } from '../types';
+import { Location, GameSettings, ImageCacheEntry, DetailData} from '../types';
 import { MapIcon, FireIcon, GlobeAltIcon, UserGroupIcon, MapPinIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -9,9 +9,9 @@ import ConfirmationModal from './ConfirmationModal';
 interface LocationLogProps {
   locations: Location[];
   currentLocation: Location;
-  onOpenModal: (title: string, data: any) => void;
+  onOpenModal: (title: string, data: DetailData) => void;
   allowHistoryManipulation: boolean;
-  onEditLocationData: (locationId: string, field: keyof Location, value: any) => void;
+  onEditLocationData: (locationId: string, field: keyof Location, value: unknown) => void;
   imageCache: Record<string, ImageCacheEntry>;
   onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
   forgetLocation: (locationId: string) => void;
@@ -20,7 +20,7 @@ interface LocationLogProps {
 
 const LocationItem: React.FC<{ 
   loc: Location, 
-  onOpenModal: (title: string, data: any) => void;
+  onOpenModal: (title: string, data: DetailData) => void;
   imageCache: Record<string, ImageCacheEntry>;
   onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
   isCurrentLocation: boolean;

@@ -44,7 +44,7 @@ export const createMusicManager = (
           } else {
             setGameLog(prev => [t("music_suggestion_failed"), ...prev]);
           }
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error("Failed to get music suggestion:", e);
           const formattedError = formatError(e);
           setError(t("music_suggestion_error", { error: formattedError }));
@@ -63,7 +63,7 @@ export const createMusicManager = (
             // FIX: Removed check for isMusicPlayerVisible as it's not in scope.
             // Setting it to true is idempotent and achieves the desired effect of showing the player.
             setIsMusicPlayerVisible(true);
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error("Failed to generate surprise music prompt:", e);
             const formattedError = formatError(e);
             setError(t("music_suggestion_error", { error: formattedError }));

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { PlayerCharacter, NPC, Effect, Wound, CustomState } from '../../types';
+import { PlayerCharacter, NPC, Effect, Wound, CustomState, DetailData} from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import SectionHeader from './Shared/SectionHeader';
 import ConfirmationModal from '../ConfirmationModal';
@@ -19,7 +19,7 @@ interface ConditionsViewProps {
     character: PlayerCharacter | NPC;
     isPlayer: boolean;
     isAdminEditable: boolean;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     forgetHealedWound: (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => void;
     forgetActiveWound: (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => void;
     clearAllHealedWounds: (characterType: 'player' | 'npc', characterId: string | null) => void;

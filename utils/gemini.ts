@@ -116,7 +116,7 @@ export async function callGenerativeApi(
     abortSignal: AbortSignal,
     onStreamingChunk: (text: string) => void,
     ruleBundleId?: string
-): Promise<{ data: any, signature?: string }> {
+): Promise<{ data: Partial<GameResponse>, signature?: string }> {
     const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
     const relayResult = await requestArenaGmStep(
         withGameContext(prompt, context),
@@ -128,7 +128,7 @@ export async function callGenerativeApi(
         ruleBundleId,
     );
     onStreamingChunk(relayResult.text);
-    let data: any;
+    let data: Partial<GameResponse>;
     try {
         data = JSON.parse(cleanJsonString(relayResult.text));
     } catch (error: unknown) {
@@ -168,12 +168,12 @@ export async function executeStepWithCorrection(
     stepName: string,
     promptFn: () => string,
     context: GameContext,
-    partiallyGeneratedResponse: any,
+    partiallyGeneratedResponse: Partial<GameResponse>,
     abortSignal: AbortSignal,
-    onPartialResponse: (response: any, stepName: string, modelName: string) => void,
+    onPartialResponse: (response: Partial<GameResponse>, stepName: string, modelName: string) => void,
     onStreamingChunk: (text: string) => void,
     onStepStart: (stepName: string, modelName: string) => void
-): Promise<{ response: any, signature?: string }> {
+): Promise<{ response: GameResponse, signature?: string }> {
     let lastError: unknown = null;
     let additionalGuides = '';
     const guides = await loadStageGuides();
@@ -313,12 +313,12 @@ export const getModelForStep = (_stepName: string, _context: GameContext): strin
 export async function executeTurn(
     context: GameContext,
     abortSignal: AbortSignal,
-    onPartialResponse: (response: any, stepName: string, modelName: string) => void,
+    onPartialResponse: (response: Partial<GameResponse>, stepName: string, modelName: string) => void,
     onStreamingChunk: (text: string) => void,
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
     ensureThreatActivityIds(context.worldMap || {}, context.currentLocation);
-    let partiallyGeneratedResponse: any = {};
+    let partiallyGeneratedResponse: Partial<GameResponse> = {};
     // Use the previous thought signature from context if available to start the chain
     let currentSignature = context.previousThoughtSignature;
     const mainPromptSteps = await loadPromptSteps();
@@ -457,7 +457,7 @@ export async function askGmQuestion(
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
     const mainPromptSteps = await loadPromptSteps();
-    const onPartialResponse = (_response: any, _stepName: string, _modelName: string) => {
+    const onPartialResponse = (_response: Partial<GameResponse>, _stepName: string, _modelName: string) => {
         // This is a single-step process, so onPartialResponse is equivalent to the final response.
         // We don't need to do anything special here as the final return will handle the full object.
     };
@@ -484,7 +484,7 @@ export async function executeWorldProgression(
     context: GameContext,
     abortSignal: AbortSignal,
     onStreamingChunk: (text: string) => void,
-    onPartialResponse: (response: any, stepName: string, modelName: string) => void,
+    onPartialResponse: (response: Partial<GameResponse>, stepName: string, modelName: string) => void,
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
     const mainPromptSteps = await loadPromptSteps();

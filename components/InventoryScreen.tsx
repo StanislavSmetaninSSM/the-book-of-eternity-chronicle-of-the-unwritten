@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { Item, PlayerCharacter, NPC, GameSettings, GameState, ImageCacheEntry } from '../types';
+import { Item, PlayerCharacter, NPC, GameSettings, GameState, ImageCacheEntry, DetailData} from '../types';
 import Modal from './Modal';
 import {
     AcademicCapIcon, 
@@ -41,7 +41,7 @@ interface InventoryManagerUIProps {
     onMoveItem: (item: Item, containerId: string | null) => void;
     onSplitItem: (item: Item, quantity: number) => void;
     onMergeItems: (sourceItem: Item, targetItem: Item) => void;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onOpenImageModal: (displayPrompt: string, originalTextPrompt: string, onClearCustom?: () => void, onUpload?: (base64: string) => void) => void;
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
@@ -716,7 +716,7 @@ interface InventoryScreenProps {
     onMoveNpcItem: (npcId: string, item: Item, containerId: string | null) => void;
 
     // Common actions
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onOpenImageModal: (displayPrompt: string, originalTextPrompt: string, onClearCustom?: () => void, onUpload?: (base64: string) => void) => void;
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;

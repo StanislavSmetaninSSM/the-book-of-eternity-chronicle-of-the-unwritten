@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { GameState, Location, Item, Quest, NPC, ActiveSkill, PassiveSkill } from '../types';
+import { GameState, Location, Item, Quest, NPC, ActiveSkill, PassiveSkill, DetailData} from '../types';
 import { MagnifyingGlassIcon, XMarkIcon, CubeIcon, BookOpenIcon, UserIcon, SparklesIcon, MapPinIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 
@@ -30,7 +30,7 @@ type SearchResults = {
 interface GlobalSearchProps {
     gameState: GameState | null;
     visitedLocations: Location[];
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     isLoading: boolean;
 }
 

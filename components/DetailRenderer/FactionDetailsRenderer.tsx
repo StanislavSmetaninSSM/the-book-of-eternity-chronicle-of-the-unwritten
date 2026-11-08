@@ -184,7 +184,7 @@ const FactionHeader: React.FC<FactionDetailsProps> = ({ faction, onOpenImageModa
     );
 };
 
-const OverviewView: React.FC<{ faction: Faction, allowHistoryManipulation: boolean, onEditFactionData: (id: string, field: keyof Faction, value: any) => void }> = ({ faction, allowHistoryManipulation, onEditFactionData }) => {
+const OverviewView: React.FC<{ faction: Faction, allowHistoryManipulation: boolean, onEditFactionData: (id: string, field: keyof Faction, value: unknown) => void }> = ({ faction, allowHistoryManipulation, onEditFactionData }) => {
     const { t } = useLocalization();
     return (
         <div className="space-y-4">
