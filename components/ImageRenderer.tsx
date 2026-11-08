@@ -6,6 +6,7 @@ import { ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 import { GameSettings, ImageCacheEntry } from '../types';
 import { requestArenaGmImage } from '../utils/arenaGmRelay';
+import { isAbortError } from '../utils/errorUtils';
 import { notifyWarning } from '../utils/notifications';
 
 interface ImageRendererProps {
@@ -179,8 +180,8 @@ const ImageRenderer: React.FC<ImageRendererProps> = (props) => {
         try {
             const imageUrl = await request;
             if (!signal.aborted) onImageGenerated(p, imageUrl, 'Arena GM', 'arena-gm-relay');
-        } catch (error: any) {
-            if (error?.name === 'AbortError') {
+        } catch (error: unknown) {
+            if (isAbortError(error)) {
                 if (manualCancelRef.current) setIsManuallyCancelled(true);
             } else {
                 const message = error instanceof Error ? error.message : String(error);

@@ -31,7 +31,7 @@ const EffectCard: React.FC<{ effect: CombatActionEffect }> = ({ effect }) => {
                 <MarkdownRenderer content={descriptionToRender} className="flex-1" />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-400 mt-2 pl-7">
-                <span><strong>{t("Value")}:</strong> {t(effect.value as any)}</span>
+                <span><strong>{t("Value")}:</strong> {t(effect.value)}</span>
                 <span><strong>{t("Target")}:</strong> {effect.targetTypeDisplayName || parseAndTranslateTargetType(effect.targetType, t)}</span>
                 {effect.duration != null && <span><strong>{t("Duration")}:</strong> {t('{duration} turns', { duration: effect.duration })}</span>}
                 {effect.targetsCount !== undefined && <span><strong>{t("Targets")}:</strong> {effect.targetsCount}</span>}

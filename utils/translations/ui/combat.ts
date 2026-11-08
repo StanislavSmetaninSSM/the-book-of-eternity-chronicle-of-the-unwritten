@@ -1,6 +1,8 @@
 
 export const combat = {
   en: {
+    // One action of a fighter, counted by the client from the use the response named (#6.1.6.7).
+    "cooldown_chip": "'{action}' · ready from turn {turn}",
     // Combat UI
     "Not in Combat": "Not in Combat",
     "attack_command": "I attack {name}",
@@ -9,6 +11,17 @@ export const combat = {
     "Allies": "Allies",
     "Resistances": "Resistances",
     "Combat Log": "Combat Log",
+    "Combat Summary": "Combat Summary",
+    "combat_summary_side": "{alive} of {total} standing · {health} health · {wounds} wounds · {effects} effects",
+    "combat_summary_you": "You: {health} health · {wounds} wounds · {effects} effects",
+    "combat_summary_overloaded": "overloaded",
+    "combat_summary_unknown_health": "not stated",
+    "combat_summary_checks": "re-checked {checked} logged calculations, all of them add up",
+    "combat_summary_checks_failed": "{failed} of {checked} logged calculations do not add up",
+    "combat_summary_checks_none": "no calculation of this turn to re-check",
+    "combat_summary_issue_health_above_max": "{subject} is at {health}% of a body that holds {max}%",
+    "combat_summary_issue_group_size": "{subject} lists {count} bodies but {units} health rows",
+    "combat_summary_issue_duplicate": "{subject} is listed twice on the same side",
     "AUTO": "AUTO",
     "Auto-Combat Skill": "Auto-Combat Skill",
     "Auto-Combat": "Auto-Combat",
@@ -62,6 +75,7 @@ export const combat = {
     "Targets": "Targets",
   },
   ru: {
+    "cooldown_chip": "«{action}» · готов с хода {turn}",
     // Combat UI
     "Not in Combat": "Не в бою",
     "attack_command": "Я атакую {name}",
@@ -70,6 +84,17 @@ export const combat = {
     "Allies": "Союзники",
     "Resistances": "Сопротивления",
     "Combat Log": "Боевой журнал",
+    "Combat Summary": "Сводка боя",
+    "combat_summary_side": "{alive} из {total} в строю · здоровье {health} · ран: {wounds} · эффектов: {effects}",
+    "combat_summary_you": "Вы: здоровье {health} · ран: {wounds} · эффектов: {effects}",
+    "combat_summary_overloaded": "перегружены",
+    "combat_summary_unknown_health": "не указано",
+    "combat_summary_checks": "пересчитаны строки расчёта: {checked}, все сходятся",
+    "combat_summary_checks_failed": "из {checked} строк расчёта не сходятся: {failed}",
+    "combat_summary_checks_none": "расчёта этого хода ещё не было",
+    "combat_summary_issue_health_above_max": "{subject}: здоровье {health}% при теле на {max}%",
+    "combat_summary_issue_group_size": "{subject}: {count} тел, но строк здоровья {units}",
+    "combat_summary_issue_duplicate": "{subject} упоминается дважды на одной стороне",
     "AUTO": "АВТО",
     "Auto-Combat Skill": "Навык авто-боя",
     "Auto-Combat": "Авто-бой",

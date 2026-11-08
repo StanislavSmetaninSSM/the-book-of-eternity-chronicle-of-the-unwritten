@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { PlayerCharacter, GameSettings, NPC, ImageCacheEntry } from '../types';
+import { PlayerCharacter, GameSettings, NPC, ImageCacheEntry, CharacterCreationData } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { UserIcon, PlusCircleIcon, DocumentDuplicateIcon, ArrowRightOnRectangleIcon, TrashIcon } from '@heroicons/react/24/outline';
 import PlayerCreationModal from './PlayerCreationModal';
 import { gameData } from '../utils/localizationGameData';
+import { resolveWorldFor } from '../utils/worldData';
 import ConfirmationModal from './ConfirmationModal';
 import ImageRenderer from './ImageRenderer';
 
@@ -11,7 +12,7 @@ interface PlayersPanelProps {
     playerCharacter: PlayerCharacter;
     players: PlayerCharacter[];
     gameSettings: GameSettings | null;
-    onAddPlayer: (creationData: any) => void;
+    onAddPlayer: (creationData: PlayerCharacter | CharacterCreationData) => void;
     onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
     removePlayer: (playerId: string) => void;
     passTurnToPlayer: (playerIndex: number) => void;
@@ -38,7 +39,7 @@ const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, g
         setIsCreating(true);
     };
 
-    const handleSubmitCreation = (creationData: any) => {
+    const handleSubmitCreation = (creationData: CharacterCreationData) => {
         onAddPlayer(creationData);
         setIsCreating(false);
     };
@@ -51,12 +52,8 @@ const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, g
     };
     
     const currentWorldData = useMemo(() => {
-        const universeKey = gameSettings?.gameWorldInformation?.baseInfo?.universe as keyof typeof gameData;
-        if (universeKey === 'history' || universeKey === 'myths') {
-            const eraKey = gameSettings?.gameWorldInformation?.baseInfo?.selectedEra as any;
-            return gameData[universeKey][eraKey] || gameData.fantasy;
-        }
-        return gameData[universeKey] || gameData.fantasy;
+        const baseInfo = gameSettings?.gameWorldInformation?.baseInfo;
+        return resolveWorldFor(gameData, baseInfo?.universe ?? '', baseInfo?.selectedEra) || gameData.fantasy;
     }, [gameSettings]);
 
     return (
@@ -90,7 +87,7 @@ const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, g
                                     </div>
                                     <div className="flex-1">
                                         <p className="font-semibold text-gray-200">{player.name}</p>
-                                        <p className="text-sm text-gray-400">{t('Level {level} {charClass}', { level: player.level, charClass: t(player.class as any) })}</p>
+                                        <p className="text-sm text-gray-400">{t('Level {level} {charClass}', { level: player.level, charClass: t(player.class) })}</p>
                                     </div>
                                 </button>
                                 <div className="mt-2 pt-2 border-t border-gray-700/50 flex flex-wrap gap-2">

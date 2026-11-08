@@ -14,10 +14,10 @@ export function gameplayMutationCommitted(
     return true;
 }
 
-export function guardGameplayActions<T extends Record<string, (...args: any[]) => unknown>>(
+export function guardGameplayActions<T extends Record<string, (...args: never[]) => unknown>>(
     actions: T, blocked: () => boolean
 ): { [K in keyof T]: (...args: Parameters<T[K]>) => ReturnType<T[K]> | undefined } {
-    return Object.fromEntries(Object.entries(actions).map(([key, action]) => [key, (...args: any[]) => {
+    return Object.fromEntries(Object.entries(actions).map(([key, action]) => [key, (...args: never[]) => {
         if (!blocked()) return action(...args);
         return undefined;
     }])) as { [K in keyof T]: (...args: Parameters<T[K]>) => ReturnType<T[K]> | undefined };

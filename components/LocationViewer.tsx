@@ -2,7 +2,7 @@
 import { coordinateKey, resolveLinkTarget } from '../utils/locationLinks.js';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { Location, GameSettings, Faction, ImageCacheEntry } from '../types';
+import { Location, GameSettings, Faction, ImageCacheEntry, DetailData} from '../types';
 import { 
     MapPinIcon, QuestionMarkCircleIcon, HomeModernIcon, BuildingStorefrontIcon, 
     FireIcon, GlobeAltIcon, SunIcon, ArrowPathIcon, UserGroupIcon,
@@ -93,7 +93,7 @@ const Tooltip = ({
     const { t } = useLocalization();
     if (!location) return null;
     
-    const profile = (location as any).externalDifficultyProfile || (location as any).estimatedExternalDifficultyProfile;
+    const profile = location.externalDifficultyProfile;
 
     const modalRoot = document.getElementById('modal-root');
     if (!modalRoot) return null;
@@ -127,7 +127,7 @@ const Tooltip = ({
                         {location.factionControl.map(fc => (
                             <div key={fc.factionId || fc.factionName} className="text-xs">
                                 <div className="flex justify-between items-center text-amber-900/90 mb-0.5">
-                                    <span className="font-semibold">{fc.factionName} ({t(fc.controlType as any)})</span>
+                                    <span className="font-semibold">{fc.factionName} ({t(fc.controlType)})</span>
                                     <span className="font-mono">{fc.controlLevel}%</span>
                                 </div>
                                 <div className="w-full bg-amber-800/20 rounded-full h-1.5 overflow-hidden">
@@ -231,7 +231,7 @@ const CompassRose = () => (
 interface LocationViewerProps {
   visitedLocations: Location[];
   currentLocation: Location;
-  onOpenModal: (title: string, data: any) => void;
+  onOpenModal: (title: string, data: DetailData) => void;
   imageCache: Record<string, ImageCacheEntry>;
   onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
   isFullScreen?: boolean;
@@ -297,7 +297,7 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
                             locationType: 'outdoor', 
                             biome: 'Plains', // A safe default for an unknown outdoor location
                             image_prompt: `A detailed fantasy art image of a mysterious location known as ${link.name}. ${link.shortDescription}`,
-                        } as any;
+                        } as Location & { isVisited: boolean; lastEventsDescription?: string };
                         allLocations.set(`undiscovered-${key}`, unvisitedLoc);
                     }
                 });

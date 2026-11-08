@@ -5,6 +5,7 @@ import { GoogleGenAI, LiveMusicSession } from '@google/genai';
 import { decode, decodeAudioData } from '../utils/audioUtils';
 import LoadingSpinner from './LoadingSpinner';
 import { notifyWarning } from '../utils/notifications';
+import { createAudioContext } from '../utils/audioContext';
 
 const getAi = () => {
     if (!process.env.API_KEY) throw new Error("API_KEY environment variable not set");
@@ -214,7 +215,7 @@ const LyriaMusicPlayer: React.FC<LyriaMusicPlayerProps> = ({
         if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
             await audioContextRef.current.close();
         }
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 });
+        audioContextRef.current = createAudioContext({ sampleRate: 48000 });
         gainNodeRef.current = audioContextRef.current.createGain();
         gainNodeRef.current.connect(audioContextRef.current.destination);
         gainNodeRef.current.gain.value = volume;
@@ -463,7 +464,7 @@ const LyriaMusicPlayer: React.FC<LyriaMusicPlayerProps> = ({
                     />
                 </div>
             </div>
-            <div className="text-center text-xs text-gray-500 mt-2 capitalize">{t(musicStatus as any)}</div>
+            <div className="text-center text-xs text-gray-500 mt-2 capitalize">{t(musicStatus)}</div>
         </div>
       </div>
       <div 

@@ -22,7 +22,7 @@ import {
 interface ItemJournalViewProps {
     item: Item;
     isAdminEditable: boolean;
-    onEditItemData: (itemId: string, field: keyof Item, value: any) => void;
+    onEditItemData: (itemId: string, field: keyof Item, value: unknown) => void;
     onOpenTextReader: (title: string, content: string) => void;
 }
 

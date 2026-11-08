@@ -1,7 +1,9 @@
 // @ts-ignore -- shared JS helpers
+import { critChanceBuffFromLuck, criticalHitThreshold, maxCarryWeight, maxEnergyPercent, maxHealthPercent } from './derivedStats.js';
+import { isEncumbered } from './carryWeight.js';
 import { coordinateKey, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
 import { withLiveActivePlayer } from './partyView';
-import { GameState, GameResponse, PlayerCharacter, Location, Language, Item, GameSettings, WorldState, NPC, Effect, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Calendar, Month, DayInfo, GameContext, ChatMessage } from '../types';
+import { GameState, GameResponse, PlayerCharacter, Location, Language, Item, GameSettings, WorldState, NPC, WorldData, CharacterCreationData, Effect, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Calendar, Month, DayInfo, GameContext, ChatMessage, Characteristics, ItemResourceChange, NPCInventoryResourceChange } from '../types';
 import { gameData } from './localizationGameData';
 import { generateLootTemplates } from './lootGenerator';
 import { translate } from './localization';
@@ -16,6 +18,18 @@ const asArray = <T>(value: T | T[] | null | undefined): T[] => {
     return value.filter(item => item !== null && item !== undefined);
   }
   return [value];
+};
+
+/**
+ * Update payloads carry their patch fields next to `new*` rename hints. Copy everything that is
+ * not such a hint into the patch object, exactly as the old dynamic loop did, but without
+ * escaping the type system at the call site.
+ */
+const copyPassthroughFields = <T extends object>(target: Partial<T>, source: object, skip: (key: string) => boolean): void => {
+    Object.entries(source).forEach(([key, value]) => {
+        if (skip(key)) return;
+        Object.assign(target, { [key]: value });
+    });
 };
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
@@ -57,7 +71,7 @@ export function recalculateDerivedStats<T extends PlayerCharacter | NPC>(pc: T):
 
     if (!newPc.characteristics) {
         console.warn('recalculateDerivedStats: characteristics is undefined, initializing with defaults');
-        newPc.characteristics = {} as any;
+        newPc.characteristics = {} as Characteristics;
     }
 
     const permanentlyModifiedValues: Record<string, number> = {};
@@ -65,7 +79,7 @@ export function recalculateDerivedStats<T extends PlayerCharacter | NPC>(pc: T):
     CHARACTERISTICS_LIST.forEach(char => {
         const charCapitalized = char.charAt(0).toUpperCase() + char.slice(1);
         const standardKey = `standard${charCapitalized}` as keyof PlayerCharacter['characteristics'];
-        const standardValue = (newPc.characteristics as any)[standardKey] as number;
+        const standardValue: number | undefined = newPc.characteristics[standardKey];
         const safeStandardValue = typeof standardValue === 'number' ? standardValue : 1;
 
         let permanentFlatBonusTotal = 0;
@@ -135,17 +149,21 @@ export function recalculateDerivedStats<T extends PlayerCharacter | NPC>(pc: T):
     const pmFth = permanentlyModifiedValues.faith || 1;
     const pmLck = permanentlyModifiedValues.luck || 1;
 
-    newPc.maxHealth = 100 + Math.floor(pmCon * 2.0) + Math.floor(pmStr * 1.0);
-    newPc.maxEnergy = 100 + Math.floor(pmCon * 0.75) + Math.floor(pmInt * 0.75) + Math.floor(pmWis * 0.75) + Math.floor(pmFth * 0.75);
-    newPc.maxWeight = 30 + Math.floor(pmStr * 1.8 + pmCon * 0.4);
-    newPc.critChanceBuffFromLuck = Math.floor(pmLck / 20);
-    newPc.critChanceThreshold = 20 - newPc.critChanceBuffFromLuck;
+    newPc.maxHealth = maxHealthPercent(pmCon, pmStr);
+    newPc.maxEnergy = maxEnergyPercent(pmCon, pmInt, pmWis, pmFth);
+    newPc.maxWeight = maxCarryWeight(pmStr, pmCon);
+    newPc.critChanceBuffFromLuck = critChanceBuffFromLuck(pmLck);
+    newPc.critChanceThreshold = criticalHitThreshold(pmLck);
 
     if (newPc.currentHealth === undefined) newPc.currentHealth = newPc.maxHealth;
     if (newPc.currentEnergy === undefined) newPc.currentEnergy = newPc.maxEnergy;
 
     newPc.currentHealth = Math.min(newPc.currentHealth, newPc.maxHealth);
     newPc.currentEnergy = Math.min(newPc.currentEnergy, newPc.maxEnergy);
+
+    // The threshold moved here, so a load that used to fit may not fit any more. The weight pass
+    // sets the same flag: either of the two can be the last one to run, and both read fresh values.
+    newPc.isOverloaded = isEncumbered(newPc.maxWeight, newPc.totalWeight);
 
     CHARACTERISTICS_LIST.forEach(char => {
         const charCapitalized = char.charAt(0).toUpperCase() + char.slice(1);
@@ -200,7 +218,7 @@ export function recalculateDerivedStats<T extends PlayerCharacter | NPC>(pc: T):
         });
 
         const modifiedValue = Math.round((permanentlyModifiedValue + conditionalFlatBonusTotal) * (1 + (percentageBonusTotal / 100)));
-        (newPc.characteristics as any)[modifiedKey] = modifiedValue;
+        newPc.characteristics[modifiedKey] = modifiedValue;
     });
 
     return newPc;
@@ -403,9 +421,8 @@ export function updateWorldMap(
     asArray(updates.locationUpdates).forEach(update => {
         if (update.locationId && newMap[update.locationId]) {
             const originalLocation = newMap[update.locationId];
-            const updateAny = update as any;
-            
-            const { newLastEventsDescription, ...restOfUpdate } = updateAny;
+
+            const { newLastEventsDescription, ...restOfUpdate } = update;
     
             const cleanUpdate: Partial<Location> = {};
             if (restOfUpdate.newName) cleanUpdate.name = restOfUpdate.newName;
@@ -413,11 +430,7 @@ export function updateWorldMap(
             if (restOfUpdate.newInternalDifficultyProfile) cleanUpdate.internalDifficultyProfile = deepMergeResponses(originalLocation.internalDifficultyProfile, restOfUpdate.newInternalDifficultyProfile);
             if (restOfUpdate.newExternalDifficultyProfile) cleanUpdate.externalDifficultyProfile = deepMergeResponses(originalLocation.externalDifficultyProfile, restOfUpdate.newExternalDifficultyProfile);
             
-            for (const key in restOfUpdate) {
-                if (!key.startsWith('new') && key !== 'locationId') {
-                    (cleanUpdate as any)[key] = (restOfUpdate as any)[key];
-                }
-            }
+            copyPassthroughFields<Location>(cleanUpdate, restOfUpdate, key => key.startsWith('new') || key === 'locationId');
             
             // Route updates to existing activities through the same identity and
             // completion checks as explicit threatsToUpdate commands.
@@ -537,11 +550,7 @@ export function updateWorldMap(
                     if (updatePayload.newCapacity !== undefined) cleanUpdate.capacity = updatePayload.newCapacity;
                     if (updatePayload.newOwner) cleanUpdate.owner = updatePayload.newOwner;
 
-                    for (const key in updatePayload) {
-                        if (!key.startsWith('new')) {
-                            (cleanUpdate as any)[key] = (updatePayload as any)[key];
-                        }
-                    }
+                    copyPassthroughFields<LocationStorage>(cleanUpdate, updatePayload, key => key.startsWith('new'));
                     
                     location.locationStorages[storageIndex] = deepMergeResponses(originalStorage, cleanUpdate) as LocationStorage;
                 }
@@ -685,19 +694,19 @@ export function buildNextContext(
     if (response.inventoryItemsResources) {
         const resourceChangesForNewItems = asArray(response.inventoryItemsResources).filter(rc => rc.existedId === null && rc.name);
         if (resourceChangesForNewItems.length > 0) {
+            // Every resource change may fill one newly created item; a consumed change must not be
+            // reused for a second item with the same name.
+            const usedResourceChanges = new Set<ItemResourceChange>();
             const processInventory = (inventory: Item[]) => {
                 if (!inventory) return;
                 inventory.forEach(item => {
-                    if (item.resource === undefined) {
-                        const resourceInfoIndex = resourceChangesForNewItems.findIndex(rc => rc.name === item.name && !(rc as any)._used);
-                        if (resourceInfoIndex > -1) {
-                            const resourceInfo = resourceChangesForNewItems[resourceInfoIndex];
-                            item.resource = resourceInfo.resource;
-                            item.maximumResource = resourceInfo.maximumResource;
-                            item.resourceType = resourceInfo.resourceType;
-                            (resourceInfo as any)._used = true;
-                        }
-                    }
+                    if (item.resource !== undefined) return;
+                    const resourceInfo = resourceChangesForNewItems.find(rc => rc.name === item.name && !usedResourceChanges.has(rc));
+                    if (!resourceInfo) return;
+                    item.resource = resourceInfo.resource;
+                    item.maximumResource = resourceInfo.maximumResource;
+                    item.resourceType = resourceInfo.resourceType;
+                    usedResourceChanges.add(resourceInfo);
                 });
             };
             newState.players.forEach(player => processInventory(player.inventory));
@@ -708,79 +717,42 @@ export function buildNextContext(
     if (response.NPCInventoryResourcesChanges) {
         const resourceChangesForNewNpcItems = asArray(response.NPCInventoryResourcesChanges).filter(rc => (rc.itemId === null || rc.itemId === undefined) && rc.itemName);
         if (resourceChangesForNewNpcItems.length > 0) {
+            const usedResourceChanges = new Set<NPCInventoryResourceChange>();
+            const patchedItems = new Set<Item>();
             resourceChangesForNewNpcItems.forEach(resourceChange => {
-                if ((resourceChange as any)._used) return;
+                if (usedResourceChanges.has(resourceChange)) return;
 
                 const npc = newState.encounteredNPCs.find(n => (n.NPCId && n.NPCId === resourceChange.NPCId) || n.name === resourceChange.NPCName);
-                if (npc && npc.inventory) {
-                    const itemIndex = npc.inventory.findIndex(item => 
-                        item.name === resourceChange.itemName && 
-                        item.resource === undefined && 
-                        !(item as any)._patched_resource
-                    );
+                if (!npc?.inventory) return;
 
-                    if (itemIndex > -1) {
-                        const item = npc.inventory[itemIndex];
-                        const resourceValue = (resourceChange as any).newResourceValue ?? (resourceChange as any).resource;
+                const item = npc.inventory.find(candidate =>
+                    candidate.name === resourceChange.itemName &&
+                    candidate.resource === undefined &&
+                    !patchedItems.has(candidate)
+                );
+                if (!item) return;
 
-                        if (resourceValue !== undefined) {
-                            item.resource = resourceValue;
-                            if ((resourceChange as any).maximumResource !== undefined) {
-                                item.maximumResource = (resourceChange as any).maximumResource;
-                            } else {
-                                item.maximumResource = resourceValue;
-                            }
-                            if ((resourceChange as any).resourceType !== undefined) {
-                                item.resourceType = (resourceChange as any).resourceType;
-                            }
-                            (item as any)._patched_resource = true;
-                            (resourceChange as any)._used = true;
-                        }
-                    }
+                const resourceValue = resourceChange.newResourceValue ?? resourceChange.resource;
+                if (resourceValue === undefined) return;
+
+                item.resource = resourceValue;
+                item.maximumResource = resourceChange.maximumResource ?? resourceValue;
+                if (resourceChange.resourceType !== undefined) {
+                    item.resourceType = resourceChange.resourceType;
                 }
-            });
-
-            newState.encounteredNPCs.forEach(npc => {
-                if (npc?.inventory) {
-                    npc.inventory.forEach(item => {
-                        delete (item as any)._patched_resource;
-                    });
-                }
+                patchedItems.add(item);
+                usedResourceChanges.add(resourceChange);
             });
         }
     }
 
-
-    if (response.inventoryItemsResources) {
-        const resourceChangesForNewItems = asArray(response.inventoryItemsResources).filter(rc => rc.existedId === null && rc.name);
-        if (resourceChangesForNewItems.length > 0) {
-            const processInventory = (inventory: Item[]) => {
-                if (!inventory) return;
-                inventory.forEach(item => {
-                    if (item.resource === undefined) {
-                        const resourceInfoIndex = resourceChangesForNewItems.findIndex(rc => rc.name === item.name && !(rc as any)._used);
-                        if (resourceInfoIndex > -1) {
-                            const resourceInfo = resourceChangesForNewItems[resourceInfoIndex];
-                            item.resource = resourceInfo.resource;
-                            item.maximumResource = resourceInfo.maximumResource;
-                            item.resourceType = resourceInfo.resourceType;
-                            (resourceInfo as any)._used = true;
-                        }
-                    }
-                });
-            };
-            newState.players.forEach(player => processInventory(player.inventory));
-            newState.encounteredNPCs.forEach(npc => processInventory(npc.inventory));
-        }
-    }
 
     let newTurnNumber = currentContext.currentTurnNumber;
     let newActivePlayerIndex = newState.activePlayerIndex;
 
     if (advanceTurn) {
         const isManualPass = currentContext.message === '[System Action] Pass turn';
-        const isAutoPass = currentContext.gameSettings.autoPassTurn
-            ?? currentContext.gameSettings.autoPassTurnInCoop ?? true;
+        const isAutoPass = currentContext.gameSettings.autoPassTurn ?? true;
         const isCoop = currentContext.gameSettings.cooperativeGameType === 'FullParty' || currentContext.gameSettings.cooperativeGameType === 'MultiplePersonalities';
 
         if (isCoop && (isAutoPass || isManualPass)) {
@@ -971,24 +943,25 @@ export function buildNextContext(
   return nextContext;
 }
 
-export const createInitialContext = (creationData: any, language: Language): GameContext => {
+export const createInitialContext = (creationData: CharacterCreationData, language: Language): GameContext => {
     const { universe, selectedEra, worldInformation, superInstructions, initialPrompt, ...characterCreationData } = creationData;
-    const t = (key: string, replacements?: any) => translate(language, key, replacements);
+    const t = (key: string, replacements?: Record<string, string | number>) => translate(language, key, replacements);
 
     const gameDataSource = creationData.customGameData || gameData;
-    let currentWorld: any;
+    const gameDataType = gameDataSource as typeof gameData & { custom?: Record<string, WorldData | undefined> };
+    let currentWorld: WorldData;
     
     if (universe === 'custom') {
-        currentWorld = (gameDataSource.custom && (gameDataSource.custom as any)[selectedEra]) || {
+        currentWorld = (gameDataType.custom && gameDataType.custom[selectedEra ?? '']) || {
             name: selectedEra || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'],
             calendar: JSON.parse(JSON.stringify(gameData.fantasy.calendar))
         };
     } else if (universe === 'history') {
-        currentWorld = gameDataSource.history[selectedEra as keyof typeof gameDataSource.history];
+        currentWorld = gameDataType.history[selectedEra as keyof typeof gameDataType.history];
     } else if (universe === 'myths') {
-        currentWorld = gameDataSource.myths[selectedEra as keyof typeof gameDataSource.myths];
+        currentWorld = gameDataType.myths[selectedEra as keyof typeof gameDataType.myths];
     } else {
-        currentWorld = (gameDataSource as any)[universe];
+        currentWorld = (gameDataType as unknown as Record<string, WorldData>)[universe];
     }
     
     const worldForContext = JSON.parse(JSON.stringify(currentWorld));
@@ -1028,7 +1001,7 @@ export const createInitialContext = (creationData: any, language: Language): Gam
         keepLatestNpcJournals: creationData.keepLatestNpcJournals,
         latestNpcJournalsCount: creationData.latestNpcJournalsCount,
         cooperativeGameType: creationData.cooperativeGameType,
-        autoPassTurn: creationData.autoPassTurn ?? creationData.autoPassTurnInCoop ?? true,
+        autoPassTurn: creationData.autoPassTurn ?? true,
         showPartyStatusPanel: creationData.showPartyStatusPanel,
         uiControlScale: creationData.uiControlScale ?? 1,
         uiFontScale: creationData.uiFontScale ?? 1,
@@ -1040,7 +1013,7 @@ export const createInitialContext = (creationData: any, language: Language): Gam
     };
 
     const calendar = gameSettings.gameWorldInformation.calendar!;
-    const startingMonthIndex = calendar.months.findIndex((m: Month) => m.name === gameStartingMonthName || m.name === t(gameStartingMonthName as any));
+    const startingMonthIndex = calendar.months.findIndex((m: Month) => m.name === gameStartingMonthName || m.name === t(gameStartingMonthName));
     
     const [startHour, startMinute] = gameStartTime.split(':').map(Number);
     const startingMinutesIntoDay = startHour * 60 + startMinute;

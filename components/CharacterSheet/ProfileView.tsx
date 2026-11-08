@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { PlayerCharacter, NPC, Location, Faction, FactionAffiliation, ImageCacheEntry, Quest } from '../../types';
+import { PlayerCharacter, NPC, Location, Faction, FactionAffiliation, ImageCacheEntry, Quest, GameSettings, DetailData} from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import SectionHeader from './Shared/SectionHeader';
 import ReadableEditableField from './Shared/ReadableEditableField';
@@ -25,23 +25,23 @@ interface ProfileViewProps {
     isPlayer: boolean;
     isAdminEditable: boolean;
     isViewOnly: boolean;
-    onEditPlayerData?: (field: keyof PlayerCharacter, value: any) => void;
-    onEditNpcData?: (npcId: string, field: keyof NPC, value: any) => void;
+    onEditPlayerData?: (field: keyof PlayerCharacter, value: unknown) => void;
+    onEditNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
     onShowMessageModal: (title: string, content: string) => void;
     updatePlayerPortrait?: (playerId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
     updateNpcPortrait?: (npcId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
     allLocations: Location[];
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onSwitchView: (view: string) => void;
-    onRegenerateId?: (entity: any, entityType: string) => void;
-    gameSettings: any; 
+    onRegenerateId?: (entity: unknown, entityType: string) => void;
+    gameSettings: GameSettings | null; 
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
     encounteredFactions: Faction[];
     activeQuests?: Quest[];
 }
 
-const FactionAffiliationDisplay: React.FC<{ affiliations: FactionAffiliation[], allFactions: Faction[], onOpenDetailModal: (title: string, data: any) => void, character: PlayerCharacter | NPC }> = ({ affiliations, allFactions, onOpenDetailModal, character }) => {
+const FactionAffiliationDisplay: React.FC<{ affiliations: FactionAffiliation[], allFactions: Faction[], onOpenDetailModal: (title: string, data: DetailData) => void, character: PlayerCharacter | NPC }> = ({ affiliations, allFactions, onOpenDetailModal, character }) => {
     const { t } = useLocalization();
     if (!affiliations || affiliations.length === 0) {
         return <p className="text-sm text-gray-400 italic">{t('No known faction affiliations.')}</p>;
@@ -53,7 +53,7 @@ const FactionAffiliationDisplay: React.FC<{ affiliations: FactionAffiliation[], 
                 let branchName = '';
                 if (factionData && aff.branch) {
                     const branch = factionData.ranks?.branches.find(b => b.branchId === aff.branch);
-                    branchName = branch ? ` (${t(branch.displayName as any)})` : ` (${aff.branch})`;
+                    branchName = branch ? ` (${t(branch.displayName)})` : ` (${aff.branch})`;
                 }
 
                 return (
@@ -86,7 +86,7 @@ const FactionAffiliationDisplay: React.FC<{ affiliations: FactionAffiliation[], 
                         >
                             {t('Rank')}: {aff.rank || 'N/A'}{branchName}
                         </button>
-                        <p className="text-xs text-gray-500">({t(aff.membershipStatus as any)})</p>
+                        <p className="text-xs text-gray-500">({t(aff.membershipStatus)})</p>
                     </div>
                 );
             })}
@@ -342,10 +342,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                                         onChange={(e) => onEditNpcData?.((character as NPC).NPCId, 'worldview', e.target.value)}
                                         className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-1 focus:ring-cyan-500 transition"
                                     >
-                                        {worldviewOptions.map(opt => <option key={opt} value={opt}>{t(opt as any)}</option>)}
+                                        {worldviewOptions.map(opt => <option key={opt} value={opt}>{t(opt)}</option>)}
                                     </select>
                                 ) : (
-                                    <p className="text-sm text-gray-300">{t((character as NPC).worldview as any) || ''}</p>
+                                    <p className="text-sm text-gray-300">{t((character as NPC).worldview) || ''}</p>
                                 )}
                             </div>
                         </div>
@@ -375,7 +375,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                                         <option value="Static">{t('Static')}</option>
                                     </select>
                                 ) : (
-                                    <p className="text-sm text-gray-300">{t((character as NPC).progressionType as any)}</p>
+                                    <p className="text-sm text-gray-300">{t((character as NPC).progressionType)}</p>
                                 )}
                             </div>
                         </div>
@@ -418,37 +418,37 @@ const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="space-y-4">
                 <ReadableEditableField 
                     label={t('Race Name')} 
-                    value={t(character.race as any)} 
+                    value={t(character.race)} 
                     isEditable={isAdminEditable && !isViewOnly} 
                     onSave={(val) => isPlayer && onEditPlayerData ? onEditPlayerData('race', val) : onEditNpcData?.((character as NPC).NPCId, 'race', val)} 
                     as="input"
-                    onRead={() => onShowMessageModal(t('Race Name'), t(character.race as any))}
+                    onRead={() => onShowMessageModal(t('Race Name'), t(character.race))}
                     t={t}
                 />
                 <ReadableEditableField 
                     label={t('Race Description')} 
-                    value={t(character.raceDescription as any)} 
+                    value={t(character.raceDescription)} 
                     isEditable={isAdminEditable && !isViewOnly} 
                     onSave={(val) => isPlayer && onEditPlayerData ? onEditPlayerData('raceDescription', val) : onEditNpcData?.((character as NPC).NPCId, 'raceDescription', val)}
-                    onRead={() => onShowMessageModal(t('Race Description'), t(character.raceDescription as any))}
+                    onRead={() => onShowMessageModal(t('Race Description'), t(character.raceDescription))}
                     t={t}
                 />
                 <div className="pt-4 mt-4 border-t border-gray-700/50">
                     <ReadableEditableField 
                         label={t('Class Name')} 
-                        value={t(character.class as any)} 
+                        value={t(character.class)} 
                         isEditable={isAdminEditable && !isViewOnly} 
                         onSave={(val) => isPlayer && onEditPlayerData ? onEditPlayerData('class', val) : onEditNpcData?.((character as NPC).NPCId, 'class', val)} 
                         as="input"
-                        onRead={() => onShowMessageModal(t('Class Name'), t(character.class as any))}
+                        onRead={() => onShowMessageModal(t('Class Name'), t(character.class))}
                         t={t}
                     />
                     <ReadableEditableField 
                         label={t('Class Description')} 
-                        value={t(character.classDescription as any)} 
+                        value={t(character.classDescription)} 
                         isEditable={isAdminEditable && !isViewOnly} 
                         onSave={(val) => isPlayer && onEditPlayerData ? onEditPlayerData('classDescription', val) : onEditNpcData?.((character as NPC).NPCId, 'classDescription', val)}
-                        onRead={() => onShowMessageModal(t('Class Description'), t(character.classDescription as any))}
+                        onRead={() => onShowMessageModal(t('Class Description'), t(character.classDescription))}
                         t={t}
                     />
                 </div>

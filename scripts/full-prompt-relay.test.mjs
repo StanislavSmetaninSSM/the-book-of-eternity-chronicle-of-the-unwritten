@@ -181,7 +181,7 @@ test('NPC stage can reference verified world and style guides, with a complete f
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const player = context.playerCharacter;
     const npc = { ...player, NPCId: 'npc-1', name: 'Guard', currentHealth: 100, inventory: [] };
-    const baseState = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const baseState = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = result => processAndApplyResponse(result.response, baseState, context.gameSettings, key => key, true, 2, context.worldMap).newState;
     const compactState = apply(compact), fullState = apply(full);
     assert.equal(compactState.encounteredNPCs[0].currentHealth, 80);
@@ -236,7 +236,7 @@ test('inventory stage resolves the same item changes with referenced or full gui
       assert.deepEqual(JSON.parse(sent.partiallyGeneratedResponse), partial);
       assert.equal(sent.playerCharacter.inventory[0].count, 2);
     }
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = result => processAndApplyResponse(result.response, state, context.gameSettings, key => key, true, 2, context.worldMap).newState;
     assert.deepEqual(apply(compact), apply(full));
     assert.equal(apply(compact).playerCharacter.inventory[0].count, 1);
@@ -293,7 +293,7 @@ test('combat auditor preserves health and wounds with referenced or full rules',
       const sent = JSON.parse(packet.prompt.split('\n\n<CurrentGameContext>\n').at(-1).split('\n</CurrentGameContext>')[0]);
       assert.deepEqual(JSON.parse(sent.partiallyGeneratedResponse), partial);
     }
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = result => processAndApplyResponse(result.response, state, context.gameSettings, key => key, true, 2, context.worldMap).newState;
     const actual = apply(compact); assert.deepEqual(actual, apply(full));
     assert.equal(actual.playerCharacter.currentHealth, player.currentHealth - 5);
@@ -356,7 +356,7 @@ test('world progression retains prior faction events and applies world changes i
       assert.deepEqual(JSON.parse(sent.partiallyGeneratedResponse), partial);
       assert.equal(sent.worldMap.outpost.activeThreats[0].threatId, 'threat-1');
     }
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = result => { const { newState, processedResponse } = processAndApplyResponse(result.response, state, context.gameSettings, key => key, true, 2, context.worldMap); return { state: newState, next: buildNextContext(context, processedResponse, newState, [], true) }; };
     const actual = apply(compact), baseline = apply(full);
     assert.deepEqual(actual.state, baseline.state);
@@ -426,7 +426,7 @@ test('faction progression preserves economy and projects through the world stage
     const sentWorld = JSON.parse(worldPacket.prompt.split('\n\n<CurrentGameContext>\n').at(-1).split('\n</CurrentGameContext>')[0]);
     assert.deepEqual(JSON.parse(sentWorld.partiallyGeneratedResponse), compact.response);
     const fullWorld = await executeStepWithCorrection('Step_WorldProgression_TaskGuide', getStepWorldProgression, context, full.response, new AbortController().signal, () => {}, () => {}, () => {});
-    const player = context.playerCharacter, state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [faction], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const player = context.playerCharacter, state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [faction], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = result => { const { newState, processedResponse } = processAndApplyResponse(result.response, state, context.gameSettings, key => key, true, 2, context.worldMap); return { state: newState, next: buildNextContext(context, processedResponse, newState, [], true) }; };
     const actual = apply(world), baseline = apply(fullWorld);
     assert.deepEqual(actual.state, baseline.state);

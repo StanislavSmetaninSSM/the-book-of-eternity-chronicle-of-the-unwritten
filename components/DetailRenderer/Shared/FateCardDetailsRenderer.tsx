@@ -32,14 +32,14 @@ const FateCardDetailsRenderer: React.FC<FateCardDetailsProps> = ({ card, onOpenI
                 <p>{t('Unlock Conditions:')}</p>
                 <ul className="list-disc list-inside pl-2">
                     {card.unlockConditions.requiredRelationshipLevel != null && <li>{t('Reach relationship level {level}', { level: card.unlockConditions.requiredRelationshipLevel })}</li>}
-                    {card.unlockConditions.plotConditionDescription && <li><MarkdownRenderer content={t(card.unlockConditions.plotConditionDescription as any)} inline /></li>}
+                    {card.unlockConditions.plotConditionDescription && <li><MarkdownRenderer content={t(card.unlockConditions.plotConditionDescription)} inline /></li>}
                 </ul>
             </div>
         )}
         {card.rewards && (
              <div className={`text-xs mt-2 ${card.isUnlocked ? 'text-green-300/80' : 'text-gray-500/80 border-t border-gray-600/50 pt-2 mt-3'}`}>
                 <p className={!card.isUnlocked ? 'font-semibold mb-1' : ''}>{t(card.isUnlocked ? 'Rewards' : 'Potential Rewards')}:</p>
-                <div className="pl-2"><MarkdownRenderer content={t(card.rewards.description as any)} /></div>
+                <div className="pl-2"><MarkdownRenderer content={t(card.rewards.description)} /></div>
             </div>
         )}
     </div>

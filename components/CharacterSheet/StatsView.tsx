@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlayerCharacter, NPC } from '../../types';
+import { PlayerCharacter, NPC, DetailData} from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import { PlusCircleIcon } from '@heroicons/react/24/outline';
 
@@ -7,7 +7,7 @@ interface StatsViewProps {
     character: PlayerCharacter | NPC;
     canUpgrade: boolean;
     onSpendAttributePoint: (characteristic: string) => void;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     equipmentBonuses: Record<string, number>;
     passiveSkillBonuses: Record<string, number>;
 }

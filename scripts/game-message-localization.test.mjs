@@ -13,7 +13,6 @@ const messageKeys = [
   'load_unavailable_while_game_changing',
   'interrupted_turn_recovery_needs_local_idle_game',
   'interrupted_turn_recovery_resume_state_changed',
-  'interrupted_turn_recovery_legacy_network_checkpoint',
   'interrupted_turn_discard_unavailable',
   'interrupted_turn_checkpoint_not_found',
   'interrupted_turn_checkpoint_changed',

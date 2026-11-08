@@ -4,6 +4,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import { PlayIcon, PauseIcon, ArrowLeftIcon, ArrowRightIcon, SpeakerWaveIcon, SpeakerXMarkIcon } from '@heroicons/react/24/solid';
 import { stripModerationSymbols } from '../utils/textUtils';
 import { Cinematic } from '../types';
+import { createAudioContext } from '../utils/audioContext';
 
 // Helper functions for decoding Base64 raw PCM audio data.
 // These must be implemented manually as per Gemini API guidelines.
@@ -90,7 +91,7 @@ const CinemaPlayer: React.FC<CinemaPlayerProps> = ({ isOpen, onClose, cinematic 
         const audioBase64 = cinematic.audio_base64;
         const play = async () => {
             try {
-                const context = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+                const context = createAudioContext({ sampleRate: 24000 });
                 audioContextRef.current = context;
 
                 const decodedBytes = decode(audioBase64);

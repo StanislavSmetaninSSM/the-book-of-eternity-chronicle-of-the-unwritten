@@ -1,10 +1,16 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { GameState, Location, Item, Quest, NPC, ActiveSkill, PassiveSkill } from '../types';
+import { GameState, Location, Item, Quest, NPC, ActiveSkill, PassiveSkill, DetailData} from '../types';
 import { MagnifyingGlassIcon, XMarkIcon, CubeIcon, BookOpenIcon, UserIcon, SparklesIcon, MapPinIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 
 // Define result types
+/** The visible name of a hit; each result kind names it differently. */
+const searchResultLabel = (item: SearchResultItem): string => {
+    const data = item.data as { name?: string; questName?: string; skillName?: string };
+    return data.name || data.questName || data.skillName || '';
+};
+
 type SearchResultItem =
     | { type: 'Item'; data: Item }
     | { type: 'Quest'; data: Quest }
@@ -24,7 +30,7 @@ type SearchResults = {
 interface GlobalSearchProps {
     gameState: GameState | null;
     visitedLocations: Location[];
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     isLoading: boolean;
 }
 
@@ -122,16 +128,16 @@ export default function GlobalSearch({ gameState, visitedLocations, onOpenDetail
 
     const handleResultClick = (result: SearchResultItem) => {
         let title = '';
-        let data = result.data as any;
+        let data: SearchResultItem['data'] = result.data;
         switch (result.type) {
             case 'Item': title = t("Item: {name}", { name: result.data.name }); break;
             case 'Quest': title = t("Quest: {name}", { name: (result.data as Quest).questName }); break;
             case 'NPC': title = t("NPC: {name}", { name: result.data.name }); break;
-            case 'ActiveSkill': title = t("Active Skill: {name}", { name: (result.data as ActiveSkill).skillName }); data = {...data, owner: 'player'}; break;
+            case 'ActiveSkill': title = t("Active Skill: {name}", { name: (result.data as ActiveSkill).skillName }); data = { ...result.data, owner: 'player' } as SearchResultItem['data']; break;
             case 'PassiveSkill': title = t("Passive Skill: {name}", { name: (result.data as PassiveSkill).skillName }); break;
             case 'Location': 
                 title = t("Location: {name}", { name: result.data.name }); 
-                data = { ...data, type: 'location' }; // Add type for DetailRenderer
+                data = { ...data, type: 'location' } as SearchResultItem['data']; // Add type for DetailRenderer
                 break;
         }
         onOpenDetailModal(title, data);
@@ -139,7 +145,7 @@ export default function GlobalSearch({ gameState, visitedLocations, onOpenDetail
         setIsFocused(false);
     };
 
-    const hasResults = searchResults && Object.values(searchResults).some((arr: any) => arr.length > 0);
+    const hasResults = searchResults && Object.values(searchResults).some(arr => arr.length > 0);
     const showResults = query && isFocused;
 
     return (
@@ -167,17 +173,18 @@ export default function GlobalSearch({ gameState, visitedLocations, onOpenDetail
                     {searchResults && hasResults ? (
                         <div className="p-2">
                             {Object.entries(searchResults).map(([category, items]) => {
-                                if ((items as any).length === 0) return null;
+                                const categoryItems = items as SearchResultItem[];
+                                if (categoryItems.length === 0) return null;
                                 return (
                                     <div key={category} className="mb-2 last:mb-0">
-                                        <h4 className="text-xs font-bold uppercase text-gray-500 px-2 py-1">{t(category as any)}</h4>
+                                        <h4 className="text-xs font-bold uppercase text-gray-500 px-2 py-1">{t(category)}</h4>
                                         <ul className="space-y-1">
-                                            {(items as any).map((item: any, index: number) => (
+                                            {categoryItems.map((item, index) => (
                                                 <li key={index}>
                                                     <button onClick={() => handleResultClick(item)} className="w-full text-left flex items-center gap-3 p-2 rounded-md hover:bg-cyan-500/10 transition-colors">
                                                         <ResultIcon type={item.type} />
                                                         <span className="text-gray-200">
-                                                            { (item.data as any).name || (item.data as any).questName || (item.data as any).skillName }
+                                                            { searchResultLabel(item) }
                                                         </span>
                                                     </button>
                                                 </li>

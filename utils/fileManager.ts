@@ -6,6 +6,7 @@ import { dehydrateSaveImages, dehydrateStateImages, hydrateSaveImages, hydrateSt
 import { imageRefId, sweepUnreferencedImages } from './imageBlobStore';
 import { applySaveBundleDocuments, splitSaveImages, type SaveBundleImportResult } from './saveBundle';
 import { notifyError } from './notifications';
+import { asRecord } from './typeGuards';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -203,7 +204,7 @@ export async function loadSaveBundleFromFiles(t: TFunction): Promise<SaveBundleI
   return result;
 }
 
-export function loadConfigurationFromFile(t: TFunction): Promise<any | null> {
+export function loadConfigurationFromFile(t: TFunction): Promise<Record<string, unknown> | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -291,7 +292,6 @@ export interface CrashRecoveryMetadata {
   playerName: string;
   locationName: string;
   turnNumber: number | null;
-  networkRole: string;
 }
 
 export interface InterruptedTurnRecovery {
@@ -363,7 +363,6 @@ function buildCrashRecoveryMetadata(saveData: SaveFile, reason: CrashRecoveryRea
     playerName: saveData.gameState?.playerCharacter?.name || 'Unknown',
     locationName: saveData.gameState?.currentLocationData?.name || 'Unknown',
     turnNumber: typeof saveData.gameContext?.currentTurnNumber === 'number' ? saveData.gameContext.currentTurnNumber : null,
-    networkRole: 'none',
   };
 }
 
@@ -379,8 +378,7 @@ function readCrashRecoveryMetadataFromStorage(): CrashRecoveryMetadata | null {
       typeof parsed.reason === 'string' &&
       typeof parsed.playerName === 'string' &&
       typeof parsed.locationName === 'string' &&
-      (typeof parsed.turnNumber === 'number' || parsed.turnNumber === null) &&
-      typeof parsed.networkRole === 'string'
+      (typeof parsed.turnNumber === 'number' || parsed.turnNumber === null)
     ) {
       return parsed as CrashRecoveryMetadata;
     }
@@ -511,17 +509,17 @@ export async function loadStartScreenDraft(): Promise<StartScreenDraft> {
     const formRequest = store.get(START_SCREEN_FORM_DRAFT_ID);
     const worldRequest = store.get(START_SCREEN_WORLD_DRAFT_ID);
     const [formRecord, worldRecord] = await Promise.all([
-      new Promise<any>((resolve, reject) => {
-        formRequest.onsuccess = () => resolve(formRequest.result);
+      new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
+        formRequest.onsuccess = () => resolve(formRequest.result as Record<string, unknown> | undefined);
         formRequest.onerror = () => reject(formRequest.error);
       }),
-      new Promise<any>((resolve, reject) => {
-        worldRequest.onsuccess = () => resolve(worldRequest.result);
+      new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
+        worldRequest.onsuccess = () => resolve(worldRequest.result as Record<string, unknown> | undefined);
         worldRequest.onerror = () => reject(worldRequest.error);
       }),
     ]);
     return {
-      formData: formRecord?.data && typeof formRecord.data === 'object' ? formRecord.data : null,
+      formData: formRecord?.data && typeof formRecord.data === 'object' ? formRecord.data as Record<string, unknown> : null,
       customGameData: worldRecord?.data ?? null,
     };
   } catch (error) {
@@ -655,9 +653,9 @@ export async function migrateInlineImagesToImageStore(): Promise<{ records: numb
   try {
     const db = await openDB();
     const stores = [AUTOSAVE_STORE_NAME, SLOTS_STORE_NAME, INTERRUPTED_TURNS_STORE_NAME];
-    const [autosaves, slots, checkpoints] = await new Promise<unknown[][]>((resolve, reject) => {
+    const [autosaves, slots, checkpoints] = await new Promise<Array<unknown>[]>((resolve, reject) => {
       const transaction = db.transaction(stores, 'readonly');
-      const results: unknown[][] = [[], [], []];
+      const results: Array<unknown>[] = [[], [], []];
       let remaining = stores.length;
       const collect = (index: number, request: IDBRequest) => {
         request.onsuccess = () => {
@@ -670,21 +668,27 @@ export async function migrateInlineImagesToImageStore(): Promise<{ records: numb
       stores.forEach((name, index) => collect(index, transaction.objectStore(name).getAll()));
     });
 
-    const pending: Array<{ store: string; key: string | number; value: any; stamp: string | undefined }> = [];
-    for (const record of autosaves as any[]) {
-      if (!record?.saveData) continue;
-      const saveData = await dehydrateSaveImages(record.saveData);
-      if (saveData !== record.saveData) pending.push({ store: AUTOSAVE_STORE_NAME, key: record.id, value: { ...record, saveData }, stamp: record.saveData.timestamp });
+    const pending: Array<{ store: string; key: string | number; value: unknown; stamp: string | undefined }> = [];
+    for (const row of autosaves) {
+      const record = asRecord(row);
+      const saveData = asRecord(record?.saveData);
+      if (!record || !saveData) continue;
+      const dehydrated = await dehydrateSaveImages(saveData);
+      if (dehydrated !== saveData) pending.push({ store: AUTOSAVE_STORE_NAME, key: String(record.id ?? ''), value: { ...record, saveData: dehydrated }, stamp: typeof saveData.timestamp === 'string' ? saveData.timestamp : undefined });
     }
-    for (const record of slots as any[]) {
-      if (!record?.saveData) continue;
-      const saveData = await dehydrateSaveImages(record.saveData);
-      if (saveData !== record.saveData) pending.push({ store: SLOTS_STORE_NAME, key: record.slotId, value: { ...record, saveData }, stamp: record.saveData.timestamp });
+    for (const row of slots) {
+      const record = asRecord(row);
+      const saveData = asRecord(record?.saveData);
+      if (!record || !saveData) continue;
+      const dehydrated = await dehydrateSaveImages(saveData);
+      if (dehydrated !== saveData) pending.push({ store: SLOTS_STORE_NAME, key: Number(record.slotId ?? 0), value: { ...record, saveData: dehydrated }, stamp: typeof saveData.timestamp === 'string' ? saveData.timestamp : undefined });
     }
-    for (const record of checkpoints as any[]) {
-      if (!record?.baseState) continue;
-      const baseState = await dehydrateStateImages(record.baseState);
-      if (baseState !== record.baseState) pending.push({ store: INTERRUPTED_TURNS_STORE_NAME, key: record.id, value: { ...record, baseState }, stamp: record.createdAt });
+    for (const row of checkpoints) {
+      const record = asRecord(row);
+      const baseState = asRecord(record?.baseState);
+      if (!record || !baseState) continue;
+      const dehydrated = await dehydrateStateImages(baseState);
+      if (dehydrated !== baseState) pending.push({ store: INTERRUPTED_TURNS_STORE_NAME, key: String(record.id ?? ''), value: { ...record, baseState: dehydrated }, stamp: typeof record.createdAt === 'string' ? record.createdAt : undefined });
     }
 
     let written = 0;

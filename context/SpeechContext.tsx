@@ -2,6 +2,7 @@
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { useLocalization } from './LocalizationContext';
 import { notifyWarning } from '../utils/notifications';
+import { speechLanguageCode } from '../utils/localization';
 
 interface SpeechContextType {
     speak: (text: string) => void;
@@ -50,7 +51,7 @@ export const SpeechProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             const utterance = new SpeechSynthesisUtterance(text);
             utteranceRef.current = utterance;
 
-            const langCode = language === 'ru' ? 'ru-RU' : 'en-US';
+            const langCode = speechLanguageCode(language);
             utterance.lang = langCode;
             
             const voices = currentSpeech.getVoices();

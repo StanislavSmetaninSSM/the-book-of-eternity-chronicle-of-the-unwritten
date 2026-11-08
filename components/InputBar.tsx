@@ -362,7 +362,7 @@ export default function InputBar({ onSendMessage, onAskQuestion, onCancelRequest
                     style={{ width: `${stealthState.detectionLevel}%` }}
                 ></div>
             </div>
-            <p className="text-xs text-gray-400 italic mt-1.5 text-center">{t(stealthState.description as any)}</p>
+            <p className="text-xs text-gray-400 italic mt-1.5 text-center">{t(stealthState.description)}</p>
         </div>
       )}
       {selectedImage && (

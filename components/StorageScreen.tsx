@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
 // FIX: Add missing import for GameSettings
-import { GameState, Item, LocationStorage, GameSettings, ImageCacheEntry } from '../types';
+import { GameState, Item, LocationStorage, GameSettings, ImageCacheEntry, DetailData} from '../types';
 import Modal from './Modal';
 import { useLocalization } from '../context/LocalizationContext';
 // FIX: Change default import to named import for InventoryManagerUI.
@@ -13,7 +13,7 @@ interface StorageScreenProps {
     gameState: GameState;
     onMoveToStorage: (locationId: string, storageId: string, item: Item, quantity: number) => void;
     onRetrieveFromStorage: (locationId: string, storageId: string, item: Item, quantity: number) => void;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     // FIX: Update imageCache and onImageGenerated prop types.
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;

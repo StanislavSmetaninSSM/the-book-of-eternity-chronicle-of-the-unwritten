@@ -1,5 +1,6 @@
 
 import { GameState, Item, PlayerCharacter, NPC } from '../types';
+import { isEncumbered } from './carryWeight.js';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -157,9 +158,10 @@ export const moveItemForNpc = (npcId: string, itemToMove: Item, destinationConta
     if (!itemInInventory) return currentState;
 
     if (npc.equippedItems) {
-        Object.keys(npc.equippedItems).forEach(slot => {
-            if ((npc.equippedItems as any)[slot] === itemToMove.existedId) {
-                (npc.equippedItems as any)[slot] = null;
+        const equipment: Record<string, string | null> = npc.equippedItems;
+        Object.keys(equipment).forEach(slot => {
+            if (equipment[slot] === itemToMove.existedId) {
+                equipment[slot] = null;
             }
         });
     }
@@ -243,7 +245,8 @@ export function recalculateAllWeights<T extends (PlayerCharacter | NPC)>(pc: T):
         }, 0);
 
     newPc.totalWeight = parseFloat(totalWeight.toFixed(2));
-    
+    newPc.isOverloaded = isEncumbered(newPc.maxWeight, newPc.totalWeight);
+
     // newPc.inventory is NOT modified. The original item weights are preserved in the state.
     return newPc;
 }

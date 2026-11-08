@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NPC, UnlockedMemory } from '../../types';
+import { NPC, UnlockedMemory, DetailData} from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import MemoryCard from '../DetailRenderer/Shared/MemoryCard';
 import ConfirmationModal from '../ConfirmationModal';
@@ -11,7 +11,7 @@ interface MemoriesViewProps {
     character: NPC;
     isPlayer: boolean;
     isAdminEditable: boolean;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onEditNpcMemory?: (npcId: string, memory: UnlockedMemory) => void;
     onDeleteNpcMemory?: (npcId: string, memoryId: string) => void;
 }

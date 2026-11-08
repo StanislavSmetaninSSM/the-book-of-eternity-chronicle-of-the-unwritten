@@ -1,3 +1,5 @@
+import { asRecord } from './typeGuards';
+
 
 /**
  * Generated images live in their own content-addressed store (see `utils/imageBlobStore`),
@@ -111,24 +113,25 @@ export function applyImageBudget<T>(cache: T, options: ImageBudgetOptions = {}):
 }
 
 /** Copy of a save without any cached images, used when storage reports a full quota. */
-export function stripImagesForQuota<TSave extends { gameState?: any }>(save: TSave): TSave {
+export function stripImagesForQuota<TSave extends { gameState?: { imageCache?: Record<string, unknown> }; omittedImageCount?: number }>(save: TSave): TSave {
     if (!save?.gameState?.imageCache) return save;
     const cachedCount = Object.keys(save.gameState.imageCache).length;
     return {
         ...save,
         gameState: { ...save.gameState, imageCache: {} },
-        omittedImageCount: (Number((save as any).omittedImageCount) || 0) + cachedCount,
+        omittedImageCount: (Number(save.omittedImageCount) || 0) + cachedCount,
         imagesOmittedForQuota: true,
     } as TSave;
 }
 
 export function isQuotaError(error: unknown): boolean {
-    const name = (error as any)?.name || '';
-    const code = (error as any)?.code;
+    const details = asRecord(error);
+    const name = typeof details?.name === 'string' ? details.name : '';
+    const code = details?.code;
     return name === 'QuotaExceededError'
         || name === 'NS_ERROR_DOM_QUOTA_REACHED'
         || code === 22
-        || /quota/i.test(String((error as any)?.message || ''));
+        || /quota/i.test(String(details?.message ?? ''));
 }
 
 /** Recovery checkpoints are written on every turn and every crash, so they keep far less. */

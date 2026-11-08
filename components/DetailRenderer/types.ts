@@ -1,12 +1,12 @@
 
-import { Item, Quest, NPC, Location, PlayerCharacter, Faction, GameSettings, Wound, UnlockedMemory, CompletedActivity, LocationStorage, ImageCacheEntry } from '../../types';
+import { Item, Quest, NPC, Location, PlayerCharacter, Faction, GameSettings, Wound, UnlockedMemory, CompletedActivity, LocationStorage, ImageCacheEntry, DetailData} from '../../types';
 
 export interface WoundDetailsProps extends Omit<DetailRendererProps, 'data'> {
     wound: Wound & { characterType?: 'player' | 'npc', characterId?: string | null };
 }
 
 export interface DetailRendererProps {
-    data: any;
+    data: DetailData;
     onForgetNpc?: (npcId: string) => void;
     onClearNpcJournal?: (npcId: string) => void;
     onDeleteOldestNpcJournalEntries?: (npcId: string, count: number) => void;
@@ -17,20 +17,20 @@ export interface DetailRendererProps {
     onForgetQuest?: (questId: string) => void;
     playerCharacter: PlayerCharacter | null;
     setAutoCombatSkill?: (skillName: string | null) => void;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onOpenJournalModal?: (npc: NPC) => void;
     onShowMessageModal?: (title: string, content: string) => void;
     disassembleItem?: (item: Item) => void;
     disassembleNpcItem?: (npcId: string, item: Item) => void;
     currentLocationId?: string;
     allowHistoryManipulation: boolean;
-    onEditNpcData: (npcId: string, field: keyof NPC, value: any) => void;
-    onEditQuestData: (questId: string, field: keyof Quest, value: any) => void;
-    onEditItemData: (itemId: string, field: keyof Item, value: any) => void;
-    onEditLocationData: (locationId: string, field: keyof Location, value: any) => void;
-    onEditPlayerData: (field: keyof PlayerCharacter, value: any) => void;
-    onEditFactionData: (factionId: string, field: keyof Faction, value: any) => void;
-    onRegenerateId?: (entity: any, entityType: string) => void;
+    onEditNpcData: (npcId: string, field: keyof NPC, value: unknown) => void;
+    onEditQuestData: (questId: string, field: keyof Quest, value: unknown) => void;
+    onEditItemData: (itemId: string, field: keyof Item, value: unknown) => void;
+    onEditLocationData: (locationId: string, field: keyof Location, value: unknown) => void;
+    onEditPlayerData: (field: keyof PlayerCharacter, value: unknown) => void;
+    onEditFactionData: (factionId: string, field: keyof Faction, value: unknown) => void;
+    onRegenerateId?: (entity: unknown, entityType: string) => void;
     encounteredFactions?: Faction[];
     gameSettings: GameSettings | null;
     imageCache: Record<string, ImageCacheEntry>;

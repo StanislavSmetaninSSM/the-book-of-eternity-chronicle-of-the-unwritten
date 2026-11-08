@@ -112,6 +112,37 @@ export const common = {
     "The Game Master is responding...": "The Game Master is responding...",
     "Are you sure you want to delete this message?": "Are you sure you want to delete this message?",
     "Generated image": "Generated image",
+    "World State Check": "World State Check",
+    "world_notes_negative_effort": "{subject}: time spent is {minutes} minutes; effort written into a tracker cannot fall below zero.",
+    "world_notes_completed_but_active": "{subject}: {spent} of {cost} minutes spent - the completion check is met, yet the task is still listed as unfinished.",
+    "world_notes_standing_out_of_range": "{subject}: standing {value} is outside the scale of {floor} to {ceiling}.",
+    "world_notes_wound_awaiting_transition": "{subject}: treatment progress {progress} of {needed} - at that number the wound is supposed to change its state.",
+    "Effect State Check": "Effect State Check",
+    "effect_notes_expired_but_listed": "{subject}: effect {label} is listed as active with duration {duration}; when the duration reaches 0 the effect expires.",
+    "effect_notes_duration_not_whole": "{subject}: effect {label} states duration {duration}; remaining turns have to be a whole number.",
+    "effect_notes_duration_missing": "{subject}: effect {label} is one of the time-limited types, so it has to state a duration.",
+    "effect_notes_wound_reference_duration": "{subject}: a 'WoundReference' effect must always carry the duration {expected}; this one states {duration}.",
+    "effect_notes_wound_reference_duration_missing": "{subject}: a 'WoundReference' effect has to state the duration that holds it open ({expected}).",
+    "effect_notes_wound_reference_without_id": "{subject}: a 'WoundReference' effect must provide 'sourceWoundId', or there is nothing to tie it to.",
+    "effect_notes_wound_reference_wound_missing": "{subject}: a 'WoundReference' effect points at wound '{wound}', which is not in the record.",
+    "effect_notes_wound_reference_wound_healed": "{subject}: the wound '{wound}' behind a 'WoundReference' effect is healed, so the effect tied to it should have ended.",
+    "effect_notes_duplicate_effect_id": "{subject}: the effect id '{effectId}' appears {times} times; the id exists so that one effect is not listed twice.",
+    // The combat log is the player's view of the fight, and rule #28.1.3 states what may not be in it:
+    // "Do NOT include calculations, formulas, or dice rolls." The mark is placed under the entry it is about,
+    // so these strings say what was written there, not what it means.
+    "combat_log_notes_calculation": "This entry writes the calculation itself; #28.1.3 keeps arithmetic out of the combat log.",
+    "combat_log_notes_dice": "This entry names a dice roll; #28.1.3 keeps dice out of the combat log.",
+    // A chronicle entry the archive cannot place in time, and the wound list of the sheet.
+    "world_notes_chronicle_turn_unreadable": "This entry does not begin with the `#[turn] - date, HH:MM` stamp #18.A.0 makes mandatory; no turn can be read out of it, so the archive sorts it as -1 and the rule that keeps the latest entries prunes it first.",
+    "world_notes_chronicle_clock_missing": "The turn is written, the hour is not - and #18.A.0 asks for HH:MM. The archive sorts by turn alone, so nothing separates two events of the same day here.",
+    "Wound State Check": "Wound State Check",
+    // One entry of the world events log, read back for the two fields its own schema names.
+    "world_notes_event_turn_from_the_future": "This event claims turn {turn}, while the world is on turn {current}. #30.4.2 takes the number from the Context, and the timeline below groups events by it - so a future turn has nothing to report yet.",
+    "world_notes_event_date_missing": "The date of a world event is MANDATORY in #30.4.2, and this entry carries no date object at all.",
+    "world_notes_event_clock_missing": "The time of day reads \"{value}\" instead of the HH:MM the schema names, and the timeline orders one turn by comparing exactly that string.",
+    // #6.1.6.7 makes the wait of an NPC action strict and #12.9.3 has the client count it; the panel
+    // only names the two numbers that cannot both be true.
+    "cooldown_notes_early_use": "{subject}: \"{action}\" is reported used on turn {used}, while its earlier use keeps it waiting until turn {ready}.",
     ...ui_overrides.en
   },
   ru: {
@@ -224,6 +255,31 @@ export const common = {
     "The Game Master is responding...": "Мастер игры отвечает...",
     "Are you sure you want to delete this message?": "Вы уверены, что хотите удалить это сообщение?",
     "Generated image": "Сгенерированное изображение",
+    "World State Check": "Проверка состояния мира",
+    "world_notes_negative_effort": "{subject}: потрачено {minutes} мин; время, записанное в задачу, не может быть меньше нуля.",
+    "world_notes_completed_but_active": "{subject}: потрачено {spent} из {cost} мин — условие завершения выполнено, но задача всё ещё числится незавершённой.",
+    "world_notes_standing_out_of_range": "{subject}: {value} вне шкалы от {floor} до {ceiling}.",
+    "world_notes_wound_awaiting_transition": "{subject}: прогресс лечения {progress} из {needed} — при таком значении состояние раны должно измениться.",
+    "Effect State Check": "Проверка состояния эффектов",
+    "effect_notes_expired_but_listed": "{subject}: эффект {label} числится активным при длительности {duration}; на нуле эффект обязан завершиться.",
+    "effect_notes_duration_not_whole": "{subject}: эффект {label} указывает длительность {duration}; оставшиеся ходы должны быть целым числом.",
+    "effect_notes_duration_missing": "{subject}: эффект {label} относится к ограниченным по времени, поэтому он обязан указывать длительность.",
+    "effect_notes_wound_reference_duration": "{subject}: эффект WoundReference обязан нести длительность {expected}; здесь указано {duration}.",
+    "effect_notes_wound_reference_duration_missing": "{subject}: эффект WoundReference должен указать длительность, которая его удерживает ({expected}).",
+    "effect_notes_wound_reference_without_id": "{subject}: эффект WoundReference обязан указать sourceWoundId — иначе его не к чему привязать.",
+    "effect_notes_wound_reference_wound_missing": "{subject}: эффект WoundReference ссылается на рану «{wound}», которой нет в записи.",
+    "effect_notes_wound_reference_wound_healed": "{subject}: рана «{wound}», на которую ссылается эффект WoundReference, исцелена — привязанный к ней эффект должен был завершиться.",
+    "effect_notes_duplicate_effect_id": "{subject}: id эффекта «{effectId}» встречается {times} раза; id и нужен, чтобы один эффект не попадал в список дважды.",
+    // Ответ читателя боевого журнала - строка под самой записью, и она описывает, что в ней написано.
+    "combat_log_notes_calculation": "Запись приводит расчёт сама; #28.1.3 держит арифметику вне боевого журнала.",
+    "combat_log_notes_dice": "Запись называет бросок кубика; #28.1.3 держит кубики вне боевого журнала.",
+    "world_notes_chronicle_turn_unreadable": "Запись не начинается с обязательной по #18.A.0 метки `#[ход] - дата, ЧЧ:ММ`; ход в ней не читается, архив сортирует её как -1, и правило «хранить последние N» вычищает её первой.",
+    "world_notes_chronicle_clock_missing": "Номер хода указан, а час нет — хотя #18.A.0 требует ЧЧ:ММ. Архив сортирует только по ходу, поэтому два события одного дня здесь ничем не разделены.",
+    "Wound State Check": "Проверка состояния ран",
+    "world_notes_event_turn_from_the_future": "Событие заявляет ход {turn}, хотя мир идёт по ходу {current}. #30.4.2 берёт номер из Контекста, а таймлайн группирует события по нему — у будущего хода ещё нечего сообщать.",
+    "world_notes_event_date_missing": "Дата мирового события обязательна по #30.4.2, а у этой записи объекта даты нет вовсе.",
+    "world_notes_event_clock_missing": "Время дня записано как «{value}» вместо указанных схемой HH:ММ, а таймлайн и сортирует ход именно по этой строке.",
+    "cooldown_notes_early_use": "{subject}: «{action}» заявлен применённым на ходу {used}, хотя прежнее его применение держит в ожидании до хода {ready}.",
     ...ui_overrides.ru
   }
 }

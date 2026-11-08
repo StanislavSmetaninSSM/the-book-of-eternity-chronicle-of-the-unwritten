@@ -187,7 +187,7 @@ test('world progression hands NPC activity results to the NPC stage, without alt
     assert.deepEqual(simpleWorld.steps, ['Step0_AnalysisAndPlanning_TaskGuide', 'Step_WorldProgression_TaskGuide', 'Step2_CoreState_TaskGuide', 'Step4_NPC_TaskGuide', 'Step6_NarrativeGeneration_TaskGuide', 'Step7_Finalization_TaskGuide']);
     const sent = JSON.parse(simpleWorld.packets.find(p => p.stepName === 'Step4_NPC_TaskGuide').prompt.split('\n\n<CurrentGameContext>\n').at(-1).split('\n</CurrentGameContext>')[0]);
     assert.match(JSON.parse(sent.partiallyGeneratedResponse).items_and_stat_calculations.join(' '), /30 minutes progress/);
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc, herbalist], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc, herbalist], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const { newState, processedResponse } = processAndApplyResponse(simpleWorld.result, state, context.gameSettings, key => key, true, 2, context.worldMap);
     assert.equal(newState.encounteredNPCs[0].currentActivity.timeSpentMinutes, 30);
     assert.equal(newState.encounteredNPCs[1].currentActivity, null);
@@ -247,7 +247,7 @@ test('faction event hands NPC goals to the NPC stage even without world progress
     assert.doesNotMatch(allowed, /NPCGoalUpdates|NPCQuestUpdates/);
     assert.match(factionTask, /Step4_NPC_TaskGuide/);
     assert.match(getStep4(), /faction.*event/is);
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const { newState, processedResponse } = processAndApplyResponse(handoff.result, state, context.gameSettings, key => key, true, 2, context.worldMap);
     assert.equal(newState.encounteredNPCs[0].goals.shortTerm, 'Defend the outpost');
     assert.equal(newState.encounteredNPCs[0].personalQuests[0].questId, 'quest-1');
@@ -304,7 +304,7 @@ test('combat hands armor durability to inventory and named NPC stages', async ()
       const sent = JSON.parse(turn.packets.find(p => p.stepName === name).prompt.split('\n\n<CurrentGameContext>\n').at(-1).split('\n</CurrentGameContext>')[0]);
       assert.match(JSON.parse(sent.partiallyGeneratedResponse).items_and_stat_calculations.join(' '), /Armor holds/);
     }
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const { newState, processedResponse } = processAndApplyResponse(turn.result, state, context.gameSettings, key => key, true, 2, context.worldMap);
     assert.equal(newState.playerCharacter.inventory[0].durability, '72%'); assert.equal(newState.encounteredNPCs[0].inventory[0].durability, '95%');
     const next = buildNextContext(context, processedResponse, newState, [], true);
@@ -345,7 +345,7 @@ test('staged combat cleanup carries named NPC health through the actual turn pip
     const player = context.playerCharacter;
     const npc = { ...player, NPCId: 'npc-1', name: 'Leader', maxHealth: 108, currentHealth: 100, inventory: [] };
     context.encounteredNPCs = [npc];
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = await executeTurn(context, new AbortController().signal, () => {}, () => {}, () => {});
     assert.deepEqual(response.enemiesData, []);
     assert.equal(response.NPCsData.find(n => n.NPCId === 'npc-1').currentHealth, 80);
@@ -393,7 +393,7 @@ test('direct combat cleanup hands named NPC final health to NPC stage', async ()
     const response = await executeTurn(context, new AbortController().signal, () => {}, () => {}, () => {});
     const packet = packets.find(p => p.stepName === 'Step4_NPC_TaskGuide');
     assert.ok(packet, 'NPC stage is required even when the combat roster was cleared and the NPC has no armor');
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: context.enemiesDataForCurrentTurn, alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: context.enemiesDataForCurrentTurn, alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const applied = processAndApplyResponse(response, state, context.gameSettings, key => key, true, 2, context.worldMap);
     const next = buildNextContext(context, applied.processedResponse, applied.newState, [], true);
     assert.equal(next.encounteredNPCs[0].currentHealth, 80);
@@ -438,7 +438,7 @@ test('inventory processing overrides contradictory simple-turn routing for trans
     assert.deepEqual(invalid.inventoryTransfers, [transfer, null]);
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const pc = context.playerCharacter;
-    const base = { playerCharacter: pc, players: [pc], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: pc, players: [pc], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const snapshot = structuredClone(base);
     assert.throws(() => processAndApplyResponse(invalid, base, context.gameSettings, k => k, true, 2, context.worldMap), /error_inventory_transfer_rejected/);
     assert.deepEqual(base, snapshot);

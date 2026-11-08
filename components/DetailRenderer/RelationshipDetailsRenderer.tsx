@@ -1,13 +1,7 @@
 import React from 'react';
 import { useLocalization } from '../../context/LocalizationContext';
 import MarkdownRenderer from '../MarkdownRenderer';
-
-interface RelationshipTier {
-    lowerBound: number;
-    upperBound: number;
-    name: string;
-    desc: string;
-}
+import type { RelationshipTier } from '../../types';
 
 interface RelationshipDetailsProps {
     data: {

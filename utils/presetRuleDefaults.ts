@@ -1,5 +1,6 @@
 import type { PresetRuleTexts } from './translations/presetRules';
 import type { Language } from '../types';
+import { pickLocalized } from './localization';
 
 /**
  * Fills the starting descriptions of the optional systems for the selected universe.
@@ -17,7 +18,7 @@ export const fillPresetRuleDefaults = <T extends Record<string, unknown>>(
   for (const [field, text] of Object.entries(texts)) {
     const current = data[field];
     if (typeof current === 'string' && current && current !== text.en && current !== text.ru) continue;
-    const localized = language === 'ru' ? text.ru : text.en;
+    const localized = pickLocalized(text, language);
     if (localized && localized !== current) updates[field] = localized;
   }
   return Object.keys(updates).length > 0 ? { ...data, ...updates } : data;

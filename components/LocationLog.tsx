@@ -1,17 +1,19 @@
 import React, { useMemo, useState } from 'react';
-import { Location, GameSettings, ImageCacheEntry } from '../types';
+import { Location, GameSettings, ImageCacheEntry, DetailData} from '../types';
 import { MapIcon, FireIcon, GlobeAltIcon, UserGroupIcon, MapPinIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import ImageRenderer from './ImageRenderer';
 import ConfirmationModal from './ConfirmationModal';
+import WorldStateNotes from './WorldStateNotes';
+import { assessWorld, assessChronicle } from '../utils/worldAssessment.js';
 
 interface LocationLogProps {
   locations: Location[];
   currentLocation: Location;
-  onOpenModal: (title: string, data: any) => void;
+  onOpenModal: (title: string, data: DetailData) => void;
   allowHistoryManipulation: boolean;
-  onEditLocationData: (locationId: string, field: keyof Location, value: any) => void;
+  onEditLocationData: (locationId: string, field: keyof Location, value: unknown) => void;
   imageCache: Record<string, ImageCacheEntry>;
   onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
   forgetLocation: (locationId: string) => void;
@@ -20,7 +22,7 @@ interface LocationLogProps {
 
 const LocationItem: React.FC<{ 
   loc: Location, 
-  onOpenModal: (title: string, data: any) => void;
+  onOpenModal: (title: string, data: DetailData) => void;
   imageCache: Record<string, ImageCacheEntry>;
   onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
   isCurrentLocation: boolean;
@@ -30,7 +32,10 @@ const LocationItem: React.FC<{
 }> = ({ loc, onOpenModal, imageCache, onImageGenerated, isCurrentLocation, allowHistoryManipulation, onDelete, gameSettings }) => {
   const { t } = useLocalization();
   
-  const displayType = t((loc.indoorType || loc.biome || loc.locationType) as any);
+  const displayType = t((loc.indoorType || loc.biome || loc.locationType));
+  // A threat keeps its own activity tracker, so it answers to the completion check inside the card
+  // of the place that hosts it - the place is already named, so it does not have to be repeated.
+  const threatNotes = assessWorld({ threats: loc.activeThreats || [] }).notes;
   
   const { eventType, eventText } = useMemo(() => {
     const fullEventText = loc.eventDescriptions && loc.eventDescriptions.length > 0 ? loc.eventDescriptions[0].trim() : '';
@@ -49,6 +54,10 @@ const LocationItem: React.FC<{
     
     return { eventType: null, eventText: fullEventText };
   }, [loc.eventDescriptions]);
+
+  // #18.A.0 makes the timestamp mandatory, and the turn the archive sorts by lives in that prefix.
+  // The mark goes under the event text itself, because it is about this one entry.
+  const chronicleNotes = useMemo(() => assessChronicle(eventText ? [eventText] : []).notes, [eventText]);
 
   const imagePrompt = loc.custom_image_prompt || loc.image_prompt || `A detailed fantasy art image of a ${loc.name}.`;
   
@@ -107,7 +116,7 @@ const LocationItem: React.FC<{
                     {loc.factionControl.map(fc => (
                         <div key={fc.factionId || fc.factionName} className="text-xs">
                             <div className="flex justify-between items-center text-gray-300 mb-1">
-                                <span className="font-semibold">{fc.factionName} ({t(fc.controlType as any)})</span>
+                                <span className="font-semibold">{fc.factionName} ({t(fc.controlType)})</span>
                                 <span className="font-mono">{fc.controlLevel}%</span>
                             </div>
                             <div className="w-full bg-gray-700/70 rounded-full h-2 overflow-hidden">
@@ -151,11 +160,14 @@ const LocationItem: React.FC<{
         {eventText && (
             <div className="border-t border-gray-700/50 pt-3 mt-3 space-y-2">
                 <p className="text-xs font-semibold text-gray-400">
-                    {t('Last Event')}: {eventType && <span className="text-cyan-300 font-medium">{t(eventType as any)}</span>}
+                    {t('Last Event')}: {eventType && <span className="text-cyan-300 font-medium">{t(eventType)}</span>}
                 </p>
                 <div className="text-sm italic text-gray-400 line-clamp-2">
                     <MarkdownRenderer content={eventText} />
                 </div>
+                {chronicleNotes.length > 0 && (
+                    <WorldStateNotes notes={chronicleNotes} compact className="mt-1" />
+                )}
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
@@ -166,6 +178,9 @@ const LocationItem: React.FC<{
                     {t('Read Full Log')}
                 </button>
             </div>
+        )}
+        {threatNotes.length > 0 && (
+          <WorldStateNotes notes={threatNotes} compact className="mt-3 pt-3 border-t border-amber-500/20" />
         )}
       </button>
     </div>

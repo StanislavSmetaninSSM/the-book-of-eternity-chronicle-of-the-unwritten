@@ -34,12 +34,102 @@ export type ImageCacheEntry = {
   sourceModel?: string;
 };
 
+/** A world as the creation form, the customiser and the prompt builder see it. */
+/** One race of a universe's preset pack, as the customizer edits it. */
+export interface RaceDefinition {
+    description: string;
+    bonuses: Record<string, number>;
+    availableClasses?: string[];
+}
+
+/** One class of a universe's preset pack, as the customizer edits it. */
+export interface ClassDefinition {
+    description: string;
+    bonuses: Record<string, number>;
+}
+
+export interface WorldData {
+    name: string;
+    description: string;
+    /** Some shipped worlds leave the currency to the default, so it is optional. */
+    currencyName?: string;
+    currencyOptions?: string[];
+    races: Record<string, RaceDefinition>;
+    classes: Record<string, ClassDefinition>;
+    calendar?: Calendar;
+}
+
+/** The world a chronicle runs in, recorded in the game settings. */
+export interface WorldBaseInfo extends WorldData {
+    universe?: string;
+    selectedEra?: string | null;
+}
+
+/** A state an item reacts to, e.g. "increases damage against Burning targets". */
+export interface ItemCustomProperty {
+    interactionType?: string;
+    targetStateName?: string;
+    changeValue?: number;
+}
+
+/** A material an item breaks down into; the model may prefill its item stats. */
+export interface DisassemblyMaterial extends Partial<Item> {
+    materialName: string;
+    quantity: number;
+}
+
+/** A combat resistance of a combatant. */
+export interface CombatResistance {
+    resistanceName?: string;
+    resistanceValue?: string;
+    resistType?: string;
+    resistTypeDisplayName?: string;
+}
+
+/** How strongly a faction holds a location. */
+export interface FactionControlEntry {
+    factionId?: string;
+    factionName?: string;
+    controlType?: 'Military' | 'Economic' | 'Social' | 'Covert';
+    controlLevel: number;
+}
+
+/** A player's standing with one NPC or faction. */
+export interface NpcReputationEntry {
+    NPCId?: string;
+    relationshipLevel?: number;
+    isCompanion?: boolean;
+}
+
+export interface FactionReputationEntry {
+    factionId?: string;
+    reputation?: number;
+    playerRank?: string | null;
+    isMember?: boolean;
+}
+
+/** The short status of the player that the narrating model reports each turn. */
+export interface PlayerStatus {
+    healthPercentage?: string;
+    energyPercentage?: string;
+    activeConditions?: string[];
+}
+
+/** What a multi-personality party shares between its members. */
+export interface MultiplePersonalitiesSettings {
+  shareCharacteristics: boolean;
+  shareSkills: boolean;
+  shareNpcReputation: boolean;
+  shareFactionReputation: boolean;
+  shareInventory: boolean;
+}
+
 export interface GameSettings {
   nonMagicMode: boolean;
   language: Language;
   gameWorldInformation: {
     currencyName: string;
-    baseInfo: any;
+    baseInfo: WorldBaseInfo;
     customInfo: string;
     calendar?: Calendar;
     /** Universe id; absent in saves written before translations became lazy. */
@@ -57,22 +147,66 @@ export interface GameSettings {
   cooperativeGameType: 'None' | 'MultiplePersonalities' | 'FullParty';
   /** Hand the turn to the next party member automatically. */
   autoPassTurn: boolean;
-  /** @deprecated Pre-single-player name, still read from old saves. */
-  autoPassTurnInCoop?: boolean;
   showPartyStatusPanel?: boolean;
   uiControlScale?: number;
   uiFontScale?: number;
-  multiplePersonalitiesSettings?: {
-    shareCharacteristics: boolean;
-    shareSkills: boolean;
-    shareNpcReputation: boolean;
-    shareFactionReputation: boolean;
-    shareInventory: boolean;
-  };
+  multiplePersonalitiesSettings?: MultiplePersonalitiesSettings;
   doNotUseWorldEvents: boolean;
   showImageSourceInfo?: boolean;
   generateWorldEventImages?: boolean;
   disableImageGeneration?: boolean;
+}
+
+/**
+ * What the start screen hands to the game: the universe choice, the toggles and
+ * the new character. Every field is optional because a universe contributes only
+ * the choices it has — a custom universe has no era, and a quick start no class.
+ */
+export interface CharacterCreationData {
+  universe?: string;
+  selectedEra?: string;
+  worldInformation?: string;
+  superInstructions?: string;
+  initialPrompt?: string;
+  customGameData?: unknown;
+  playerName?: string;
+  characterDescription?: string;
+  age?: number;
+  race?: string;
+  charClass?: string;
+  isCustomRace?: boolean;
+  customRaceName?: string;
+  customRaceDescription?: string;
+  customAttributes?: Record<string, number>;
+  isCustomClass?: boolean;
+  customClassName?: string;
+  customClassDescription?: string;
+  customClassAttributes?: Record<string, number>;
+  startingYear?: number;
+  startingMonth?: string;
+  startingDay?: number;
+  startTime?: string;
+  weather?: string;
+  currencyName?: string;
+  nonMagicMode?: boolean;
+  adultMode?: boolean;
+  youtubeApiKey?: string;
+  allowHistoryManipulation?: boolean;
+  hardMode?: boolean;
+  impossibleMode?: boolean;
+  notificationSound?: boolean;
+  keepLatestNpcJournals?: boolean;
+  latestNpcJournalsCount?: number;
+  cooperativeGameType?: GameSettings['cooperativeGameType'];
+  autoPassTurn?: boolean;
+  showPartyStatusPanel?: boolean;
+  uiControlScale?: number;
+  uiFontScale?: number;
+  multiplePersonalitiesSettings?: MultiplePersonalitiesSettings;
+  doNotUseWorldEvents?: boolean;
+  generateWorldEventImages?: boolean;
+  disableImageGeneration?: boolean;
+  [key: string]: unknown;
 }
 
 export interface WorldState {
@@ -140,7 +274,8 @@ export interface StructuredBonus {
     bonusType: 'Characteristic' | 'ActionCheck' | 'Utility' | 'Other' | 'PowerProfileScale' | 'Resource' | 'CustomStatePower';
     target: string;
     valueType: 'Flat' | 'Percentage' | 'String' | 'Boolean' | 'Reference';
-    value: any;
+    /** Number for flat/percentage bonuses, the referenced name for references, a flag otherwise. */
+    value: string | number | boolean;
     application: 'Permanent' | 'Conditional';
     condition: string | null;
 }
@@ -163,7 +298,7 @@ export interface Item {
     textContent?: (string | null)[];
     bonuses: string[];
     structuredBonuses?: StructuredBonus[];
-    customProperties?: any[];
+    customProperties?: ItemCustomProperty[];
     contentsPath: string[] | null;
     isContainer: boolean;
     capacity: number | null;
@@ -174,7 +309,7 @@ export interface Item {
     combatEffect?: CombatAction[];
     equipmentSlot: string | string[] | null;
     requiresTwoHands?: boolean;
-    disassembleTo?: any[];
+    disassembleTo?: DisassemblyMaterial[];
     fateCards?: FateCard[];
     ownerBondLevelCurrent?: number;
     resource?: number;
@@ -259,6 +394,13 @@ export interface Effect {
     description: string;
 }
 
+export interface NPCWoundChange extends Partial<Wound> {
+    NPCId: string;
+    NPCName: string;
+    /** Older guide versions grouped the wounds of one NPC under the NPC entry. */
+    wounds?: Partial<Wound>[];
+}
+
 export interface Wound {
     woundId: string;
     woundName: string;
@@ -275,6 +417,26 @@ export interface Wound {
     };
 }
 
+/** What crossing one custom-state threshold does: a trimmed effect or a plain description. */
+export type CustomStateThresholdEffect = Partial<Effect> & Partial<StructuredBonus>;
+
+/** One named level of a custom state, reached at a trigger value. */
+export interface CustomStateThreshold {
+    levelName: string;
+    triggerCondition?: string;
+    triggerValue?: number;
+    description?: string;
+    associatedEffects?: CustomStateThresholdEffect[];
+}
+
+/** One band of an NPC's relationship scale. */
+export interface RelationshipTier {
+    lowerBound: number;
+    upperBound: number;
+    name: string;
+    desc: string;
+}
+
 export interface CustomState {
     stateId: string;
     stateName: string;
@@ -285,7 +447,7 @@ export interface CustomState {
     progressionRule: {
         description: string;
     };
-    thresholds: any[];
+    thresholds: CustomStateThreshold[];
 }
 
 export interface PlayerCharacter {
@@ -313,7 +475,7 @@ export interface PlayerCharacter {
     maxWeight: number;
     totalWeight: number;
     criticalExcessWeight: number;
-    isOverloaded?: boolean;
+    isOverloaded: boolean;
     critChanceBuffFromLuck: number;
     critChanceThreshold: number;
     characteristics: Characteristics;
@@ -334,8 +496,8 @@ export interface PlayerCharacter {
     autoCombatSkill: string | null;
     stealthState: StealthState;
     effortTracker: EffortTracker;
-    personalNpcReputations?: any[];
-    personalFactionReputations?: any[];
+    personalNpcReputations?: NpcReputationEntry[];
+    personalFactionReputations?: FactionReputationEntry[];
     characterChronicle?: (string | null)[];
 }
 
@@ -425,7 +587,7 @@ export interface LocationData {
     custom_image_prompt?: string | null;
     pending_image_prompt?: string | null;
     adjacencyMap?: AdjacencyMapEntry[];
-    factionControl?: any[];
+    factionControl?: FactionControlEntry[];
     locationStorages?: LocationStorage[];
     activeThreats?: ActiveThreat[];
 }
@@ -676,8 +838,8 @@ export interface Project {
     timeSpentMinutes: number;
     currentStep: number;
     totalSteps: number;
-    totalResourceCost?: any[];
-    resourcesSpent?: any[];
+    totalResourceCost?: { resourceName: string; totalAmount: number }[];
+    resourcesSpent?: { resourceName: string; amountSpent: number }[];
     activeState?: 'Active' | 'Completed' | 'Abandoned';
 }
 
@@ -733,7 +895,7 @@ export interface Faction {
 export interface WorldStateFlag {
     flagId: string;
     displayName: string;
-    value: any;
+    value: string | number | boolean | null;
     description: string;
 }
 
@@ -916,6 +1078,8 @@ export interface CompleteNPCActivity {
 
 export interface CompleteFactionProject {
     factionId?: string;
+    /** Turn-local tag of a faction created in this response; resolved to factionId before use. */
+    initialFactionId?: string;
     factionName?: string;
     projectId: string;
     projectName: string;
@@ -963,12 +1127,16 @@ export interface ItemMove {
 interface LocationUpdate {
     locationId: string;
     newName?: string;
+    newDescription?: string;
     newInternalDifficultyProfile?: Partial<DifficultyProfile>;
     newExternalDifficultyProfile?: Partial<DifficultyProfile>;
     newLastEventsDescription?: string;
-    factionControl?: any[];
+    factionControl?: FactionControlEntry[];
     locationStorages?: LocationStorage[];
     newImagePrompt?: string; // Added for pending image prompt handling
+    /** Older guides wrote the prompt straight onto the update instead of using the new* fields. */
+    image_prompt?: string;
+    pending_image_prompt?: string | null;
 }
 
 export interface StorageUpdatePayload {
@@ -976,7 +1144,8 @@ export interface StorageUpdatePayload {
   newDescription?: string;
   newCapacity?: number | null;
   newOwner?: LocationStorage['owner'];
-  [key: string]: any;
+  /** Fields copied verbatim onto the storage, so their shape is whatever the guide sent. */
+  [key: string]: unknown;
 }
 
 export interface StorageUpdate {
@@ -990,12 +1159,19 @@ export interface StorageRemoval {
   storageId: string;
 }
 
+/** A change to the description or state of one link between locations. */
+export interface LocationLinkUpdate {
+    sourceLocationId: string;
+    targetCoordinates?: { x: number; y: number };
+    updatedLink?: { newShortDescription?: string; newLinkState?: string };
+}
+
 interface WorldMapUpdates {
     newLocations?: Partial<Location>[];
     newLinks?: { sourceLocationId: string; link: AdjacencyMapEntry }[];
     locationUpdates?: LocationUpdate[];
-    linkUpdates?: any[];
-    linksToRemove?: any[];
+    linkUpdates?: LocationLinkUpdate[];
+    linksToRemove?: { sourceLocationId: string; targetCoordinates: { x: number; y: number } }[];
     threatsToAdd?: { targetLocationId?: string; initialTargetLocationId?: string; threat: ActiveThreat }[];
     threatsToUpdate?: { targetLocationId: string, threatUpdate: Partial<ActiveThreat> & { threatId: string } }[];
     threatsToRemove?: { targetLocationId: string, threatId: string }[];
@@ -1063,9 +1239,64 @@ export interface NPCRelationshipLockUpdate {
     };
 }
 
+/** What a step tells the turn loop to do next; the model fills these in as it plans. */
+export interface InternalTurnFlags {
+    isCombatActive?: boolean;
+    isSimpleTurn?: boolean;
+    needsSelfCorrection?: boolean;
+    needsFactionProgression?: boolean;
+    needsWorldProgression?: boolean;
+    needsInventoryProcessing?: boolean;
+    needsNPCProcessing?: boolean;
+    [key: string]: unknown;
+}
+
+/**
+ * Anything the detail modal can be asked to show: an entity from the save, or a
+ * decorated copy a log builds on the spot (`{ ...item, type: 'item' }`).
+ */
+export type DetailData =
+    | Record<string, unknown>
+    | Item
+    | Quest
+    | NPC
+    | Location
+    | PlayerCharacter
+    | Faction
+    | Wound
+    | Effect
+    | PassiveSkill
+    | ActiveSkill
+    | CombatAction
+    | NpcPersonalQuest
+    | CustomState
+    | CustomStateThreshold
+    | WorldEvent
+    | UnlockedMemory;
+
+/** A journal line the turn wants appended to one of the player's items. */
+export interface ItemJournalUpdate {
+    itemId: string;
+    initialItemId?: string;
+    itemName: string;
+    entryToAppend: string;
+}
+
+/** One per-turn command aimed at another party member; keys depend on the command. */
+export type PlayerCommand = Record<string, unknown> & {
+    itemJournalUpdates?: ItemJournalUpdate[];
+};
+
 export interface GameResponse {
     response?: string;
     thoughtSignature?: string; // Opaque token for preserving reasoning context
+    /** Routing flags a step sets for the turn loop. */
+    _internal_flags_?: InternalTurnFlags;
+    /** Set by the relay when the step asked for a rule bundle it could not read. */
+    _arenaRuleBundleUnavailable?: boolean;
+    /** Set on a correction response that refuses to repair the JSON and asks for a fresh step. */
+    regenerationRequired?: boolean;
+    reason?: string;
     image_prompt?: string;
     items_and_stat_calculations?: string[];
     inventoryItemsData?: Partial<Item>[];
@@ -1105,7 +1336,7 @@ export interface GameResponse {
     };
     updateWorldProgressionTracker?: { newLastWorldProgressionTimeInMinutes: number };
     updateFactionProgressionTracker?: { newLastFactionProgressionTimeInMinutes: number };
-    playerStatus?: any;
+    playerStatus?: PlayerStatus;
     worldStateFlags?: WorldStateFlag[];
     removeWorldStateFlags?: string[];
     worldEventsLog?: WorldEvent[];
@@ -1115,7 +1346,7 @@ export interface GameResponse {
     addOrUpdateRecipes?: Recipe[];
     removeRecipes?: string[];
     calculatedWeightData?: { additionalEnergyExpenditure: number };
-    otherPlayersInteractions?: Record<string, any>;
+    otherPlayersInteractions?: Record<string, PlayerCommand[]>;
     customStateChanges?: Partial<CustomState>[];
     playerCharacterNameChange?: string | null;
     playerImagePromptChange?: string | null;
@@ -1142,7 +1373,7 @@ export interface GameResponse {
     NPCEquipmentChanges?: NPCEquipmentChange[];
     itemFateCardUnlocks?: { itemId: string; cardId: string; cardName: string }[];
     itemBondLevelChanges?: { itemId: string; itemName: string; newBondLevel: number; changeReason: string }[];
-    itemJournalUpdates?: { itemId: string | null; initialItemId?: string; itemName: string; entryToAppend: string }[];
+    itemJournalUpdates?: (Omit<ItemJournalUpdate, 'itemId'> & { itemId: string | null })[];
     playerAppearanceChange?: string | null;
     playerRaceChange?: string | null;
     playerRaceDescriptionChange?: string | null;
@@ -1151,7 +1382,7 @@ export interface GameResponse {
     playerAutoCombatSkillChange?: string | 'clear' | null;
     playerStealthStateChange?: Partial<StealthState>;
     playerEffortTrackerChange?: Partial<EffortTracker>;
-    NPCWoundChanges?: (Partial<Wound> & { NPCId: string; NPCName: string })[];
+    NPCWoundChanges?: NPCWoundChange[];
     NPCInventoryResourcesChanges?: NPCInventoryResourceChange[];
     NPCCustomStateChanges?: NPCCustomStateChange[];
     NPCActivityUpdates?: NPCActivityUpdate[];
@@ -1233,6 +1464,22 @@ export interface CombatAction {
     ammoType?: string;
 }
 
+/**
+ * One action of a combatant whose wait the client counts (#6.1.6.7, #12.9.3). The turn of the use
+ * and the length of the wait are both read out of the state; `earlyUse*` is recorded when a use
+ * arrived before the wait its own earlier use opened, and it is what the combat panel reads back.
+ */
+export interface ActionCooldown {
+    actionName: string;
+    lastUsedTurnNumber: number;
+    cooldownTurns: number;
+    /** The first turn a reuse contradicts nothing. */
+    readyFromTurn: number;
+    /** The use that landed inside the wait, and the turn that wait asked for. */
+    earlyUseTurnNumber?: number;
+    earlyUseAgainstReadyFrom?: number;
+}
+
 export interface Combatant {
     NPCId: string | null;
     name: string;
@@ -1246,14 +1493,26 @@ export interface Combatant {
     maxHealth: string;
     currentHealth: string | null;
     actions: CombatAction[];
-    resistances?: any[];
-    activeBuffs?: any[];
-    activeDebuffs?: any[];
+    resistances?: CombatResistance[];
+    activeBuffs?: Effect[];
+    activeDebuffs?: Effect[];
     wounds?: Wound[];
+    /** The names the response reported as used this turn (#12.9.3); consumed by the client, never stored. */
+    cooldownsUsed?: string[];
+    /** The countdown the client keeps, one entry per action name the NPC's own skills state a wait for. */
+    cooldowns?: ActionCooldown[];
 }
 
 export type EnemyCombatObject = Combatant;
 export type AllyCombatObject = Combatant;
+
+/** Mastery progress of one NPC skill, handed to the model each turn. */
+export interface NpcSkillMasteryEntry {
+    NPCId?: string;
+    skillName?: string;
+    currentMasteryLevel?: number;
+    [key: string]: unknown;
+}
 
 export interface GameContext {
     message: string;
@@ -1268,7 +1527,7 @@ export interface GameContext {
     activeQuests: Quest[];
     completedQuests: Quest[];
     encounteredNPCs: NPC[];
-    npcSkillMasteryData: any[]; // Or more specific type
+    npcSkillMasteryData: NpcSkillMasteryEntry[];
     lootForCurrentTurn: LootTemplate[];
     preGeneratedDices1d20: number[];
     worldState: WorldState;
@@ -1279,7 +1538,8 @@ export interface GameContext {
     worldMap: Record<string, Location>;
     responseHistory: ChatMessage[];
     currentStepFocus: string | null;
-    partiallyGeneratedResponse: any | null;
+    /** The response merged so far; a prompt-only context carries it as serialised JSON. */
+    partiallyGeneratedResponse: Partial<GameResponse> | string | null;
     enemiesDataForCurrentTurn: EnemyCombatObject[];
     alliesDataForCurrentTurn: AllyCombatObject[];
     playerCustomStates: CustomState[];
@@ -1328,4 +1588,5 @@ export interface SaveFile {
   missingImageCount?: number;
 }
 
-export const isWound = (d: any): d is (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null }) => d && typeof d === 'object' && !Array.isArray(d) && d.type === 'wound';
+export const isWound = (d: unknown): d is (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null }) =>
+    !!d && typeof d === 'object' && !Array.isArray(d) && (d as { type?: unknown }).type === 'wound';

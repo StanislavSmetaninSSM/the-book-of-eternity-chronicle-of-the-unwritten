@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { asRecord } from '../../utils/typeGuards';
 import { NPC, NpcPersonalQuest } from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import { FlagIcon, MapIcon, CheckCircleIcon, XCircleIcon, StopCircleIcon, LightBulbIcon, TrashIcon } from '@heroicons/react/24/outline';
@@ -10,7 +11,7 @@ import ConfirmationModal from '../ConfirmationModal';
 interface NpcGoalsViewProps {
     character: NPC;
     isAdminEditable?: boolean;
-    onEditNpcData?: (npcId: string, field: keyof NPC, value: any) => void;
+    onEditNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
 }
 
 const QuestStatusIcon = ({ status }: { status: string }) => {
@@ -60,14 +61,15 @@ const NpcGoalsView: React.FC<NpcGoalsViewProps> = ({ character, isAdminEditable 
         }
     };
 
-    const getSafeString = (val: any): string => {
+    const getSafeString = (val: unknown): string => {
         if (typeof val === 'string') return val;
-        if (val && typeof val === 'object') {
-            if (val.other) return val.other;
-            const parts = [];
-            if (val.experience) parts.push(`${val.experience} XP`);
-            if (val.money) parts.push(`${val.money} Money`);
-            if (val.items) parts.push(`Items: ${val.items.join(', ')}`);
+        const record = asRecord(val);
+        if (record) {
+            if (record.other) return String(record.other);
+            const parts: string[] = [];
+            if (record.experience) parts.push(`${record.experience} XP`);
+            if (record.money) parts.push(`${record.money} Money`);
+            if (Array.isArray(record.items)) parts.push(`Items: ${record.items.join(', ')}`);
             return parts.join(', ');
         }
         return '';

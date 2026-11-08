@@ -1,16 +1,18 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { NPC, Faction, GameState, GameSettings, ImageCacheEntry } from '../types';
+import { NPC, Faction, GameState, GameSettings, ImageCacheEntry, DetailData} from '../types';
 import { UserGroupIcon, UserIcon, UserPlusIcon, ArrowsUpDownIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { CheckIcon, Bars3Icon } from '@heroicons/react/24/solid';
 import { useLocalization } from '../context/LocalizationContext';
 import ImageRenderer from './ImageRenderer';
 import ConfirmationModal from './ConfirmationModal';
+import WorldStateNotes from './WorldStateNotes';
+import { assessWorld } from '../utils/worldAssessment.js';
 
 interface NpcLogProps {
   gameState: GameState | null;
   npcs: NPC[];
   encounteredFactions: Faction[];
-  onOpenModal: (title: string, data: any) => void;
+  onOpenModal: (title: string, data: DetailData) => void;
   onOpenJournalModal: (npc: NPC) => void;
   onViewCharacterSheet: (character: NPC) => void;
   imageCache: Record<string, ImageCacheEntry>;
@@ -51,6 +53,9 @@ const NpcItem: React.FC<{
         if (level <= 150) return t('relationship_level_deep_bond');
         return t('relationship_level_devotion');
     };
+
+    // Activity, standing, wounds and effects of this one person, read back into their card.
+    const npcNotes = assessWorld({ npcs: [npc] }).notes;
 
     const journalPreviewContent = useMemo(() => {
         if (!npc.journalEntries || npc.journalEntries.length === 0) {
@@ -121,15 +126,15 @@ const NpcItem: React.FC<{
                 </div>
                 <div className="flex-1 text-left">
                     <p className="font-semibold text-gray-200">{npc.name} <span className="text-sm font-mono text-cyan-400">({t('Lvl {level}', { level: npc.level || '?' })})</span></p>
-                    <p className="text-sm text-gray-400">{t(npc.race as any)} {t(npc.class as any)}</p>
+                    <p className="text-sm text-gray-400">{t(npc.race)} {t(npc.class)}</p>
                     {npc.relationshipLevel !== undefined ? (
                         <div title={getRelationshipTooltip(npc.relationshipLevel)}>
                             <p className={`text-xs mt-1 font-semibold ${attitudeColorMap[npc.attitude || ''] || 'text-gray-400'}`}>
-                                {t('Relationship')}: {npc.relationshipLevel} {npc.attitude ? `(${t(npc.attitude as any)})` : ''}
+                                {t('Relationship')}: {npc.relationshipLevel} {npc.attitude ? `(${t(npc.attitude)})` : ''}
                             </p>
                         </div>
                     ) : npc.attitude && (
-                        <p className={`text-xs mt-1 font-semibold ${attitudeColorMap[npc.attitude] || 'text-gray-400'}`}>{t('Attitude')}: {t(npc.attitude as any)}</p>
+                        <p className={`text-xs mt-1 font-semibold ${attitudeColorMap[npc.attitude] || 'text-gray-400'}`}>{t('Attitude')}: {t(npc.attitude)}</p>
                     )}
                     {primaryAffiliation && (
                         <div className="text-xs text-yellow-300/70 mt-1 flex items-center gap-1.5">
@@ -139,6 +144,9 @@ const NpcItem: React.FC<{
                     )}
                 </div>
             </button>
+            {npcNotes.length > 0 && (
+                <WorldStateNotes notes={npcNotes} compact className="mt-2 pt-2 border-t border-amber-500/20" />
+            )}
             {journalPreviewContent && (
                 <div className="mt-3 pt-3 border-t border-gray-700/50">
                     <h5 className="text-xs font-semibold text-cyan-400/80 mb-1 uppercase tracking-wider">{t('journal_preview')}</h5>

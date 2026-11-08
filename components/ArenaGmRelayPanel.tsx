@@ -5,10 +5,11 @@ import {
   getArenaGmRequestEventName,
   parseArenaGmTurnResponse,
 } from '../utils/arenaGmRelay';
+import type { GameResponse } from '../types';
 
 type RequestDetail = {
   request: ArenaGmTurnRequest;
-  resolve: (response: any) => void;
+  resolve: (response: GameResponse) => void;
   reject: (reason: Error) => void;
 };
 

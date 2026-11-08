@@ -1,13 +1,29 @@
+import { asRecord } from './typeGuards';
 
-export function formatError(error: any): string {
-  if (!error) {
+/** Message of anything that was thrown: catch bindings are unknown, not Error. */
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  const record = asRecord(error);
+  if (record && typeof record.message === 'string') return record.message;
+  return String(error);
+}
+
+/** True when the thrown value is the browser's abort signal reaching a catch. */
+export function isAbortError(error: unknown): boolean {
+  const record = asRecord(error);
+  return record?.name === 'AbortError';
+}
+
+export function formatError(error: unknown): string {
+  const record = asRecord(error);
+  if (!record) {
     return 'An unknown error occurred.';
   }
 
-  const message = error.message || 'An unknown error occurred.';
+  const message = typeof record.message === 'string' ? record.message : 'An unknown error occurred.';
   let result = message;
 
-  if (error.stack) {
+  if (typeof record.stack === 'string') {
     // V8 (Chrome, Node) stack traces look like:
     // Error: message
     //     at functionName (fileName:line:col)
@@ -15,7 +31,7 @@ export function formatError(error: any): string {
     //     at fileName:line:col
     // Firefox stack traces look like:
     // functionName@fileName:line:col
-    const stackLines = error.stack.split('\n');
+    const stackLines = record.stack.split('\n');
     
     // Find the first line in the stack that contains file info
     const locationLine = stackLines.find((line: string) => line.includes(':') && (line.includes('/') || line.includes('@')));
@@ -67,24 +83,25 @@ export function formatError(error: any): string {
 
     // For server environments, also include the full stack trace
     if (typeof window === 'undefined') { // Server-side
-      result += `\n\n**Full Stack Trace:**\n\`\`\`\n${error.stack}\n\`\`\``;
+      result += `\n\n**Full Stack Trace:**\n\`\`\`\n${record.stack}\n\`\`\``;
     }
   }
 
   // Add error type information
-  if (error.name && error.name !== 'Error') {
-    result += `\n\n**Error Type:** ${error.name}`;
+  if (typeof record.name === 'string' && record.name !== 'Error') {
+    result += `\n\n**Error Type:** ${record.name}`;
   }
 
   return result;
 }
 
 // Additional helper function for extracting code context from encoded stack traces
-export function extractCodeContextFromStack(error: any): string | null {
-  if (!error?.stack) return null;
+export function extractCodeContextFromStack(error: unknown): string | null {
+  const record = asRecord(error);
+  if (typeof record?.stack !== 'string') return null;
 
   try {
-    const stackLines = error.stack.split('\n');
+    const stackLines = record.stack.split('\n');
     
     for (const line of stackLines) {
       const match = line.match(/(?:\(?|@)([^(\n@]+?):(\d+):(\d+)\)?$/);
@@ -126,7 +143,7 @@ export function extractCodeContextFromStack(error: any): string | null {
 }
 
 // Enhanced version that includes code context
-export function formatErrorWithContext(error: any): string {
+export function formatErrorWithContext(error: unknown): string {
   const basicFormat = formatError(error);
   const codeContext = extractCodeContextFromStack(error);
   

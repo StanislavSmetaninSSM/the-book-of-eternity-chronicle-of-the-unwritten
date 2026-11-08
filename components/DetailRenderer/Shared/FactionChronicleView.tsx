@@ -20,7 +20,7 @@ import {
 interface FactionChronicleViewProps {
     faction: Faction;
     isAdminEditable: boolean;
-    onEditFactionData: (factionId: string, field: keyof Faction, value: any) => void;
+    onEditFactionData: (factionId: string, field: keyof Faction, value: unknown) => void;
     onOpenTextReader: (title: string, content: string) => void;
 }
 

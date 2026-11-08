@@ -97,8 +97,10 @@ export const createSaveLoadManager = (
         const scanCharacter = (char: PlayerCharacter | NPC) => {
             addPrompt(char.image_prompt);
             addPrompt(char.pending_image_prompt);
-            if ((char as any).custom_image_prompt) addPrompt((char as any).custom_image_prompt);
-            if ((char as any).portrait) addPrompt((char as any).portrait);
+            // Older saves kept these prompts outside the typed fields.
+            const legacyChar = char as PlayerCharacter & { custom_image_prompt?: string | null; portrait?: string | null };
+            if (legacyChar.custom_image_prompt) addPrompt(legacyChar.custom_image_prompt);
+            if (legacyChar.portrait) addPrompt(legacyChar.portrait);
             
             if (char.inventory) {
                 char.inventory.forEach(scanItem);
@@ -176,7 +178,7 @@ export const createSaveLoadManager = (
 
         // Filter the cache
         if (gameState.imageCache) {
-            const cleanedCache: any = {};
+            const cleanedCache: GameState['imageCache'] = {};
             let keptCount = 0;
             let removedCount = 0;
 

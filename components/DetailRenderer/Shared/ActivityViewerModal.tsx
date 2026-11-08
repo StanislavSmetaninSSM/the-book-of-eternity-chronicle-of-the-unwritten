@@ -21,11 +21,16 @@ interface ActivityViewerModalProps {
   npcId: string;
 }
 
+/** Which activity the delete confirmation is about. */
+type ActivityToDelete =
+  | { type: 'current'; data: CurrentActivity }
+  | { type: 'completed'; data: CompletedActivity };
+
 const ActivityViewerModal: React.FC<ActivityViewerModalProps> = ({ isOpen, onClose, npcName, currentActivity, completedActivities, allowHistoryManipulation, onDeleteCurrentActivity, onDeleteCompletedActivity, onClearAllCompletedActivities, npcId }) => {
   const { t } = useLocalization();
   const [activeTab, setActiveTab] = useState<'current' | 'completed'>(currentActivity ? 'current' : 'completed');
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
-  const [activityToDelete, setActivityToDelete] = useState<{ type: 'current' | 'completed', data: any } | null>(null);
+  const [activityToDelete, setActivityToDelete] = useState<ActivityToDelete | null>(null);
 
   const timeProgress = currentActivity && currentActivity.totalTimeCostMinutes > 0
     ? (currentActivity.timeSpentMinutes / currentActivity.totalTimeCostMinutes) * 100
@@ -102,7 +107,7 @@ const ActivityViewerModal: React.FC<ActivityViewerModalProps> = ({ isOpen, onClo
                         <div key={`${activity.activityName}-${index}`} className={`bg-gray-800/60 p-3 rounded-lg border-l-4 ${isSuccess ? 'border-green-600' : 'border-red-600'} group relative`}>
                             <div>
                             <h4 className={`font-semibold ${isSuccess ? 'text-green-300' : 'text-red-300'}`}>{activity.activityName}</h4>
-                            <p className="text-xs text-gray-400">{t('Completed on turn {turn}', { turn: activity.completionTurn })} - {t(activity.finalOutcome as any)}</p>
+                            <p className="text-xs text-gray-400">{t('Completed on turn {turn}', { turn: activity.completionTurn })} - {t(activity.finalOutcome)}</p>
                             <p className="text-sm text-gray-300 mt-1"><MarkdownRenderer content={activity.narrativeSummary} /></p>
                             </div>
                             {allowHistoryManipulation && onDeleteCompletedActivity && (

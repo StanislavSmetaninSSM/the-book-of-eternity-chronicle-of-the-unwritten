@@ -21,8 +21,20 @@ test('the entire guide is invariant across different turn contexts', () => {
   assert.match(guide, /\{\{context\.partiallyGeneratedResponse\}\}/);
   assert.match(guide, /\{\{context\.regenerationReason\}\}/);
   // Intentional guide edits require an explicit snapshot update and review.
-  // Updated for the explicit inventory-transfer protocol.
-  assert.equal(sha256(guide), '975eae86ca879a166f0152d68956256232897fc20f42c539e05429b07d56dd55');
+  // Updated for the explicit inventory-transfer protocol, and for the carrying ceiling that
+  // now states one constant (15 kg, as in #19.C.1) and the inclusive boundary the interface gates on.
+  // The critical-hit threshold now states its bounds in the formula itself, in all three places.
+  // #12.7.5 requires the band an action check lands in to be logged as a comparison with its
+  // verdict on the same line, which is the form the combat panel re-computes.
+  // #5.10.A.1 now works its formula out to a number the interface can re-compute, and the party
+  // power example lost three terms that did not add up once exponentiation became readable.
+  // The auditor's rule now states the two shapes the client re-computes: a chain of substitutions
+  // that reads step by step, and a threshold written with its verdict - outside combat as well.
+  // #6.1.6.7 now names the owner of the cooldown count - the system, not the GM - and #12.9.3 gives
+  // the channel for it: the names used this turn, in 'cooldownsUsed' on that combatant's object.
+  // The Logging point of #12.9.3 now carries that spend into 'items_and_stat_calculations' as well,
+  // which is where the player can check the wait the panel shows against the two numbers it names.
+  assert.equal(sha256(guide), 'da3f46ec126ce26dfdd15c22387438d172ade7daf25fe50fca7d86456538395d');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);

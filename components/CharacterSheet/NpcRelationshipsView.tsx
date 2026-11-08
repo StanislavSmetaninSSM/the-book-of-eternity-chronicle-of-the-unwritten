@@ -71,7 +71,7 @@ const NpcRelationshipsView: React.FC<NpcRelationshipsViewProps> = ({ character, 
                             </div>
                             <div className="flex justify-start">
                                 <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-black/30 border border-current">
-                                    {t(rel.relationshipStatus as any)}
+                                    {t(rel.relationshipStatus)}
                                 </span>
                             </div>
                             <p className="text-sm italic opacity-90 pl-2 border-l-2 border-current/30 line-clamp-3" title={rel.statusReason}>

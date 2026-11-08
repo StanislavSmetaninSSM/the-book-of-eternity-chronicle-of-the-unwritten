@@ -1,6 +1,8 @@
 import { ensureThreatActivityIds } from './gameContext';
+import { errorMessage } from './errorUtils';
+import { asRecord } from './typeGuards';
 
-import { GameContext, GameResponse } from '../types';
+import { GameContext, GameResponse, Cinematic } from '../types';
 // @ts-ignore
 import { getMusicPrompt } from '../prompts/musicPrompt.js';
 // @ts-ignore
@@ -114,7 +116,7 @@ export async function callGenerativeApi(
     abortSignal: AbortSignal,
     onStreamingChunk: (text: string) => void,
     ruleBundleId?: string
-): Promise<{ data: any, signature?: string }> {
+): Promise<{ data: Partial<GameResponse>, signature?: string }> {
     const relayContext = context as GameContext & { isRegenerationAttempt?: boolean };
     const relayResult = await requestArenaGmStep(
         withGameContext(prompt, context),
@@ -126,11 +128,11 @@ export async function callGenerativeApi(
         ruleBundleId,
     );
     onStreamingChunk(relayResult.text);
-    let data: any;
+    let data: Partial<GameResponse>;
     try {
         data = JSON.parse(cleanJsonString(relayResult.text));
-    } catch (error: any) {
-        throw new RegenerationRequiredError(error.message, `Invalid JSON returned by Arena GM for ${context.currentStepFocus || 'step'}.`, relayResult.text);
+    } catch (error: unknown) {
+        throw new RegenerationRequiredError(errorMessage(error), `Invalid JSON returned by Arena GM for ${context.currentStepFocus || 'step'}.`, relayResult.text);
     }
     if (ruleBundleId && data?._arenaRuleBundleUnavailable === true) {
         throw new ArenaGmRelayRequestError(409, 'The GM could not access the verified rule bundle.');
@@ -143,7 +145,7 @@ async function attemptCorrection(
     context: GameContext,
     error: Error,
     abortSignal: AbortSignal,
-): Promise<any> {
+): Promise<Partial<GameResponse>> {
     const correctionContext = {
         ...context,
         image: null,
@@ -166,13 +168,13 @@ export async function executeStepWithCorrection(
     stepName: string,
     promptFn: () => string,
     context: GameContext,
-    partiallyGeneratedResponse: any,
+    partiallyGeneratedResponse: Partial<GameResponse>,
     abortSignal: AbortSignal,
-    onPartialResponse: (response: any, stepName: string, modelName: string) => void,
+    onPartialResponse: (response: Partial<GameResponse>, stepName: string, modelName: string) => void,
     onStreamingChunk: (text: string) => void,
     onStepStart: (stepName: string, modelName: string) => void
-): Promise<{ response: any, signature?: string }> {
-    let lastError: any = null;
+): Promise<{ response: GameResponse, signature?: string }> {
+    let lastError: unknown = null;
     let additionalGuides = '';
     const guides = await loadStageGuides();
     const narrativeStyleGuide = guides.narrative;
@@ -223,7 +225,7 @@ export async function executeStepWithCorrection(
             partiallyGeneratedResponse: JSON.stringify(partiallyGeneratedResponse), 
             currentStepFocus: stepName, 
             isRegenerationAttempt: attempt > 1,
-            regenerationReason: lastError?.reason || '' 
+            regenerationReason: (asRecord(lastError)?.reason as string | undefined) || '' 
         };
         const stepPrompt = promptFn();
         const focus = isNarrative ? NARRATIVE_FOCUS : '';
@@ -248,11 +250,11 @@ export async function executeStepWithCorrection(
             onPartialResponse(newPartialResponse, stepName, model);
             return { response: newPartialResponse, signature };
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             lastError = err;
             if (abortSignal.aborted || err instanceof ArenaGmRelayRequestError) throw err;
             
-            console.warn(`Step '${stepName}' failed on regeneration attempt ${attempt}. Reason: ${err.message}`);
+            console.warn(`Step '${stepName}' failed on regeneration attempt ${attempt}. Reason: ${errorMessage(err)}`);
 
             if (err instanceof RegenerationRequiredError && err.rawText) {
                 const MAX_CORRECTION_RETRIES = 10;
@@ -271,7 +273,7 @@ export async function executeStepWithCorrection(
 
                         if (correctionResult.regenerationRequired) {
                             console.log("Correction AI indicated regeneration is required.", correctionResult.reason);
-                            lastError = { ...lastError, reason: correctionResult.reason };
+                            lastError = { ...(asRecord(lastError) ?? {}), reason: correctionResult.reason };
                             break;
                         }
                         
@@ -280,9 +282,9 @@ export async function executeStepWithCorrection(
                         correctionSuccessful = true;
                         break;
 
-                    } catch (correctionError: any) {
+                    } catch (correctionError: unknown) {
                         if (abortSignal.aborted) throw correctionError;
-                        console.warn(`Correction attempt ${correctionAttempt} failed. Error: ${correctionError.message}`);
+                        console.warn(`Correction attempt ${correctionAttempt} failed. Error: ${errorMessage(correctionError)}`);
                     }
                 }
 
@@ -303,7 +305,7 @@ export async function executeStepWithCorrection(
         }
     }
     
-    throw new Error(`Failed to execute step '${stepName}' after ${MAX_REGENERATION_RETRIES} attempts. Last error: ${lastError?.message}`);
+    throw new Error(`Failed to execute step '${stepName}' after ${MAX_REGENERATION_RETRIES} attempts. Last error: ${errorMessage(lastError)}`);
 }
 
 export const getModelForStep = (_stepName: string, _context: GameContext): string => 'Arena GM';
@@ -311,12 +313,12 @@ export const getModelForStep = (_stepName: string, _context: GameContext): strin
 export async function executeTurn(
     context: GameContext,
     abortSignal: AbortSignal,
-    onPartialResponse: (response: any, stepName: string, modelName: string) => void,
+    onPartialResponse: (response: Partial<GameResponse>, stepName: string, modelName: string) => void,
     onStreamingChunk: (text: string) => void,
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
     ensureThreatActivityIds(context.worldMap || {}, context.currentLocation);
-    let partiallyGeneratedResponse: any = {};
+    let partiallyGeneratedResponse: Partial<GameResponse> = {};
     // Use the previous thought signature from context if available to start the chain
     let currentSignature = context.previousThoughtSignature;
     const mainPromptSteps = await loadPromptSteps();
@@ -403,7 +405,10 @@ export async function executeTurn(
         await executeStep('Step3_Combat_TaskGuide', mainPromptSteps.getStep3);
         // Combat calculation logs may change equipped-item durability after
         // Step 0 set its flags. The relevant item commands belong to Steps 4/5.
-        const hasEquipment = (actor: any) => actor?.equippedItems && Object.values(actor.equippedItems).some(Boolean);
+        const hasEquipment = (actor: unknown) => {
+            const equipped = asRecord(asRecord(actor)?.equippedItems);
+            return !!equipped && Object.values(equipped).some(Boolean);
+        };
         const flags = partiallyGeneratedResponse._internal_flags_ ||= {};
         if (hasEquipment(context.playerCharacter)) flags.needsInventoryProcessing = true;
         const combatants = [
@@ -452,7 +457,7 @@ export async function askGmQuestion(
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
     const mainPromptSteps = await loadPromptSteps();
-    const onPartialResponse = (_response: any, _stepName: string, _modelName: string) => {
+    const onPartialResponse = (_response: Partial<GameResponse>, _stepName: string, _modelName: string) => {
         // This is a single-step process, so onPartialResponse is equivalent to the final response.
         // We don't need to do anything special here as the final return will handle the full object.
     };
@@ -479,7 +484,7 @@ export async function executeWorldProgression(
     context: GameContext,
     abortSignal: AbortSignal,
     onStreamingChunk: (text: string) => void,
-    onPartialResponse: (response: any, stepName: string, modelName: string) => void,
+    onPartialResponse: (response: Partial<GameResponse>, stepName: string, modelName: string) => void,
     onStepStart: (stepName: string, modelName: string) => void,
 ): Promise<GameResponse> {
     const mainPromptSteps = await loadPromptSteps();
@@ -557,7 +562,7 @@ export async function executeCancellableJsonGeneration(
     abortSignal: AbortSignal,
     onStreamingChunk: (text: string) => void,
     systemInstruction?: string
-): Promise<any> {
+): Promise<Partial<Cinematic>> {
     const prompt = typeof input === 'string' ? input : input.promptContent;
     const effectiveSystemInstruction = systemInstruction || (typeof input === 'string' ? undefined : input.systemInstruction);
     const result = await requestArenaGmStep(
@@ -567,9 +572,9 @@ export async function executeCancellableJsonGeneration(
     onStreamingChunk(result.text);
     try {
         return JSON.parse(cleanJsonString(result.text));
-    } catch (error: any) {
+    } catch (error: unknown) {
         throw new RegenerationRequiredError(
-            error.message,
+            errorMessage(error),
             'Arena GM returned invalid JSON for cinematic generation.',
             result.text,
         );

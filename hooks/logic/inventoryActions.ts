@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { GameState, Item, PlayerCharacter, NPC, Wound, Effect } from '../../types';
+import { GameState, GameContext, Item, PlayerCharacter, NPC, Wound, Effect } from '../../types';
 import { 
     equipItem as equipItemUtil, 
     unequipItem as unequipItemUtil, 
@@ -16,6 +16,7 @@ import {
     splitItemStackForNpc as splitItemForNpcUtil,
     mergeItemStacksForNpc as mergeItemForNpcUtil
 } from '../../utils/inventoryManager';
+import { canCarryWeight } from '../../utils/carryWeight.js';
 import { recalculateDerivedStats } from '../../utils/gameContext';
 import { cloneGameStateForEdit } from '../../utils/gameStateClone';
 import { notifyWarning } from '../../utils/notifications';
@@ -31,7 +32,7 @@ export const createInventoryActions = (
         gameState
     }: {
         setGameState: React.Dispatch<React.SetStateAction<GameState | null>>,
-        gameContextRef: React.MutableRefObject<any>,
+        gameContextRef: React.MutableRefObject<GameContext | null>,
         t: TFunction,
         gameState: GameState | null
     }
@@ -50,14 +51,8 @@ export const createInventoryActions = (
 
             newState.encounteredNPCs = newState.encounteredNPCs.map((npc) => {
                 if (!npc) return npc;
-                let updatedNpc = recalculateAllWeights(npc);
-                updatedNpc = recalculateDerivedStats(updatedNpc);
-                if (updatedNpc.totalWeight !== undefined && updatedNpc.maxWeight !== undefined) {
-                    updatedNpc.isOverloaded = updatedNpc.totalWeight > updatedNpc.maxWeight;
-                } else {
-                    updatedNpc.isOverloaded = false;
-                }
-                return updatedNpc;
+                // Both passes settle the overload flag themselves, so no caller has to remember it.
+                return recalculateDerivedStats(recalculateAllWeights(npc));
             });
 
             if (gameContextRef.current) {
@@ -78,10 +73,9 @@ export const createInventoryActions = (
                 let npcWithStats = recalculateAllWeights(npc);
                 npcWithStats = recalculateDerivedStats(npcWithStats);
 
-                const criticalWeight = (npcWithStats.maxWeight || 0) + (npcWithStats.criticalExcessWeight || 15);
                 const prospectiveWeight = (npcWithStats.totalWeight || 0) + weightOfMovedItem;
 
-                if (prospectiveWeight > criticalWeight) {
+                if (!canCarryWeight(npcWithStats.maxWeight, npcWithStats.criticalExcessWeight, prospectiveWeight)) {
                     notifyWarning(t('npc_overloaded_refusal'));
                     return;
                 }
@@ -253,7 +247,7 @@ export const createInventoryActions = (
                 return prevState;
             }
 
-            itemToDisassemble.disassembleTo.forEach((material: any) => {
+            itemToDisassemble.disassembleTo.forEach(material => {
                 const existingStackIndex = inventory.findIndex(i => 
                     i.name === material.materialName &&
                     !i.equipmentSlot &&
@@ -330,7 +324,7 @@ export const createInventoryActions = (
                 return prevState;
             }
 
-            itemToDisassemble.disassembleTo.forEach((material: any) => {
+            itemToDisassemble.disassembleTo.forEach(material => {
                 const existingStackIndex = inventory.findIndex(i => 
                     i.name === material.materialName &&
                     !i.equipmentSlot &&
@@ -398,7 +392,7 @@ export const createInventoryActions = (
                 prevState.temporaryStash.some(i => i.existedId === splitId)) return prevState;
 
             const prospectiveWeight = prevState.playerCharacter.totalWeight + item.weight * validQuantity;
-            if (prospectiveWeight > prevState.playerCharacter.maxWeight + prevState.playerCharacter.criticalExcessWeight) {
+            if (!canCarryWeight(prevState.playerCharacter.maxWeight, prevState.playerCharacter.criticalExcessWeight, prospectiveWeight)) {
                 notifyWarning(t('You still cannot carry this item. Drop something else first.'));
                 return prevState;
             }

@@ -1,10 +1,13 @@
 
 import React, { useState } from 'react';
-import { PlayerCharacter, NPC, Effect, Wound, CustomState } from '../../types';
+import { PlayerCharacter, NPC, Effect, Wound, CustomState, DetailData} from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import SectionHeader from './Shared/SectionHeader';
 import ConfirmationModal from '../ConfirmationModal';
 import StatBar from './Shared/StatBar';
+import WorldStateNotes from '../WorldStateNotes';
+import { assessEffects } from '../../utils/effectAssessment.js';
+import { assessWoundProgress } from '../../utils/worldAssessment.js';
 import {
     SunIcon,
     CloudIcon,
@@ -19,7 +22,7 @@ interface ConditionsViewProps {
     character: PlayerCharacter | NPC;
     isPlayer: boolean;
     isAdminEditable: boolean;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     forgetHealedWound: (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => void;
     forgetActiveWound: (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => void;
     clearAllHealedWounds: (characterType: 'player' | 'npc', characterId: string | null) => void;
@@ -54,6 +57,12 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
     // Unknown legacy states must remain visible rather than implying the character is unwounded.
     const activeWounds = (wounds ?? []).filter(w => w && w.healingState?.currentState !== 'Healed');
     const healedWounds = (wounds ?? []).filter(w => w.healingState && w.healingState.currentState === 'Healed');
+    // The same reader the NPC list uses, run over this sheet's own arrays: an effect the state keeps
+    // alive past its duration, or a wound reference nothing holds open, is named here where it hurts.
+    const effectNotes = assessEffects({ characters: [{ name: character.name, effects, wounds }] }).notes;
+    // The same reading the fighter's card got: a wound whose treatment reached `progressNeeded` has
+    // changed state rather than stopped at the threshold - and here both numbers are on screen.
+    const woundNotes = assessWoundProgress(wounds ?? [], character.name).notes;
     
     const handleClearAllHealedWounds = () => {
         clearAllHealedWounds(isPlayer ? 'player' : 'npc', isPlayer ? null : (character as NPC).NPCId);
@@ -97,6 +106,7 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
             <div className="space-y-4">
                 <div className="mt-6">
                     <SectionHeader title={t('Active Effects')} icon={SunIcon} />
+                    <WorldStateNotes notes={effectNotes} titleKey="Effect State Check" className="mb-3" />
                     <div className="space-y-3 text-gray-300">
                         {(effects ?? []).length > 0 ? (effects ?? []).map((effect, index) => {
                             const isWoundRef = effect.effectType === 'WoundReference' && effect.sourceWoundId;
@@ -158,6 +168,7 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
                 </div>
                 <div className="mt-6">
                     <SectionHeader title={t('Wounds')} icon={ShieldExclamationIcon} />
+                    <WorldStateNotes notes={woundNotes} titleKey="Wound State Check" className="mb-3" />
                     <div className="space-y-3 text-gray-300">
                         {(activeWounds.length > 0) ? (activeWounds.map((wound, index) => (
                             <div key={wound.woundId || index} className="relative group w-full bg-gray-900/60 rounded-md border border-red-800/50">
@@ -169,7 +180,7 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
                                     <div className="flex-1">
                                         <div className="flex justify-between items-baseline">
                                              <span className="font-semibold text-red-400">{wound.woundName}</span>
-                                             <span className="text-xs text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t(wound.severity as any)}</span>
+                                             <span className="text-xs text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t(wound.severity)}</span>
                                         </div>
                                          <p className="text-sm text-gray-400 italic mt-1 line-clamp-2">{wound.descriptionOfEffects}</p>
                                     </div>
@@ -230,7 +241,7 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
                                     max={state.maxValue}
                                     min={state.minValue}
                                     color="bg-purple-500"
-                                    label={t(state.stateName as any)}
+                                    label={t(state.stateName)}
                                     icon={ExclamationTriangleIcon}
                                     onClick={() => onOpenDetailModal(t("CustomState: {name}", { name: state.stateName }), { ...state, type: 'customState' })}
                                 />

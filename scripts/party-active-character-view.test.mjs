@@ -25,7 +25,7 @@ test('live active player replaces only the matching roster slot',async()=>{
   assert.equal(withLiveActivePlayer(roster,roster[0]),roster);
   assert.equal(withLiveActivePlayer(roster,{playerId:'unknown'}),roster);
   assert.deepEqual(withLiveActivePlayer(undefined,live),[]);
-  const app=await readFile(new URL('../App.tsx',import.meta.url),'utf8');
+  const app=await readFile(new URL('../components/GameHost.tsx',import.meta.url),'utf8');
   const sidePanel=await readFile(new URL('../components/SidePanel.tsx',import.meta.url),'utf8');
   // Two party panels plus the image-prompt collector that decides which cached
   // images may survive a save.

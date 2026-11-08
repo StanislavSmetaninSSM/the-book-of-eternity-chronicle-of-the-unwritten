@@ -1,8 +1,9 @@
 import React from 'react';
-import { GameState, GameContext, ChatMessage, GameResponse, Location, GameSettings, SaveFile } from '../../types';
+import { GameState, GameContext, ChatMessage, GameResponse, Location, GameSettings, WorldState, SaveFile, Language, CharacterCreationData } from '../../types';
 import { executeTurn, askGmQuestion as executeGmQuestion, getModelForStep, executeWorldProgression } from '../../utils/gemini';
 import { createInitialContext, buildNextContext, WorldMapWarning } from '../../utils/gameContext';
-import { formatError } from '../../utils/errorUtils';
+import { formatError, isAbortError } from '../../utils/errorUtils';
+import { asRecord } from '../../utils/typeGuards';
 import { playNotificationSound } from '../../utils/soundManager';
 import { deepMergeResponses, processAndApplyResponse } from '../../utils/responseProcessor';
 import { deepStripModerationSymbols } from '../../utils/textUtils';
@@ -57,7 +58,7 @@ export const createTurnManager = (
         setSuggestedActions: React.Dispatch<React.SetStateAction<string[]>>,
         setWorldMap: React.Dispatch<React.SetStateAction<Record<string, Location>>>,
         setVisitedLocations: React.Dispatch<React.SetStateAction<Location[]>>,
-        setWorldState: React.Dispatch<React.SetStateAction<any>>,
+        setWorldState: React.Dispatch<React.SetStateAction<WorldState | null>>,
         setTurnNumber: React.Dispatch<React.SetStateAction<number | null>>,
         gameContextRef: React.MutableRefObject<GameContext | null>,
         abortControllerRef: React.MutableRefObject<AbortController | null>,
@@ -67,14 +68,14 @@ export const createTurnManager = (
         gameplayMutationRevisionRef?: React.MutableRefObject<number>,
         gameplayMutationPendingRef?: React.MutableRefObject<boolean>,
         setSuperInstructions: React.Dispatch<React.SetStateAction<string>>,
-        setGameSettings: React.Dispatch<React.SetStateAction<any>>,
-        setLanguage: (lang: any) => void,
-        t: (key: string, replacements?: any) => string,
+        setGameSettings: React.Dispatch<React.SetStateAction<GameSettings | null>>,
+        setLanguage: (lang: Language) => void,
+        t: (key: string, replacements?: Record<string, string | number>) => string,
         turnStartTimeRef: React.MutableRefObject<number | null>,
         setTurnTime: React.Dispatch<React.SetStateAction<number | null>>,
         setCurrentStep: React.Dispatch<React.SetStateAction<string | null>>,
         setCurrentModel: React.Dispatch<React.SetStateAction<string | null>>,
-        language: any,
+        language: Language,
         gameSettings: GameSettings | null,
         gameStateRef: React.RefObject<GameState | null>,
         combatLog: string[],
@@ -131,11 +132,12 @@ export const createTurnManager = (
         };
 
         try {
-            const onPartialResponse = (response: any, _stepName: string, _modelName: string) => {
+            const onPartialResponse = (response: unknown, _stepName: string, _modelName: string) => {
                 if (wasSuperseded()) return;
                 setLastJsonResponse(JSON.stringify(response, null, 2));
-                if (response.items_and_stat_calculations) {
-                    setGameLog(response.items_and_stat_calculations);
+                const calculations = asRecord(response)?.items_and_stat_calculations;
+                if (calculations) {
+                    setGameLog(calculations as string[]);
                 }
             };
             const onStepStart = (stepName: string, _modelName: string) => {
@@ -242,7 +244,7 @@ export const createTurnManager = (
 
             await clearOwnCheckpoint().catch(error => console.error('Could not clear completed-turn checkpoint:', error));
 
-        } catch (err: any) {
+        } catch (err: unknown) {
           if (turnController.signal.reason === USER_CANCELLED_TURN) {
             await clearOwnCheckpoint().catch(error => console.error('Could not clear cancelled-turn checkpoint:', error));
           }
@@ -254,7 +256,7 @@ export const createTurnManager = (
             setCombatLog(combatLog);
           }
           setIsLoading(false);
-          if (err.name !== 'AbortError' || stateCommitted) {
+          if (!isAbortError(err) || stateCommitted) {
             const detail = formatError(err);
             const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : detail;
             setError(formattedError);
@@ -318,7 +320,7 @@ export const createTurnManager = (
         return handleTurn(newContext, newHistory);
     };
 
-    const initializeAndRunFirstTurn = (creationData: any) => {
+    const initializeAndRunFirstTurn = (creationData: CharacterCreationData) => {
         const initialContext = createInitialContext(creationData, language);
         gameContextRef.current = initialContext;
 
@@ -341,7 +343,7 @@ export const createTurnManager = (
         setTurnNumber(initialContext.currentTurnNumber);
         turnStartTimeRef.current = performance.now();
         setTurnTime(null);
-        const initialMessage = { sender: 'player', content: creationData.initialPrompt } as ChatMessage;
+        const initialMessage = { sender: 'player', content: creationData.initialPrompt ?? '' } as ChatMessage;
         const newHistory = [initialMessage];
         setGameHistory(newHistory);
         const contextWithHistory = { ...initialContext, responseHistory: newHistory };
@@ -484,14 +486,14 @@ export const createTurnManager = (
             stateCommitted = true;
             turnPhaseRef.current = 'committed';
 
-        } catch (err: any) {
+        } catch (err: unknown) {
           if (wasSuperseded()) { reportSuperseded(); return; }
           if (!stateCommitted) {
             setGameLog(gameLog);
             setCombatLog(combatLog);
           }
           setIsLoading(false);
-          if (err.name !== 'AbortError' || stateCommitted) {
+          if (!isAbortError(err) || stateCommitted) {
             const detail = formatError(err);
             const formattedError = stateCommitted ? `${t('error_turn_applied_followup')}\n\n${detail}` : detail;
             setError(formattedError);
@@ -550,7 +552,7 @@ export const createTurnManager = (
         return handleTurn(recovery.context, recovery.history, recovery.baseState);
     };
 
-    const startGame = (creationData: any) => {
+    const startGame = (creationData: CharacterCreationData) => {
         initializeAndRunFirstTurn(creationData);
     };
 

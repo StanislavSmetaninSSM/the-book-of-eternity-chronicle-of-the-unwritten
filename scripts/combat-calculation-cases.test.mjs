@@ -31,7 +31,9 @@ test('fixed combat cases retain full calculation rules and apply the recorded ou
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const { getStep3Logs, getStep3 } = await import('../prompts/mainPromptSteps.js');
     assert.match(getStep3(), /14\.2\.2.*Luck bonus/s);
-    const rules = await readFile(new URL('../prompts/mainPromptModule.js', import.meta.url), 'utf8');
+    // The guide ships as one file per section, so check the assembled text rather than a source file.
+    const { getGameMasterGuideRules } = await import('../prompts/mainPromptModule.js');
+    const rules = getGameMasterGuideRules();
     assert.match(rules, /FinalCritMultiplier = 1\.5 \+ \(CritDamageLuckBonus% \/ 100\)/);
     assert.match(rules, /Threshold 1 \(>25% of maxHealth\)/);
     assert.match(rules, /Threshold 2 \(>45% of maxHealth\)/);
@@ -60,7 +62,7 @@ test('fixed combat cases retain full calculation rules and apply the recorded ou
       const audit = await executeStepWithCorrection('Step3_Combat_TaskGuide', getStep3, context, logs.response, new AbortController().signal, () => {}, () => {}, () => {});
       const auditContext = JSON.parse(packets.at(-1).prompt.split('\n\n<CurrentGameContext>\n').at(-1).split('\n</CurrentGameContext>')[0]);
       assert.ok(JSON.parse(auditContext.partiallyGeneratedResponse).items_and_stat_calculations.some(line => line.includes(`Synthetic oracle ${fixture.id}`)));
-      const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+      const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
       const { newState, processedResponse } = processAndApplyResponse(audit.response, state, context.gameSettings, key => key, true, 2, context.worldMap);
       assert.equal(newState.encounteredNPCs[0].currentHealth, fixture.expectedHealth, fixture.id);
       assert.equal(newState.encounteredNPCs[0].wounds.length, fixture.wound ? 1 : 0, fixture.id);

@@ -35,6 +35,8 @@ import {
 import ConfirmationModal from '../ConfirmationModal';
 import FactionChronicleView from './Shared/FactionChronicleView';
 import BonusCard from './Shared/BonusCard';
+import WorldStateNotes from '../WorldStateNotes';
+import { assessTracker } from '../../utils/worldAssessment.js';
 
 interface FactionDetailsProps extends Omit<DetailRendererProps, 'data'> {
   faction: Faction & { initialView?: string, perspectiveFor?: { name: string; rank: string | null; branch?: string | null; } };
@@ -146,7 +148,7 @@ const FactionHeader: React.FC<FactionDetailsProps> = ({ faction, onOpenImageModa
                         )}
                     </div>
                     {faction.developmentArchetype && (
-                         <p className="text-sm font-semibold text-gray-400 -mt-1">{t(faction.developmentArchetype as any)}</p>
+                         <p className="text-sm font-semibold text-gray-400 -mt-1">{t(faction.developmentArchetype)}</p>
                     )}
                 </div>
                 {faction.level !== undefined && (
@@ -184,13 +186,13 @@ const FactionHeader: React.FC<FactionDetailsProps> = ({ faction, onOpenImageModa
     );
 };
 
-const OverviewView: React.FC<{ faction: Faction, allowHistoryManipulation: boolean, onEditFactionData: (id: string, field: keyof Faction, value: any) => void }> = ({ faction, allowHistoryManipulation, onEditFactionData }) => {
+const OverviewView: React.FC<{ faction: Faction, allowHistoryManipulation: boolean, onEditFactionData: (id: string, field: keyof Faction, value: unknown) => void }> = ({ faction, allowHistoryManipulation, onEditFactionData }) => {
     const { t } = useLocalization();
     return (
         <div className="space-y-4">
              <div className="bg-gray-800/40 p-3 rounded-lg border-l-4 border-cyan-500/50">
                 <p className="text-sm font-semibold text-gray-400">{t('Current relationship')}</p>
-                <p className="text-sm text-gray-300 italic">{t(faction.reputationDescription as any)}</p>
+                <p className="text-sm text-gray-300 italic">{t(faction.reputationDescription)}</p>
             </div>
             <EditableField 
                 label=""
@@ -221,9 +223,9 @@ const PowerAndDoctrineView: React.FC<{ faction: Faction, onShowMessageModal?: (t
                             <div key={key} className="bg-gray-700/50 p-3 rounded-lg">
                                 <div className="flex items-center gap-2 mb-1">
                                     <Icon className="w-5 h-5 text-cyan-400" />
-                                    <p className="text-sm text-gray-300 capitalize font-semibold">{t(key as any)}</p>
+                                    <p className="text-sm text-gray-300 capitalize font-semibold">{t(key)}</p>
                                     <button 
-                                        onClick={() => onShowMessageModal && onShowMessageModal(t(key as any), t(`power_profile_${key}_tooltip` as any))}
+                                        onClick={() => onShowMessageModal && onShowMessageModal(t(key), t(`power_profile_${key}_tooltip`))}
                                         className="ml-auto text-gray-500 hover:text-cyan-400 transition-colors"
                                         title={t('learn_more') as string}
                                     >
@@ -264,10 +266,10 @@ const EconomyAndResourcesView: React.FC<FactionDetailsProps> = (props) => {
                     {(faction.resources?.metaResources || []).map(res => {
                         const Icon = resourceIcons[res.resourceName] || ExclamationCircleIcon;
                         return (
-                            <div key={res.resourceName} className="bg-gray-700/50 p-3 rounded-lg" title={t(`${res.resourceName}_tooltip` as any)}>
+                            <div key={res.resourceName} className="bg-gray-700/50 p-3 rounded-lg" title={t(`${res.resourceName}_tooltip`)}>
                                 <div className="flex items-center gap-2 mb-2">
                                     <Icon className="w-6 h-6 text-cyan-400" />
-                                    <p className="text-md text-gray-200 font-semibold">{t(res.resourceName as any)}</p>
+                                    <p className="text-md text-gray-200 font-semibold">{t(res.resourceName)}</p>
                                 </div>
                                 <p className="text-3xl font-bold font-mono text-white">{res.currentStockpile}</p>
                                 <div className="flex justify-between items-center text-xs mt-1 text-gray-400">
@@ -323,6 +325,9 @@ const formatDuration = (totalMinutes: number, t: (key: string) => string): strin
 const ProjectCard: React.FC<{ project: Project; onDelete?: () => void }> = ({ project, onDelete }) => {
     const { t } = useLocalization();
     const timeProgress = project.totalTimeCostMinutes > 0 ? (project.timeSpentMinutes / project.totalTimeCostMinutes) * 100 : 0;
+    // This card is the one place where both numbers of the project are shown together, so the
+    // contradiction is read off this tracker alone instead of counted over the faction's whole list.
+    const { notes: projectNotes } = assessTracker(project, project.projectName || '?');
     
     return (
         <div className="bg-gray-800/60 p-4 rounded-lg border border-gray-700/50 group relative">
@@ -340,6 +345,9 @@ const ProjectCard: React.FC<{ project: Project; onDelete?: () => void }> = ({ pr
                     </div>
                 </div>
             </div>
+            {projectNotes.length > 0 && (
+                <WorldStateNotes notes={projectNotes} compact className="mt-2" />
+            )}
             {onDelete && (
                 <button
                     onClick={onDelete}
@@ -506,7 +514,7 @@ const TerritoryAndRelationsView: React.FC<FactionDetailsProps> = ({ faction, onO
                     <div className="space-y-3">
                         {(faction.relations || []).map(relation => {
                             // IMPROVED LOOKUP: Check targetFactionId OR initialTargetFactionId
-                            const targetId = relation.targetFactionId || (relation as any).initialTargetFactionId;
+                            const targetId = relation.targetFactionId || relation.initialTargetFactionId;
                             
                             // Try to find the faction in the map using ID. 
                             // If not found by ID (maybe map is stale or ID not synced yet), try to find by name if possible (not standard but robust), 
@@ -545,7 +553,7 @@ const TerritoryAndRelationsView: React.FC<FactionDetailsProps> = ({ faction, onO
                                             </button>
                                             <p className="text-sm text-gray-300 mt-1">{relation.description}</p>
                                         </div>
-                                        <span className={`flex-shrink-0 text-sm font-semibold flex items-center gap-1.5 ${style.split(' ')[1]}`}><Icon className="w-4 h-4"/>{t(relation.status as any)}</span>
+                                        <span className={`flex-shrink-0 text-sm font-semibold flex items-center gap-1.5 ${style.split(' ')[1]}`}><Icon className="w-4 h-4"/>{t(relation.status)}</span>
                                     </div>
                                 </div>
                             );
@@ -601,7 +609,7 @@ const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: 
                     <p className="text-lg font-bold text-cyan-300">{characterRank}</p>
                     {characterBranchId && (
                         <p className="text-xs text-gray-400 mt-1">
-                            {t('Branch')}: <span className="font-semibold">{t(branches.find(b => b.branchId === characterBranchId)?.displayName as any)}</span>
+                            {t('Branch')}: <span className="font-semibold">{t(branches.find(b => b.branchId === characterBranchId)?.displayName)}</span>
                         </p>
                     )}
                 </div>
@@ -615,7 +623,7 @@ const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: 
                             onClick={() => setActiveBranchId(branch.branchId)}
                             className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeBranchId === branch.branchId ? 'border-cyan-400 text-white' : 'border-transparent text-gray-400 hover:text-white hover:border-gray-500'}`}
                         >
-                            {t(branch.displayName as any)}
+                            {t(branch.displayName)}
                         </button>
                     ))}
                 </div>
@@ -632,13 +640,13 @@ const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: 
                                         <p className="text-sm text-gray-400">{t('next rank at {rep} reputation', { rep: rank.requiredReputation })}</p>
                                 </div>
                                 {rank.unlockCondition && (
-                                    <p className="text-xs text-yellow-400/80 italic mt-1">{t('unlock_condition')}: {t(rank.unlockCondition as any)}</p>
+                                    <p className="text-xs text-yellow-400/80 italic mt-1">{t('unlock_condition')}: {t(rank.unlockCondition)}</p>
                                 )}
                                 {rank.benefits && rank.benefits.length > 0 && (
                                     <div className="mt-2">
                                         <h5 className="text-xs font-bold text-gray-400 mb-1">{t('Benefits')}:</h5>
                                         <ul className="list-disc list-inside text-xs text-gray-300 space-y-1 pl-2">
-                                            {rank.benefits.map((benefit, i) => <li key={i}>{t(benefit as any)}</li>)}
+                                            {rank.benefits.map((benefit, i) => <li key={i}>{t(benefit)}</li>)}
                                         </ul>
                                     </div>
                                 )}
@@ -648,7 +656,7 @@ const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: 
                                         <ul className="text-xs text-purple-400/90 space-y-1 pl-4">
                                             {rank.availableBranches.map(branchId => {
                                                 const availableBranch = branches.find(b => b.branchId === branchId);
-                                                return <li key={branchId}>- {availableBranch ? t(availableBranch.displayName as any) : branchId}</li>
+                                                return <li key={branchId}>- {availableBranch ? t(availableBranch.displayName) : branchId}</li>
                                             })}
                                         </ul>
                                     </div>
@@ -698,15 +706,15 @@ const StrategyAndDirectivesView: React.FC<FactionDetailsProps> = ({ faction, onE
             <div className="bg-gray-700/50 p-4 rounded-lg space-y-3">
                 <div>
                     <p className="text-sm font-semibold text-gray-400">{t('Development Archetype')}</p>
-                    <p className="text-lg font-bold text-cyan-300" title={t('development_archetype_tooltip') as string}>{t(faction.developmentArchetype as any)}</p>
+                    <p className="text-lg font-bold text-cyan-300" title={t('development_archetype_tooltip') as string}>{t(faction.developmentArchetype)}</p>
                 </div>
                 {priorities && (
                     <div>
                          <p className="text-sm font-semibold text-gray-400 mb-1">{t('Priorities')}</p>
                          <div className="text-sm space-y-1">
-                            <p><span className="font-semibold text-yellow-400">1. {t('Primary')}:</span> {t(priorities.primary as any)}</p>
-                            <p><span className="font-semibold text-orange-400">2. {t('Secondary')}:</span> {t(priorities.secondary as any)}</p>
-                            <p><span className="font-semibold text-gray-400">3. {t('Tertiary')}:</span> {t(priorities.tertiary as any)}</p>
+                            <p><span className="font-semibold text-yellow-400">1. {t('Primary')}:</span> {t(priorities.primary)}</p>
+                            <p><span className="font-semibold text-orange-400">2. {t('Secondary')}:</span> {t(priorities.secondary)}</p>
+                            <p><span className="font-semibold text-gray-400">3. {t('Tertiary')}:</span> {t(priorities.tertiary)}</p>
                         </div>
                     </div>
                 )}
@@ -788,7 +796,7 @@ const BonusesAndStatesView: React.FC<FactionDetailsProps> = (props) => {
                                         max={state.maxValue}
                                         min={state.minValue}
                                         color="bg-purple-500"
-                                        label={t(state.stateName as any)}
+                                        label={t(state.stateName)}
                                         icon={ExclamationTriangleIcon}
                                         onClick={onOpenDetailModal ? () => onOpenDetailModal(t("CustomState: {name}", { name: state.stateName }), { ...state, type: 'customState' }) : undefined}
                                         title={state.description}
@@ -889,7 +897,7 @@ const FactionDetailsRenderer: React.FC<FactionDetailsProps> = (props) => {
                                     className="bg-slate-800/70 hover:bg-slate-700/90 rounded-lg p-3 flex flex-col items-center justify-center gap-2 text-center transition-all duration-200 transform hover:scale-105 border border-slate-700 hover:border-cyan-500"
                                 >
                                     <tab.icon className="w-7 h-7 text-cyan-400" />
-                                    <span className="font-semibold text-gray-200 text-sm">{t(tab.name as any)}</span>
+                                    <span className="font-semibold text-gray-200 text-sm">{t(tab.name)}</span>
                                 </button>
                             ))}
                         </div>
@@ -902,7 +910,7 @@ const FactionDetailsRenderer: React.FC<FactionDetailsProps> = (props) => {
                                 {t('Back to Menu')}
                             </button>
                             <div className="w-px h-6 bg-gray-700"></div>
-                            <h3 className="text-xl font-bold text-cyan-400 narrative-text flex-1">{t(activeTab as any)}</h3>
+                            <h3 className="text-xl font-bold text-cyan-400 narrative-text flex-1">{t(activeTab)}</h3>
                             <button onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)} title={t(isHeaderCollapsed ? 'Expand Header' : 'Expand Header')} className="p-2 text-gray-400 rounded-full hover:bg-gray-700/50 transition-colors">
                                 {isHeaderCollapsed ? <ChevronDownIcon className="w-5 h-5" /> : <ChevronUpIcon className="w-5 h-5" />}
                             </button>

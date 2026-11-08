@@ -1,4 +1,6 @@
-import { defineConfig, Plugin } from 'vite';
+import { defineConfig, Plugin, type Connect } from 'vite';
+import type { ServerResponse } from 'node:http';
+import { asRecord } from './utils/typeGuards';
 import { mkdir, open, readFile, rename, rm, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 // @ts-ignore -- server-only JS module
@@ -17,10 +19,27 @@ const ACTIVE_REQUEST_LEASE_MS = Math.max(30_000, Number(process.env.ARENA_GM_REL
 const IMAGE_REQUEST_LEASE_MS = Math.max(5_000, Number(process.env.ARENA_GM_RELAY_IMAGE_LEASE_MS) || 30_000);
 const CORRELATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
+/** A packet as the browser posts it; which fields are set depends on `kind`. */
+interface RelayPacket {
+  kind?: string;
+  protocolVersion?: number;
+  correlationId?: string;
+  createdAt?: string;
+  stepName?: string;
+  modelName?: string;
+  attempt?: number;
+  prompt?: string;
+  ruleBundleId?: string;
+  width?: number;
+  height?: number;
+  turn?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 interface QueuedRelayRequest {
   queuedAt: number;
   lastHeartbeatAt?: number;
-  packet: Record<string, any>;
+  packet: RelayPacket;
 }
 
 let relayOperations: Promise<unknown> = Promise.resolve();
@@ -33,8 +52,8 @@ function serializeRelayOperation<T>(operation: () => Promise<T>): Promise<T> {
 async function readJsonIfPresent<T>(filePath: string): Promise<T | null> {
   try {
     return JSON.parse(await readFile(filePath, 'utf8')) as T;
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return null;
+  } catch (error: unknown) {
+    if (asRecord(error)?.code === 'ENOENT') return null;
     throw error;
   }
 }
@@ -50,7 +69,7 @@ async function writeJsonAtomically(filePath: string, value: unknown): Promise<vo
   }
 }
 
-function requestPriority(packet: Record<string, any>): number {
+function requestPriority(packet: RelayPacket): number {
   return packet.kind === 'arena-gm-image' ? 1 : 0;
 }
 
@@ -67,7 +86,7 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
       const staleId = active.packet.correlationId;
       console.warn(`Expiring stale Arena GM request ${staleId}: no browser heartbeat for ${Date.now() - heartbeatAt}ms (lease ${activeLeaseMs}ms).`);
       await rm(activeRequestPath, { force: true });
-      const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
+      const visiblePending = await readJsonIfPresent<RelayPacket>(pendingPath);
       if (visiblePending?.correlationId === staleId) await rm(pendingPath, { force: true });
       await removeResponseForCorrelation(staleId);
       if (active.packet.kind === 'arena-gm-image') {
@@ -75,7 +94,7 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
       }
       active = null;
     } else {
-      const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
+      const visiblePending = await readJsonIfPresent<RelayPacket>(pendingPath);
       if (visiblePending?.correlationId !== active.packet.correlationId) {
         await writeJsonAtomically(pendingPath, active.packet);
       }
@@ -109,7 +128,7 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
   }
   queued.sort((a, b) => requestPriority(a.entry.packet) - requestPriority(b.entry.packet)
     || a.entry.queuedAt - b.entry.queuedAt
-    || a.entry.packet.correlationId.localeCompare(b.entry.packet.correlationId));
+    || (a.entry.packet.correlationId ?? '').localeCompare(b.entry.packet.correlationId ?? ''));
 
   const next = queued[0];
   if (!next) return null;
@@ -118,8 +137,8 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
     // The active file is a durable claim. If the process restarts after this rename,
     // the next request can reconstruct pending.json from the active packet.
     await rename(queuePath, activeRequestPath);
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return dispatchNextRequest();
+  } catch (error: unknown) {
+    if (asRecord(error)?.code === 'ENOENT') return dispatchNextRequest();
     throw error;
   }
   await writeJsonAtomically(pendingPath, next.entry.packet);
@@ -128,12 +147,12 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
 
 async function removeResponseForCorrelation(correlationId: string): Promise<void> {
   await rm(path.join(responseDirectory, `${correlationId}.json`), { force: true });
-  const legacy = await readJsonIfPresent<Record<string, any>>(legacyResponsePath).catch(() => null);
+  const legacy = await readJsonIfPresent<RelayPacket>(legacyResponsePath).catch(() => null);
   if (legacy?.correlationId === correlationId) await rm(legacyResponsePath, { force: true });
 }
 
-function registerRelayMiddleware(server: { middlewares: { use: (handler: any) => void } }): void {
-  server.middlewares.use(async (req: any, res: any, next: any) => {
+function registerRelayMiddleware(server: { middlewares: { use: (handler: Connect.NextHandleFunction) => void } }): void {
+  server.middlewares.use(async (req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
         const url = new URL(req.url || '/', 'http://vite.local');
         if (!url.pathname.startsWith('/__arena_gm/')) return next();
         res.setHeader('Cache-Control', 'no-store');
@@ -142,7 +161,7 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
           res.statusCode = status;
           res.end(payload === null ? '' : JSON.stringify(payload));
         };
-        const readBody = async (): Promise<any> => {
+        const readBody = async (): Promise<RelayPacket> => {
           let raw = '';
           for await (const chunk of req) {
             raw += chunk.toString();
@@ -158,7 +177,8 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
           }
           if (url.pathname === '/__arena_gm/turn' && req.method === 'POST') {
             const packet = await readBody();
-            if (!['arena-gm-turn', 'arena-gm-step', 'arena-gm-image'].includes(packet?.kind) || packet?.protocolVersion !== 1 || typeof packet?.correlationId !== 'string' || !CORRELATION_ID_PATTERN.test(packet.correlationId)) {
+            const correlationId = packet?.correlationId;
+            if (!['arena-gm-turn', 'arena-gm-step', 'arena-gm-image'].includes(packet?.kind ?? '') || packet?.protocolVersion !== 1 || typeof correlationId !== 'string' || !CORRELATION_ID_PATTERN.test(correlationId)) {
               send(400, { error: 'Invalid Arena GM relay packet.' });
               return;
             }
@@ -175,7 +195,8 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
               send(400, { error: 'Arena GM turn packet is missing its turn data.' });
               return;
             }
-            if (packet.kind === 'arena-gm-image' && (typeof packet.prompt !== 'string' || !Number.isInteger(packet.width) || !Number.isInteger(packet.height) || packet.width < 1 || packet.height < 1 || packet.width > 4096 || packet.height > 4096)) {
+            const { width, height } = packet;
+            if (packet.kind === 'arena-gm-image' && (typeof packet.prompt !== 'string' || typeof width !== 'number' || typeof height !== 'number' || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 4096 || height > 4096)) {
               send(400, { error: 'Arena GM image packet is missing a valid prompt or dimensions.' });
               return;
             }
@@ -215,7 +236,7 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
                 }
                 if (alreadyQueuedImage) await rm(activeRequestPath, { force: true });
                 else await rename(activeRequestPath, imageQueuePath);
-                const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
+                const visiblePending = await readJsonIfPresent<RelayPacket>(pendingPath);
                 if (visiblePending?.correlationId === imageId) await rm(pendingPath, { force: true });
               }
 
@@ -249,8 +270,8 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
               try {
                 await rm(queuedPath);
                 wasQueued = true;
-              } catch (error: any) {
-                if (error?.code !== 'ENOENT') throw error;
+              } catch (error: unknown) {
+                if (asRecord(error)?.code !== 'ENOENT') throw error;
               }
               const active = await readActiveRequest();
               const wasActive = active?.packet.correlationId === correlationId;
@@ -287,10 +308,10 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
               active.lastHeartbeatAt = Date.now();
               await writeJsonAtomically(activeRequestPath, active);
 
-              let response = await readJsonIfPresent<Record<string, any>>(path.join(responseDirectory, `${correlationId}.json`));
+              let response = await readJsonIfPresent<RelayPacket>(path.join(responseDirectory, `${correlationId}.json`));
               let responseSource: 'correlated' | 'legacy' | null = response ? 'correlated' : null;
               if (!response) {
-                const legacy = await readJsonIfPresent<Record<string, any>>(legacyResponsePath);
+                const legacy = await readJsonIfPresent<RelayPacket>(legacyResponsePath);
                 if (legacy?.correlationId === correlationId) {
                   response = legacy;
                   responseSource = 'legacy';
@@ -306,7 +327,7 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
               return response;
             });
             if (result === null) { res.statusCode = 204; res.end(); return; }
-            if ((result as any)?.relayExpired) { send(410, { error: 'Relay request expired or was cancelled before its response was consumed.' }); return; }
+            if (result !== null && typeof result === 'object' && 'relayExpired' in result) { send(410, { error: 'Relay request expired or was cancelled before its response was consumed.' }); return; }
             send(200, result);
             return;
           }
@@ -348,10 +369,53 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
             return;
           }
           send(404, { error: 'Unknown relay endpoint.' });
-        } catch (error: any) {
-          send(error?.statusCode || 500, { error: error instanceof Error ? error.message : 'Relay server error.' });
+        } catch (error: unknown) {
+          const statusCode = asRecord(error)?.statusCode;
+          send(typeof statusCode === 'number' ? statusCode : 500, { error: error instanceof Error ? error.message : 'Relay server error.' });
         }
   });
+}
+
+/**
+ * A prompt module request in dev. Every one of them is prose plus small arrow
+ * functions, addressed by a relative path with its extension.
+ */
+const isPromptSourceUrl = (pathname: string): boolean => pathname.startsWith('/prompts/') && pathname.endsWith('.js');
+
+/**
+ * The rulebook and the step guides are megabytes of template literals. Vite can do
+ * nothing useful with them in dev: the transform pipeline leaves the code as it is and
+ * still inlines a sourcemap that repeats the whole text, so the 697 kB first rulebook
+ * section arrived as 4.2 MB and the guide as a whole as 20 MB — on the first turn of
+ * every session, which is the documented way of running this game.
+ *
+ * These modules are therefore answered straight from disk. They can be: each one is
+ * plain JavaScript whose only specifiers are relative paths with extensions, so the
+ * browser resolves them without help. `scripts/prompt-sources-are-plain-js.test.mjs`
+ * enforces exactly that. A prompt edit still reloads the page: Vite keeps the module as
+ * a dependency of the game code that imports it, it just has nothing to transform.
+ */
+function servePromptSourcesVerbatim(): Plugin {
+  return {
+    name: 'serve-prompt-sources-verbatim',
+    apply: 'serve',
+    configureServer(server) {
+      const promptDirectory = path.join(server.config.root, 'prompts');
+      server.middlewares.use((req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
+        const pathname = req.method === 'GET' && req.url ? decodeURIComponent(req.url.split('?')[0]) : '';
+        if (!isPromptSourceUrl(pathname)) return next();
+        // Normalising first is what rejects a `../` request: it no longer starts with the directory.
+        const file = path.normalize(path.join(server.config.root, pathname));
+        if (!file.startsWith(promptDirectory + path.sep)) return next();
+        readFile(file, 'utf8').then((source) => {
+          // No immutable cache and no version query: the text is the file, and it changes.
+          res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.end(source);
+        }, () => next());
+      });
+    },
+  };
 }
 
 function arenaGmFilesystemRelay(): Plugin {
@@ -367,7 +431,21 @@ function arenaGmFilesystemRelay(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [arenaGmFilesystemRelay()],
+  plugins: [servePromptSourcesVerbatim(), arenaGmFilesystemRelay()],
+  build: {
+    rollupOptions: {
+      output: {
+        // The rulebook is megabytes of prose every stage needs verbatim, and it is loaded
+        // lazily on top of that. Keeping one file per section lets the browser fetch the
+        // rulebook in parallel and means a reviewed rules edit invalidates only the section
+        // it touched, not the whole guide.
+        manualChunks: (id) => {
+          const section = /[\\/]prompts[\\/]mainPromptModule[\\/]section-(\d+)\.js$/.exec(id);
+          return section ? `game-master-guide-section-${section[1]}` : undefined;
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     allowedHosts: true,

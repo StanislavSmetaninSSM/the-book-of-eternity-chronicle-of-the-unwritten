@@ -53,7 +53,7 @@ const WorldEventDetailsRenderer: React.FC<WorldEventDetailsProps> = ({ event, on
         'Secret': { icon: SecretIcon, colorClass: 'visibility-Secret', label: t('Secret') },
     }), [t]);
 
-    const typeInfo = eventTypeMapping[event.eventType as keyof typeof eventTypeMapping] || { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t(event.eventType as any) || t('Personal') };
+    const typeInfo = eventTypeMapping[event.eventType as keyof typeof eventTypeMapping] || { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t(event.eventType) || t('Personal') };
     const visibilityInfo = visibilityMapping[event.visibility as keyof typeof visibilityMapping];
     
     const strippedSummary = useMemo(() => stripMarkdown(event.summary), [event.summary]);
@@ -162,7 +162,7 @@ const WorldEventDetailsRenderer: React.FC<WorldEventDetailsProps> = ({ event, on
 
             <Section title={t("Details")} icon={InformationCircleIcon}>
                 <DetailRow label={t("Turn")} value={event.turnNumber} icon={ClockIcon} />
-                {event.date && <DetailRow label={t("Date")} value={`${event.date.dayOfMonth} ${t(event.date.monthName as any)} ${event.date.year}`} icon={ClockIcon} />}
+                {event.date && <DetailRow label={t("Date")} value={`${event.date.dayOfMonth} ${t(event.date.monthName)} ${event.date.year}`} icon={ClockIcon} />}
                 {event.date && <DetailRow label={t("Time")} value={event.date.timeOfDay} icon={ClockIcon} />}
                 {typeInfo && <DetailRow label={t("Type")} value={<span className={typeInfo.colorClass}>{typeInfo.label}</span>} icon={typeInfo.icon} />}
                 {visibilityInfo && <DetailRow label={t("Visibility")} value={<span className={visibilityInfo.colorClass}>{visibilityInfo.label}</span>} icon={visibilityInfo.icon} />}

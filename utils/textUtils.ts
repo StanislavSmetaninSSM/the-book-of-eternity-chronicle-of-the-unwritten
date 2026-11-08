@@ -1,3 +1,4 @@
+import { asRecord } from './typeGuards';
 
 export const stripMarkdown = (text: string | null | undefined): string => {
   if (typeof text !== 'string') return '';
@@ -23,21 +24,21 @@ export function deepStripModerationSymbols<T>(obj: T): T {
     }
 
     if (Array.isArray(obj)) {
-        return obj.map(item => deepStripModerationSymbols(item)) as any;
+        // The shape is preserved and only string leaves change, so they are cast back at the end.
+        return obj.map(item => deepStripModerationSymbols(item)) as unknown as T;
     }
 
-    if (typeof obj === 'object') {
-        const newObj: { [key: string]: any } = {};
-        for (const key in obj) {
-            if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                newObj[key] = deepStripModerationSymbols((obj as any)[key]);
-            }
+    const source = asRecord(obj);
+    if (source) {
+        const newObj: Record<string, unknown> = {};
+        for (const key of Object.keys(source)) {
+            newObj[key] = deepStripModerationSymbols(source[key]);
         }
-        return newObj as T;
+        return newObj as unknown as T;
     }
 
     if (typeof obj === 'string') {
-        return stripModerationSymbols(obj) as any;
+        return stripModerationSymbols(obj) as unknown as T;
     }
 
     return obj;

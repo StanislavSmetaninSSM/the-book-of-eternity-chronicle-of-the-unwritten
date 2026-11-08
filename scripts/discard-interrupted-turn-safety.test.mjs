@@ -4,7 +4,7 @@ test('discard checks active sessions and does not clear a replaced checkpoint',a
  const text=await readFile(new URL('../hooks/useGameLogic.ts',import.meta.url),'utf8'),src=ts.createSourceFile('hook.ts',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);let callback;
  function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(src)==='discardInterruptedGameTurn'&&n.initializer&&ts.isCallExpression(n.initializer))callback=n.initializer.arguments[0];ts.forEachChild(n,visit)}visit(src);assert.ok(callback);
  const js=ts.transpileModule(`const run = ${callback.getText(src)};`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
- const record={id:'pending-turn',checkpointId:'old',baseState:{networkRole:'none'}};
+ const record={id:'pending-turn',checkpointId:'old',baseState:{}};
  async function run({initial=null,duringRead,duringCancel,conflict=false}={}){
   let releaseRead,releaseCancel,reads=0,cancels=0,deletes=0,clears=0,error=null;const read=new Promise(r=>releaseRead=r),cancel=new Promise(r=>releaseCancel=r);
   const scope={gameStateRef:{current:initial},peerRef:{current:null},hostConnectionRef:{current:null},syncRevisionRef:{current:0},gameplayMutationRevisionRef:{current:0},gameplayMutationPendingRef:{current:false},isTurnSubmitPendingRef:{current:false},activeTurnRef:{current:null},hostRestorePendingRef:{current:null},interruptedTurnRecovery:null,loadInterruptedTurnRecovery:()=>{reads++;return read},cancelInterruptedArenaGmRequest:()=>{cancels++;return cancel},clearInterruptedTurnRecovery:()=>{deletes++;return Promise.resolve()},clearInterruptedTurnRecoveryIfUnchanged:()=>{deletes++;return Promise.resolve(!conflict)},setInterruptedTurnRecovery:()=>clears++,setError:e=>error=e,language:'en',formatError:String};

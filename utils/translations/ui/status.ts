@@ -1,6 +1,8 @@
 export const status = {
   en: {
     // Conditions, Effects, Wounds
+    "overloaded_badge": "Overloaded",
+    "overloaded_hint": "Carrying more than the {{max}} this body can bear without penalty.",
     "Active Effects": "Active Effects",
     "You are free of temporary effects.": "You are free of temporary effects.",
     "Wounds": "Wounds",
@@ -100,6 +102,8 @@ export const status = {
   ru: {
     // Conditions, Effects, Wounds
     "Conditions": "Состояния",
+    "overloaded_badge": "Перегружен",
+    "overloaded_hint": "Несёт больше порога в {{max}} — тело не выдержит без последствий.",
     "Active Effects": "Активные эффекты",
     "You are free of temporary effects.": "Вы свободны от временных эффектов.",
     "Wounds": "Раны",

@@ -6,6 +6,9 @@ import { useLocalization } from '../../context/LocalizationContext';
 import ImageRenderer from '../ImageRenderer';
 import EditableField from '../DetailRenderer/Shared/EditableField';
 import StatBar from './Shared/StatBar';
+import { criticalCarryWeight } from '../../utils/carryWeight.js';
+import { BASE_ENERGY_PERCENT, BASE_HEALTH_PERCENT, CARRY_CAPACITY_BASE_WEIGHT, experienceFormulaLabel } from '../../utils/derivedStats.js';
+import { isEncumbered } from '../../utils/carryWeight.js';
 import { CharacterSheetProps } from '../CharacterSheet'; // Добавьте этот импорт
 
 import { 
@@ -55,7 +58,7 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
         }
     }, [character.age, isEditingAge]);
 
-    const handleNameSave = (val: any) => {
+    const handleNameSave = (val: unknown) => {
         if (isPlayer && onEditPlayerData) onEditPlayerData('name', val);
         else if (!isPlayer && onEditNpcData) onEditNpcData((character as NPC).NPCId, 'name', val);
     };
@@ -124,9 +127,13 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
             name: t('Health'),
             value: `${character.currentHealth} / ${character.maxHealth}`,
             breakdown: [
-                { label: t('Base Health'), value: '100' },
-                { label: t('Constitution Bonus'), value: `+${Math.floor(character.characteristics.standardConstitution * 2.0)}` },
-                { label: t('Strength Bonus'), value: `+${Math.floor(character.characteristics.standardStrength * 1.0)}` }
+                { label: t('Base Health'), value: `${BASE_HEALTH_PERCENT}` },
+                // Health is that base plus the two characteristics the formula weighs, and the total
+                // the sheet shows is built from the permanently modified values, gear included. A
+                // view recomputing the terms from the standard values would disagree with the number
+                // it is explaining - and print NaN for a character whose sheet has no characteristics
+                // at all - so it states the difference the total leaves instead.
+                { label: t('Strength and Constitution Bonus'), value: `+${Math.max(0, (character.maxHealth ?? BASE_HEALTH_PERCENT) - BASE_HEALTH_PERCENT)}` },
             ],
             description: t('primary_stat_description_health')
         });
@@ -139,11 +146,11 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                 name: t('Energy'),
                 value: `${character.currentEnergy} / ${character.maxEnergy}`,
                 breakdown: [
-                    { label: t('Base Energy'), value: '100' },
-                    { label: t('Constitution Bonus'), value: `+${Math.floor(character.characteristics.standardConstitution * 0.75)}` },
-                    { label: t('Intelligence Bonus'), value: `+${Math.floor(character.characteristics.standardIntelligence * 0.75)}` },
-                    { label: t('Wisdom Bonus'), value: `+${Math.floor(character.characteristics.standardWisdom * 0.75)}` },
-                    { label: t('Faith Bonus'), value: `+${Math.floor(character.characteristics.standardFaith * 0.75)}` }
+                    { label: t('Base Energy'), value: `${BASE_ENERGY_PERCENT}` },
+                    // Four characteristics weigh in here, three quarters each, and the rule rounds
+                    // every term apart. Only their sum is published on the character, so the sheet
+                    // gives that sum rather than four numbers it cannot derive.
+                    { label: t('Characteristics Bonus'), value: `+${Math.max(0, (character.maxEnergy ?? BASE_ENERGY_PERCENT) - BASE_ENERGY_PERCENT)}` },
                 ],
                 description: t('primary_stat_description_energy')
             });
@@ -157,7 +164,7 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                 name: t('Experience'),
                 value: `${(character as PlayerCharacter).experience} / ${(character as PlayerCharacter).experienceForNextLevel}`,
                 breakdown: [
-                    { label: t('Formula for Next Level'), value: 'floor(100 * (Lvl ^ 2.5))' }
+                    { label: t('Formula for Next Level'), value: experienceFormulaLabel }
                 ],
                 description: t('primary_stat_description_experience')
             });
@@ -170,12 +177,14 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
             name: t('Weight'),
             value: `${character.totalWeight?.toFixed(1)} / ${character.maxWeight?.toFixed(0)} kg`,
             breakdown: [
-                { label: t('Base Capacity'), value: `30 ${t('kg_short')}` },
-                { label: t('Strength Bonus'), value: `+${Math.floor(character.characteristics.standardStrength * 1.8)} ${t('kg_short')}` },
-                { label: t('Constitution Bonus'), value: `+${Math.floor(character.characteristics.standardConstitution * 0.4)} ${t('kg_short')}` },
+                { label: t('Base Capacity'), value: `${CARRY_CAPACITY_BASE_WEIGHT} ${t('kg_short')}` },
+                // Strength and constitution are rounded once, together, and the permanent bonuses
+                // of gear are folded in beforehand, so the two characteristics make up the single
+                // term the capacity formula has rather than two parts that need not add up.
+                { label: t('Strength and Constitution Bonus'), value: `+${Math.max(0, (character.maxWeight ?? CARRY_CAPACITY_BASE_WEIGHT) - CARRY_CAPACITY_BASE_WEIGHT)} ${t('kg_short')}` },
                 { label: '---', value: '' }, // Separator
                 { label: t('Max Weight (Overload Threshold)'), value: `${character.maxWeight?.toFixed(0)} ${t('kg_short')}` },
-                { label: t('Critical Weight'), value: `${((character.maxWeight || 0) + ((character as PlayerCharacter).criticalExcessWeight || 15)).toFixed(0)} ${t('kg_short')}` },
+                { label: t('Critical Weight'), value: `${criticalCarryWeight(character.maxWeight, (character as PlayerCharacter).criticalExcessWeight).toFixed(0)} ${t('kg_short')}` },
             ],
             description: t('primary_stat_description_weight')
         });
@@ -274,7 +283,7 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                 
                 {/* Sub-info */}
                 <div className="text-gray-400 text-sm mt-2 flex items-center gap-1 flex-wrap">
-                    <span>{t(character.race as any)} {t(character.class as any)},&nbsp;</span>
+                    <span>{t(character.race)} {t(character.class)},&nbsp;</span>
                     {isAdminEditable && !isViewOnly ? (
                         isEditingAge ? (
                             <input
@@ -342,7 +351,7 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                                     <span className="text-sm font-medium text-gray-300">{t('Money')}</span>
                                 </div>
                                 <span className="text-sm font-mono text-gray-200 font-semibold">
-                                    {character.money} {t(gameSettings.gameWorldInformation.currencyName as any)}
+                                    {character.money} {t(gameSettings.gameWorldInformation.currencyName)}
                                 </span>
                             </div>
                             {/* Spacer to align with other stat bars that have a progress bar */}
@@ -362,6 +371,14 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                             title={t("Click to view details about Weight")}
                             character={character}
                         />
+                    )}
+                    {isEncumbered(character.maxWeight, character.totalWeight) && (
+                        <p
+                            className="text-xs font-semibold text-red-400 mt-1"
+                            title={t('overloaded_hint', { max: `${character.maxWeight} ${t('kg_short')}` })}
+                        >
+                            {t('overloaded_badge')}
+                        </p>
                     )}
                      {!isPlayer && (character as NPC).relationshipLevel !== undefined && (
                         <StatBar

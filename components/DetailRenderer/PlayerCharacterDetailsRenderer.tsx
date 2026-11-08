@@ -75,7 +75,7 @@ const PlayerCharacterDetailsRenderer: React.FC<PlayerCharacterDetailsProps> = ({
             <Section title={t("Race Description")} icon={TagIcon}>
                 <EditableField
                     label={t('Race Description')}
-                    value={t(character.raceDescription as any)}
+                    value={t(character.raceDescription)}
                     isEditable={allowHistoryManipulation && onEditPlayerData !== undefined}
                     onSave={(val) => onEditPlayerData && onEditPlayerData('raceDescription', val)}
                 />
@@ -85,7 +85,7 @@ const PlayerCharacterDetailsRenderer: React.FC<PlayerCharacterDetailsProps> = ({
             <Section title={t("Class Description")} icon={AcademicCapIcon}>
                  <EditableField
                     label={t('Class Description')}
-                    value={t(character.classDescription as any)}
+                    value={t(character.classDescription)}
                     isEditable={allowHistoryManipulation && onEditPlayerData !== undefined}
                     onSave={(val) => onEditPlayerData && onEditPlayerData('classDescription', val)}
                 />

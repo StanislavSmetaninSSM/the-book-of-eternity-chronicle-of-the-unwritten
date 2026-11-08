@@ -120,7 +120,7 @@ const ItemHeader: React.FC<ItemDetailsProps> = (props) => {
                         as="input"
                         className={`${qualityColorMap[item.quality]?.split(' ')[0] || 'text-gray-300'} ${qualityGlowMap[item.quality] || ''} font-bold text-4xl narrative-text`}
                      />
-                     <p className="text-sm text-gray-400 -mt-1">{t(item.type as any)}</p>
+                     <p className="text-sm text-gray-400 -mt-1">{t(item.type)}</p>
                 </div>
 
                 {/* NEW Description Box */}
@@ -217,19 +217,19 @@ const ItemDetailsRenderer: React.FC<ItemDetailsProps> = (props) => {
                     <SectionHeader title={t('Core Properties')} icon={InformationCircleIcon} />
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
                         <InfoRow label={t("Quality")} value={<span className={qualityColorMap[item.quality] || 'text-gray-300'}>{t(item.quality)}</span>} icon={TagIcon} />
-                        <InfoRow label={t("Price")} value={`${item.price} ${t(currencyName as any)}`} icon={CurrencyDollarIcon} />
+                        <InfoRow label={t("Price")} value={`${item.price} ${t(currencyName)}`} icon={CurrencyDollarIcon} />
                         <InfoRow label={t("Count")} value={item.count} icon={HashtagIcon} />
                         <InfoRow label={t("Weight")} value={`${item.weight} ${t('kg_short')}`} icon={ScaleIcon} />
                         <InfoRow label={t("Volume")} value={`${item.volume} dm³`} icon={CubeIcon} />
                         <InfoRow label={t("Durability")} value={item.durability} icon={ShieldCheckIcon} />
-                        {item.group && <InfoRow label={t("Group")} value={t(item.group as any)} icon={Squares2X2Icon} />}
+                        {item.group && <InfoRow label={t("Group")} value={t(item.group)} icon={Squares2X2Icon} />}
                     </div>
 
                     {(item.equipmentSlot || item.isConsumption) && (<>
                         <SectionHeader title={t("Usage & Equipment")} icon={CogIcon} />
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
                             <InfoRow label={t("Consumable")} value={item.isConsumption ? t('Yes') : t('No')} icon={FireIcon} />
-                            <InfoRow label={t("Equip Slot")} value={item.equipmentSlot ? (Array.isArray(item.equipmentSlot) ? item.equipmentSlot.map(s => t(s as any)).join(', ') : t(item.equipmentSlot as any)) : t('N/A')} icon={PaperClipIcon} />
+                            <InfoRow label={t("Equip Slot")} value={item.equipmentSlot ? (Array.isArray(item.equipmentSlot) ? item.equipmentSlot.map(s => t(s)).join(', ') : t(item.equipmentSlot)) : t('N/A')} icon={PaperClipIcon} />
                             <InfoRow label={t("Two-Handed")} value={item.requiresTwoHands ? t('Yes') : t('No')} icon={HandRaisedIcon} />
                         </div>
                     </>)}
@@ -237,7 +237,7 @@ const ItemDetailsRenderer: React.FC<ItemDetailsProps> = (props) => {
                     {(item.resource != null || item.maximumResource != null) ? (<>
                         <SectionHeader title={t("Resource")} icon={BoltIcon} />
                         <InfoRow label={t("Resource")} value={item.maximumResource != null ? `${item.resource || 0} / ${item.maximumResource}` : item.resource} icon={BeakerIcon} />
-                        {item.resourceType && <InfoRow label={t("Resource Type")} value={t(item.resourceType as any)} icon={TagIcon} />}
+                        {item.resourceType && <InfoRow label={t("Resource Type")} value={t(item.resourceType)} icon={TagIcon} />}
                     </>) : null}
 
                     {item.isContainer && (<>
@@ -255,7 +255,7 @@ const ItemDetailsRenderer: React.FC<ItemDetailsProps> = (props) => {
                          {item.customProperties.map((prop, i) => (
                             <div key={i} className="bg-gray-800/50 p-2 rounded-md flex justify-between items-center text-sm">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-xs bg-gray-600 px-2 py-0.5 rounded-full font-semibold">{t(prop.interactionType as any)}</span>
+                                    <span className="text-xs bg-gray-600 px-2 py-0.5 rounded-full font-semibold">{t(prop.interactionType)}</span>
                                     <span className="text-gray-300">{prop.targetStateName}</span>
                                 </div>
                                 <span className={`font-mono font-bold ${prop.changeValue > 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -362,7 +362,7 @@ const ItemDetailsRenderer: React.FC<ItemDetailsProps> = (props) => {
                         <div>
                              <SectionHeader title={t("Disassembles To")} icon={WrenchIcon} />
                              <ul className="list-disc list-inside space-y-1 text-gray-300 pl-2">
-                                {item.disassembleTo.map((m: any) => <li key={m.materialName}>{m.quantity}x {m.materialName}</li>)}
+                                {item.disassembleTo.map(m => <li key={m.materialName}>{m.quantity}x {m.materialName}</li>)}
                              </ul>
                              <div className="pt-2">
                                 <button
@@ -465,7 +465,7 @@ const ItemDetailsRenderer: React.FC<ItemDetailsProps> = (props) => {
                                         className="bg-slate-800/70 hover:bg-slate-700/90 rounded-lg p-4 flex flex-col items-center justify-center gap-2 text-center transition-all duration-200 transform hover:scale-105 border border-slate-700 hover:border-cyan-500"
                                     >
                                         <tab.icon className="w-8 h-8 text-cyan-400" />
-                                        <span className="font-semibold text-gray-200">{t(tab.name as any)}</span>
+                                        <span className="font-semibold text-gray-200">{t(tab.name)}</span>
                                     </button>
                                 ))}
                             </div>
@@ -478,7 +478,7 @@ const ItemDetailsRenderer: React.FC<ItemDetailsProps> = (props) => {
                                     {t('back_to_menu')}
                                 </button>
                                 <div className="w-px h-6 bg-gray-700"></div>
-                                <h3 className="text-xl font-bold text-cyan-400 narrative-text flex-1">{t(activeView as any)}</h3>
+                                <h3 className="text-xl font-bold text-cyan-400 narrative-text flex-1">{t(activeView)}</h3>
                                 <button onClick={() => setIsHeaderExpanded(!isHeaderExpanded)} title={t(isHeaderExpanded ? 'Expand Header' : 'Expand Header')} className="p-2 text-gray-400 rounded-full hover:bg-gray-700/50 transition-colors">
                                     {isHeaderExpanded ? <ChevronUpIcon className="w-5 h-5" /> : <ChevronDownIcon className="w-5 h-5" />}
                                 </button>
@@ -502,7 +502,7 @@ const ItemDetailsRenderer: React.FC<ItemDetailsProps> = (props) => {
                     <div className="mt-4 text-left">
                         <h4 className="font-semibold text-gray-300">{t("You will receive the following materials:")}</h4>
                         <ul className="list-disc list-inside text-sm text-gray-400 mt-2">
-                            {item.disassembleTo.map((mat: any, i) => (
+                            {item.disassembleTo.map((mat, i) => (
                                 <li key={i}>{mat.quantity}x {mat.materialName}</li>
                             ))}
                         </ul>

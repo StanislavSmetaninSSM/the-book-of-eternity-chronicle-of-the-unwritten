@@ -124,7 +124,7 @@ const ActiveSkillDetailsRenderer: React.FC<ActiveSkillDetailsProps> = ({ skill, 
             </Section>
         )}
         <Section title={t("Scaling")} icon={ArrowPathIcon}>
-            <DetailRow label={t("Scales With")} value={skill.scalingCharacteristic ? t(skill.scalingCharacteristic as any) : t('None')} icon={LinkIcon} />
+            <DetailRow label={t("Scales With")} value={skill.scalingCharacteristic ? t(skill.scalingCharacteristic) : t('None')} icon={LinkIcon} />
             <DetailRow label={t("Scales Value")} value={skill.scalesValue ? t('Yes') : t('No')} icon={WrenchScrewdriverIcon} />
             <DetailRow label={t("Scales Duration")} value={skill.scalesDuration ? t('Yes') : t('No')} icon={WrenchScrewdriverIcon} />
             <DetailRow label={t("Scales Chance")} value={skill.scalesChance ? t('Yes') : t('No')} icon={WrenchScrewdriverIcon} />
@@ -135,7 +135,7 @@ const ActiveSkillDetailsRenderer: React.FC<ActiveSkillDetailsProps> = ({ skill, 
                 <div className="bg-gray-800/50 p-3 rounded-md space-y-2 text-sm">
                     <DetailRow label={t("Base Value/Duration")} value={`${scalingCalculations.baseValue}% ${scalingCalculations.baseDuration != null ? `/ ${t('{duration} turns', { duration: scalingCalculations.baseDuration })}` : ''}`} />
                     <div className="pl-4 border-l-2 border-gray-700 space-y-1">
-                        <DetailRow label={t("Bonus from {char}", { char: t(skill.scalingCharacteristic as any) })} value={`+${scalingCalculations.charBonusPercent}% (${t('Value')}: ${scalingCalculations.relevantCharValue})`} />
+                        <DetailRow label={t("Bonus from {char}", { char: t(skill.scalingCharacteristic) })} value={`+${scalingCalculations.charBonusPercent}% (${t('Value')}: ${scalingCalculations.relevantCharValue})`} />
                         <DetailRow label={t("Bonus from Level")} value={`+${scalingCalculations.levelBonusPercent}% (${t('Level')} ${playerCharacter?.level})`} />
                         <DetailRow label={t("Bonus from Mastery")} value={`+${scalingCalculations.masteryBonusPercent}% (${t('Level')} ${masteryLevel})`} />
                     </div>

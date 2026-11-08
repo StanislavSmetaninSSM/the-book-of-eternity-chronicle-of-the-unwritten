@@ -22,7 +22,7 @@ const readAutosave = (page: Page) => page.evaluate(async () => {
     request.onerror = () => reject(request.error);
   });
   const saves = await openDb('gemini-rpg-db');
-  const record = await new Promise<any>((resolve, reject) => {
+  const record = await new Promise<{ saveData?: { gameState?: { imageCache?: Record<string, unknown> } } } | undefined>((resolve, reject) => {
     const request = saves.transaction('autosaves', 'readonly').objectStore('autosaves').get('current_autosave');
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -37,7 +37,7 @@ const readSlotImages = (page: Page) => page.evaluate(async () => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
-  const records = await new Promise<any[]>((resolve, reject) => {
+  const records = await new Promise<Array<{ saveData?: { gameState?: { imageCache?: Record<string, unknown> } } }>>((resolve, reject) => {
     const request = database.transaction('save_slots', 'readonly').objectStore('save_slots').getAll();
     request.onsuccess = () => resolve(request.result || []);
     request.onerror = () => reject(request.error);
@@ -118,6 +118,21 @@ test.describe('images across a real browser session', () => {
     await page.getByTestId('side-tab-ImageCache').click();
     await expect(page.locator('img[src^="data:image/png"]').first()).toBeVisible();
     expect(errors).toEqual([]);
+  });
+
+  // A crash-recovery or autosave reload stores a request before the app boots. The shell must
+  // pass it to the game host on its own: the player never sees the start screen.
+  test('a pending startup autosave request opens the chronicle without a click', async ({ page }) => {
+    await page.goto('/');
+    await importFiles(page, fixturePath('save-with-image.json'));
+    await expect(page.getByTestId('chat-window')).toBeVisible();
+    await expect.poll(() => readAutosave(page), { timeout: 15_000 }).toContain('blob:');
+
+    await page.evaluate(() => localStorage.setItem('gemini-rpg-startup-load-request', 'autosave'));
+    await page.reload();
+
+    await expect(page.getByTestId('chat-window')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('start-screen')).toHaveCount(0);
   });
 
   test('an autosave written with inline base64 is migrated on startup', async ({ page }) => {

@@ -4,11 +4,17 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocalization } from '../context/LocalizationContext';
 import Modal from './Modal';
 import { gameData, standardCalendarStructure } from '../utils/localizationGameData';
+import { resolveWorldFor } from '../utils/worldData';
 import { PlusIcon, MinusIcon, CheckIcon } from '@heroicons/react/24/solid';
 // FIX: Added missing icon imports to resolve multiple 'Cannot find name' errors.
 import { MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, StarIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import ConfirmationModal from './ConfirmationModal';
-import { Month, Calendar, DayInfo } from '../types';
+import { Month, Calendar, DayInfo, WorldData, RaceDefinition, ClassDefinition } from '../types';
+
+/** What the race editor works on: a stored race plus the key it is filed under. */
+type EditableRace = RaceDefinition & { name?: string; originalName?: string; attributePoints?: number };
+/** What the class editor works on: a stored class plus the key it is filed under. */
+type EditableClass = ClassDefinition & { name?: string; originalName?: string; attributePoints?: number };
 import { notifyError, notifySuccess, notifyWarning } from '../utils/notifications';
 
 interface UniverseCustomizerProps {
@@ -24,9 +30,9 @@ const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intellig
 
 // RaceEditModal Component
 const RaceEditModal: React.FC<{
-    race: any;
+    race: EditableRace;
     allClasses: string[];
-    onSave: (race: any) => void;
+    onSave: (race: EditableRace & { name: string }) => void;
     onClose: () => void;
 }> = ({ race, allClasses, onSave, onClose }) => {
     const { t } = useLocalization();
@@ -36,8 +42,8 @@ const RaceEditModal: React.FC<{
         const initialBonuses = CHARACTERISTICS_LIST.reduce((acc, char) => ({ ...acc, [char]: 0 }), {});
         return {
             ...race,
-            name: race.name ? t(race.name as any) : '',
-            description: race.description ? t(race.description as any) : '',
+            name: race.name ? t(race.name) : '',
+            description: race.description ? t(race.description) : '',
             bonuses: { ...initialBonuses, ...race.bonuses },
             availableClasses: race.availableClasses || []
         };
@@ -47,8 +53,8 @@ const RaceEditModal: React.FC<{
         const initialBonuses = CHARACTERISTICS_LIST.reduce((acc, char) => ({ ...acc, [char]: 0 }), {});
         setLocalRace({
             ...race,
-            name: race.name ? t(race.name as any) : '',
-            description: race.description ? t(race.description as any) : '',
+            name: race.name ? t(race.name) : '',
+            description: race.description ? t(race.description) : '',
             bonuses: { ...initialBonuses, ...race.bonuses },
             availableClasses: race.availableClasses || []
         });
@@ -78,7 +84,7 @@ const RaceEditModal: React.FC<{
     };
 
     const handleClassToggle = (className: string) => {
-        setLocalRace((prev: any) => {
+        setLocalRace(prev => {
             const availableClasses = prev.availableClasses || [];
             if (availableClasses.includes(className)) {
                 return { ...prev, availableClasses: availableClasses.filter((c: string) => c !== className) };
@@ -119,7 +125,7 @@ const RaceEditModal: React.FC<{
                     <div className="grid grid-cols-2 gap-2">
                         {CHARACTERISTICS_LIST.map(attr => (
                             <div key={attr} className="flex justify-between items-center bg-gray-800 p-2 rounded-md">
-                                <span className="capitalize text-sm">{t(attr as any)}</span>
+                                <span className="capitalize text-sm">{t(attr)}</span>
                                 <div className="flex items-center gap-2">
                                     <button type="button" onClick={() => handleAttributeChange(attr, -1)} disabled={(localRace.bonuses[attr] || 0) <= -1} className="p-1 rounded-full bg-red-600/50 hover:bg-red-500 disabled:bg-gray-600 text-white"><MinusIcon className="w-4 h-4" /></button>
                                     <span className="w-6 text-center font-mono">{1 + (localRace.bonuses[attr] || 0)}</span>
@@ -135,7 +141,7 @@ const RaceEditModal: React.FC<{
                         {allClasses.map(className => (
                             <div key={className} className="flex items-center">
                                 <input id={`class-${className}`} type="checkbox" checked={(localRace.availableClasses || []).includes(className)} onChange={() => handleClassToggle(className)} className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-cyan-600 focus:ring-cyan-500" />
-                                <label htmlFor={`class-${className}`} className="ml-2 text-sm text-gray-300">{t(className as any)}</label>
+                                <label htmlFor={`class-${className}`} className="ml-2 text-sm text-gray-300">{t(className)}</label>
                             </div>
                         ))}
                     </div>
@@ -195,8 +201,8 @@ const ExportControls: React.FC<{
 };
 
 interface RaceEditorProps {
-    world: any;
-    onFieldChange: (field: string, value: any) => void;
+    world: WorldData;
+    onFieldChange: (field: string, value: unknown) => void;
     customUniverses: { key: string; name: string }[];
     onExport: (dataType: 'races' | 'classes' | 'calendar' | 'currencies', targetKey: string) => void;
 }
@@ -205,7 +211,7 @@ interface RaceEditorProps {
 const RaceEditor: React.FC<RaceEditorProps> = ({ world, onFieldChange, customUniverses, onExport }) => {
     const { t } = useLocalization();
     const [races, setRaces] = useState(world.races || {});
-    const [editingRace, setEditingRace] = useState<any>(null);
+    const [editingRace, setEditingRace] = useState<EditableRace | null>(null);
     const [raceToDelete, setRaceToDelete] = useState<string | null>(null);
     const [search, setSearch] = useState('');
 
@@ -214,10 +220,10 @@ const RaceEditor: React.FC<RaceEditorProps> = ({ world, onFieldChange, customUni
     }, [world.races]);
 
     const filteredRaces = useMemo(() => {
-        return Object.keys(races).filter(raceName => t(raceName as any).toLowerCase().includes(search.toLowerCase()));
+        return Object.keys(races).filter(raceName => t(raceName).toLowerCase().includes(search.toLowerCase()));
     }, [races, search, t]);
 
-    const handleSaveRace = (race: any) => {
+    const handleSaveRace = (race: EditableRace & { name: string }) => {
         const newRaces = { ...races };
         // If name was changed, we need to remove old key and add new one
         if (race.originalName && race.originalName !== race.name) {
@@ -254,7 +260,7 @@ const RaceEditor: React.FC<RaceEditorProps> = ({ world, onFieldChange, customUni
             <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                 {filteredRaces.map(raceName => (
                     <div key={raceName} className="flex items-center justify-between p-2 bg-gray-900/40 rounded-md">
-                        <span className="text-gray-200">{t(raceName as any)}</span>
+                        <span className="text-gray-200">{t(raceName)}</span>
                         <div className="flex items-center gap-2">
                             <button onClick={() => setEditingRace({ ...races[raceName], name: raceName, originalName: raceName })} className="p-1 text-cyan-400 hover:text-white"><PencilSquareIcon className="w-5 h-5" /></button>
                             <button onClick={() => setRaceToDelete(raceName)} className="p-1 text-red-400 hover:text-white"><TrashIcon className="w-5 h-5" /></button>
@@ -273,8 +279,8 @@ const RaceEditor: React.FC<RaceEditorProps> = ({ world, onFieldChange, customUni
 
 // ClassEditModal Component
 const ClassEditModal: React.FC<{
-    classData: any;
-    onSave: (classData: any) => void;
+    classData: EditableClass;
+    onSave: (classData: EditableClass & { name: string }) => void;
     onClose: () => void;
 }> = ({ classData, onSave, onClose }) => {
     const { t } = useLocalization();
@@ -284,8 +290,8 @@ const ClassEditModal: React.FC<{
         const initialBonuses = CHARACTERISTICS_LIST.reduce((acc, char) => ({ ...acc, [char]: 0 }), {});
         return {
             ...classData,
-            name: classData.name ? t(classData.name as any) : '',
-            description: classData.description ? t(classData.description as any) : '',
+            name: classData.name ? t(classData.name) : '',
+            description: classData.description ? t(classData.description) : '',
             bonuses: { ...initialBonuses, ...classData.bonuses },
         };
     });
@@ -294,8 +300,8 @@ const ClassEditModal: React.FC<{
         const initialBonuses = CHARACTERISTICS_LIST.reduce((acc, char) => ({ ...acc, [char]: 0 }), {});
         setLocalClass({
             ...classData,
-            name: classData.name ? t(classData.name as any) : '',
-            description: classData.description ? t(classData.description as any) : '',
+            name: classData.name ? t(classData.name) : '',
+            description: classData.description ? t(classData.description) : '',
             bonuses: { ...initialBonuses, ...classData.bonuses },
         });
     }, [classData, t]);
@@ -352,7 +358,7 @@ const ClassEditModal: React.FC<{
                     <div className="grid grid-cols-2 gap-2">
                         {CHARACTERISTICS_LIST.map(attr => (
                             <div key={attr} className="flex justify-between items-center bg-gray-800 p-2 rounded-md">
-                                <span className="capitalize text-sm">{t(attr as any)}</span>
+                                <span className="capitalize text-sm">{t(attr)}</span>
                                 <div className="flex items-center gap-2">
                                     <button type="button" onClick={() => handleAttributeChange(attr, -1)} disabled={(localClass.bonuses[attr] || 0) <= 0} className="p-1 rounded-full bg-red-600/50 hover:bg-red-500 disabled:bg-gray-600 text-white"><MinusIcon className="w-4 h-4" /></button>
                                     <span className="w-6 text-center font-mono">{(localClass.bonuses[attr] || 0)}</span>
@@ -372,8 +378,8 @@ const ClassEditModal: React.FC<{
 };
 
 interface ClassEditorProps {
-    world: any;
-    onFieldChange: (field: string, value: any) => void;
+    world: WorldData;
+    onFieldChange: (field: string, value: unknown) => void;
     customUniverses: { key: string; name: string }[];
     onExport: (dataType: 'races' | 'classes' | 'calendar' | 'currencies', targetKey: string) => void;
 }
@@ -382,7 +388,7 @@ interface ClassEditorProps {
 const ClassEditor: React.FC<ClassEditorProps> = ({ world, onFieldChange, customUniverses, onExport }) => {
     const { t } = useLocalization();
     const [classes, setClasses] = useState(world.classes || {});
-    const [editingClass, setEditingClass] = useState<any>(null);
+    const [editingClass, setEditingClass] = useState<EditableClass | null>(null);
     const [classToDelete, setClassToDelete] = useState<string | null>(null);
     const [search, setSearch] = useState('');
 
@@ -391,10 +397,10 @@ const ClassEditor: React.FC<ClassEditorProps> = ({ world, onFieldChange, customU
     }, [world.classes]);
 
     const filteredClasses = useMemo(() => {
-        return Object.keys(classes).filter(className => t(className as any).toLowerCase().includes(search.toLowerCase()));
+        return Object.keys(classes).filter(className => t(className).toLowerCase().includes(search.toLowerCase()));
     }, [classes, search, t]);
 
-    const handleSaveClass = (classData: any) => {
+    const handleSaveClass = (classData: EditableClass & { name: string }) => {
         const newClasses = { ...classes };
         if (classData.originalName && classData.originalName !== classData.name) {
             delete newClasses[classData.originalName];
@@ -429,7 +435,7 @@ const ClassEditor: React.FC<ClassEditorProps> = ({ world, onFieldChange, customU
             <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                 {filteredClasses.map(className => (
                     <div key={className} className="flex items-center justify-between p-2 bg-gray-900/40 rounded-md">
-                        <span className="text-gray-200">{t(className as any)}</span>
+                        <span className="text-gray-200">{t(className)}</span>
                         <div className="flex items-center gap-2">
                             <button onClick={() => setEditingClass({ ...classes[className], name: className, originalName: className })} className="p-1 text-cyan-400 hover:text-white"><PencilSquareIcon className="w-5 h-5" /></button>
                             <button onClick={() => setClassToDelete(className)} className="p-1 text-red-400 hover:text-white"><TrashIcon className="w-5 h-5" /></button>
@@ -465,7 +471,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
         setIsConfirmLoadStandardCalendarOpen(false);
     };
 
-    const handleFieldChange = (field: keyof Calendar, value: any) => {
+    const handleFieldChange = (field: keyof Calendar, value: Calendar[keyof Calendar]) => {
         onCalendarChange({ ...calendar, [field]: value });
     };
 
@@ -474,7 +480,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
         if(field === 'days' && typeof value === 'string') {
             value = parseInt(value, 10) || 1;
         }
-        (newMonths[index] as any)[field] = value;
+        Object.assign(newMonths[index], { [field]: value });
         handleFieldChange('months', newMonths);
     };
 
@@ -539,7 +545,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
                                 </button>
                                 <input
                                     type="text"
-                                    defaultValue={t(month.name as any)}
+                                    defaultValue={t(month.name)}
                                     key={`${month.name}-${index}-name`}
                                     onBlur={(e) => handleMonthChange(index, 'name', e.target.value)}
                                     placeholder={t('Month Name')}
@@ -560,7 +566,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
                                 <div className="p-2 border-t border-gray-700/50">
                                     <label className="block text-xs font-medium text-gray-400 mb-1">{t('Description')}</label>
                                     <textarea
-                                        defaultValue={t(month.description as any) || ''}
+                                        defaultValue={t(month.description) || ''}
                                         key={`${month.name}-${index}-desc`}
                                         onBlur={(e) => handleMonthChange(index, 'description', e.target.value)}
                                         rows={3}
@@ -589,7 +595,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
                                     </button>
                                     <input
                                         type="text"
-                                        defaultValue={t(dayInfo.name as any)}
+                                        defaultValue={t(dayInfo.name)}
                                         key={`${dayInfo.name}-${index}-name`}
                                         onBlur={(e) => handleDayNameChange(index, 'name', e.target.value)}
                                         placeholder={t('Day Name')}
@@ -603,7 +609,7 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
                                      <div className="p-2 border-t border-gray-700/50">
                                         <label className="block text-xs font-medium text-gray-400 mb-1">{t('Description')}</label>
                                         <textarea
-                                            defaultValue={t(dayInfo.description as any) || ''}
+                                            defaultValue={t(dayInfo.description) || ''}
                                             key={`${dayInfo.name}-${index}-desc`}
                                             onBlur={(e) => handleDayNameChange(index, 'description', e.target.value)}
                                             rows={3}
@@ -633,8 +639,8 @@ const CalendarEditor: React.FC<CalendarEditorProps> = ({ calendar, onCalendarCha
 };
 
 interface CurrencyEditorProps {
-    world: any;
-    onFieldChange: (field: string, value: any) => void;
+    world: WorldData;
+    onFieldChange: (field: string, value: unknown) => void;
     customUniverses: { key: string; name: string }[];
     onExport: (dataType: 'races' | 'classes' | 'calendar' | 'currencies', targetKey: string) => void;
 }
@@ -696,7 +702,7 @@ const CurrencyEditor: React.FC<CurrencyEditorProps> = ({ world, onFieldChange, c
             <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                 {currencyList.map((currency) => (
                     <div key={currency} className="flex items-center justify-between p-2 bg-gray-900/40 rounded-md">
-                        <span className={`text-gray-200 ${world.currencyName === currency ? 'font-bold' : ''}`}>{t(currency as any)}</span>
+                        <span className={`text-gray-200 ${world.currencyName === currency ? 'font-bold' : ''}`}>{t(currency)}</span>
                         <div className="flex items-center gap-2">
                             {world.currencyName === currency ? (
                                 <StarIcon className="w-4 h-4 text-yellow-400" title={t('Default currency')} />
@@ -732,16 +738,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         if (!universe || (universe === 'custom' && !selectedEra)) {
             return null;
         }
-        if (universe === 'history') {
-            return localData.history[selectedEra as keyof typeof localData.history];
-        }
-        if (universe === 'myths') {
-            return localData.myths[selectedEra as keyof typeof localData.myths];
-        }
-        if (universe === 'custom') {
-            return (localData.custom as Record<string, any>)[selectedEra];
-        }
-        return (localData as any)[universe];
+        return resolveWorldFor(localData, universe, selectedEra);
     }, [localData, universe, selectedEra]);
     
     const [localWorldName, setLocalWorldName] = useState('');
@@ -757,7 +754,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
     const customUniverses = useMemo(() => {
         const currentKey = universe === 'custom' ? selectedEra : universe;
         return Object.entries(localData.custom || {})
-            .map(([key, world]: [string, any]) => ({ key, name: world.name }))
+            .map(([key, world]) => ({ key, name: (world as WorldData).name }))
             .filter(uni => uni.key !== currentKey);
     }, [localData.custom, universe, selectedEra]);
 
@@ -778,14 +775,14 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         };
 
         const newLocalData = JSON.parse(JSON.stringify(localData));
-        const targetWorld = (newLocalData.custom as Record<string, any>)[targetUniverseKey];
+        const targetWorld = (newLocalData.custom as Record<string, WorldData>)[targetUniverseKey];
         if (!targetWorld) {
             notifyError(t('Target universe not found.'));
             return;
         }
 
         let exportedItemName = '';
-        const deepCopy = (obj: any) => JSON.parse(JSON.stringify(obj));
+        const deepCopy = <T,>(obj: T): T => JSON.parse(JSON.stringify(obj));
 
         if (dataType === 'races') {
             targetWorld.races = deepCopy(sourceData.races);
@@ -812,16 +809,12 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         onClose();
     };
     
-    const handleFieldChange = (field: string, value: any) => {
+    const handleFieldChange = (field: string, value: unknown) => {
         setLocalData((prev: typeof gameData) => {
             const newData = JSON.parse(JSON.stringify(prev));
-            let world;
-            if (universe === 'history') world = newData.history[selectedEra as keyof typeof newData.history];
-            else if (universe === 'myths') world = newData.myths[selectedEra as keyof typeof newData.myths];
-            else if (universe === 'custom') world = (newData.custom as any)[selectedEra];
-            else world = newData[universe as keyof typeof newData];
+            const world = resolveWorldFor(newData, universe, selectedEra);
             if (world) {
-                (world as any)[field] = value;
+                Object.assign(world, { [field]: value });
             }
             return newData;
         });
@@ -851,7 +844,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         >
             <div className="flex border-b border-gray-700/60 mb-4">
                 {['General', 'Calendar', 'Races', 'Classes', 'Currencies'].map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === tab ? 'border-cyan-400 text-white' : 'border-transparent text-gray-400 hover:text-white'}`}>{t(tab as any)}</button>
+                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === tab ? 'border-cyan-400 text-white' : 'border-transparent text-gray-400 hover:text-white'}`}>{t(tab)}</button>
                 ))}
             </div>
 

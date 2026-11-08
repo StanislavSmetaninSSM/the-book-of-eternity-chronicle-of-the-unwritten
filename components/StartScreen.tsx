@@ -5,10 +5,13 @@ import Modal from './Modal';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, loadStartScreenDraft, saveStartScreenFormDraft, saveStartScreenWorldDraft, clearStartScreenDraft, type PreparedSaveFile } from '../utils/fileManager';
 import ConfirmationModal from './ConfirmationModal';
 import { useLocalization } from '../context/LocalizationContext';
+import { nextLanguage } from '../utils/localization';
 import { useWorldTranslations } from '../hooks/useWorldTranslations';
 import { gameData } from '../utils/localizationGameData';
+import { getUniverseWorld, resolveWorldFor, type WorldData, type WorldSource } from '../utils/worldData';
 import AboutContent from './AboutContent';
-import { DBSaveSlotInfo, Calendar } from '../types';
+import { DBSaveSlotInfo, Calendar, CharacterCreationData } from '../types';
+import { asRecord } from '../utils/typeGuards';
 import { loadPresetRuleTexts, type PresetRuleTexts } from '../utils/translations/presetRules';
 import { fillPresetRuleDefaults } from '../utils/presetRuleDefaults';
 import { initializeAndPreviewSound } from '../utils/soundManager';
@@ -22,7 +25,7 @@ const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intellig
 const cooperativeModeButtonBaseClass = 'min-w-0 min-h-[5rem] px-2 py-3 rounded-md text-center transition-all border flex items-center justify-center whitespace-normal break-words leading-snug';
 
 interface StartScreenProps {
-    onStartLocal: (creationData: any) => void;
+    onStartLocal: (creationData: CharacterCreationData) => void;
     onLoadGame: () => Promise<void>;
     onLoadAutosave: () => Promise<boolean>;
     autosaveTimestamp: string | null;
@@ -130,16 +133,6 @@ const formatTimestamp = (timestamp: string | null, t: (key: string) => string): 
     }
 };
 
-interface WorldData {
-    name: string;
-    description: string;
-    currencyName: string;
-    currencyOptions?: string[];
-    races: Record<string, { description: string; bonuses: Record<string, number>; availableClasses?: string[] }>;
-    classes: Record<string, { description: string; bonuses: Record<string, number> }>;
-    calendar?: Calendar;
-}
-
 const universeDisplayNames: Record<string, string> = {
     fantasy: "Fantasy",
     sci_fi: "Sci-Fi",
@@ -173,6 +166,7 @@ const ToggleSwitch: React.FC<{
 interface CreationFormProps {
     formData: typeof initialFormData;
     handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
+    applyFieldChange: (name: string, value: string) => void;
     handleCheckboxChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
     handleAdultModeClick: () => void;
     handleNonMagicModeClick: () => void;
@@ -182,7 +176,7 @@ interface CreationFormProps {
     onSubmit: (e: React.FormEvent) => void;
     onLoadGame: () => void;
     submitButtonText: string;
-    currentWorld: any;
+    currentWorld: WorldData;
     customGameData: typeof gameData;
     setIsCreatingUniverse: (isCreating: boolean) => void;
     setFormData: React.Dispatch<React.SetStateAction<typeof initialFormData>>;
@@ -191,6 +185,7 @@ interface CreationFormProps {
 const CreationForm: React.FC<CreationFormProps> = ({
     formData,
     handleInputChange,
+    applyFieldChange,
     handleCheckboxChange,
     handleAdultModeClick,
     handleNonMagicModeClick,
@@ -213,7 +208,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
     const raceOptions = useMemo(() => Object.keys(currentWorld.races), [currentWorld]);
 
     const availableClassesForRace = useMemo(() => {
-        const selectedRaceData = (currentWorld as any).races[race];
+        const selectedRaceData = currentWorld.races[race];
         return selectedRaceData?.availableClasses || null;
     }, [race, currentWorld]);
 
@@ -233,7 +228,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
     const currentDifficulty = impossibleMode ? 'impossible' : (hardMode ? 'hard' : 'normal');
 
     const daysInSelectedMonth = useMemo(() => {
-        const monthData = currentWorld.calendar?.months.find((m: any) => m.name === startingMonth);
+        const monthData = currentWorld.calendar?.months.find(m => m.name === startingMonth);
         return monthData ? monthData.days : 31;
     }, [startingMonth, currentWorld.calendar]);
 
@@ -242,7 +237,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
 
         const calendar = currentWorld.calendar as Calendar;
         const selectedMonth = calendar.months.find(m => m.name === formData.startingMonth);
-        const monthDescription = selectedMonth?.description ? t(selectedMonth.description as any) : '';
+        const monthDescription = selectedMonth?.description ? t(selectedMonth.description) : '';
 
         const monthIndex = calendar.months.findIndex(m => m.name === formData.startingMonth);
         if (monthIndex === -1) return { monthDescription, dayOfWeekName: null, dayOfWeekDescription: null };
@@ -273,9 +268,9 @@ const CreationForm: React.FC<CreationFormProps> = ({
         let dayOfWeekName = '';
         let dayOfWeekDescription = '';
         if (dayOfWeek) {
-            dayOfWeekName = typeof dayOfWeek === 'string' ? t(dayOfWeek as any) : t(dayOfWeek.name as any);
+            dayOfWeekName = typeof dayOfWeek === 'string' ? t(dayOfWeek) : t(dayOfWeek.name);
             if (typeof dayOfWeek === 'object' && dayOfWeek.description) {
-                dayOfWeekDescription = t(dayOfWeek.description as any);
+                dayOfWeekDescription = t(dayOfWeek.description);
             }
         }
 
@@ -296,7 +291,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                         <button
                             key={key}
                             type="button"
-                            onClick={() => handleInputChange({ target: { name: 'universe', value: key } } as any)}
+                            onClick={() => applyFieldChange('universe', key)}
                             className={`p-3 rounded-md transition-all border flex items-center justify-center whitespace-normal min-h-[4rem] ${formData.universe === key ? 'bg-cyan-500/30 border-cyan-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}
                         >
                             {t(universeDisplayNames[key])}
@@ -306,7 +301,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 <p className="text-xs text-gray-400 mt-2">
                     {formData.universe === 'custom' && !formData.selectedEra
                         ? t('Create your own world from scratch...')
-                        : t(currentWorld.description as any)}
+                        : t(currentWorld.description)}
                 </p>
             </div>
 
@@ -336,14 +331,14 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">{t('Choose Your Custom Universe')}</label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {Object.entries(customGameData.custom || {}).map(([key, world]: [string, any]) => (
+                        {Object.entries(customGameData.custom || {}).map(([key, world]) => (
                             <button
                                 key={key}
                                 type="button"
-                                onClick={() => handleInputChange({ target: { name: 'selectedEra', value: key } } as any)}
+                                onClick={() => applyFieldChange('selectedEra', key)}
                                 className={`p-3 rounded-md transition-all border flex items-center justify-center whitespace-normal min-h-[4rem] ${formData.selectedEra === key ? 'bg-purple-500/30 border-purple-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}
                             >
-                                {world.name}
+                                {(world as WorldData).name}
                             </button>
                         ))}
                         <button
@@ -368,8 +363,8 @@ const CreationForm: React.FC<CreationFormProps> = ({
                     <div>
                         <label htmlFor="startingMonth" className="block text-sm font-medium text-gray-300 mb-2">{t("Starting Month")}</label>
                         <select id="startingMonth" name="startingMonth" onChange={handleInputChange} value={formData.startingMonth} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition dark-select">
-                            {currentWorld.calendar?.months.map((month: any) => (
-                                <option key={month.name} value={month.name}>{t(month.name as any)}</option>
+                            {currentWorld.calendar?.months.map(month => (
+                                <option key={month.name} value={month.name}>{t(month.name)}</option>
                             ))}
                         </select>
                     </div>
@@ -385,7 +380,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 {(selectedDateInfo.monthDescription || selectedDateInfo.dayOfWeekName) && (
                     <div className="pt-4 border-t border-gray-700/50 space-y-2 text-sm text-gray-400">
                         {selectedDateInfo.monthDescription && (
-                            <p><span className="font-semibold text-gray-300">{t(formData.startingMonth as any)}</span> - {selectedDateInfo.monthDescription}</p>
+                            <p><span className="font-semibold text-gray-300">{t(formData.startingMonth)}</span> - {selectedDateInfo.monthDescription}</p>
                         )}
                         {selectedDateInfo.dayOfWeekName && (
                             <p><span className="font-semibold text-gray-300">{selectedDateInfo.dayOfWeekName}</span>{selectedDateInfo.dayOfWeekDescription ? ` - ${selectedDateInfo.dayOfWeekDescription}` : ''}</p>
@@ -416,7 +411,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                         className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition"
                     >
                         <option value="Random">{t("Random")}</option>
-                        {FULL_WEATHER_OPTIONS.map(w => <option key={w} value={w}>{t(w as any)}</option>)}
+                        {FULL_WEATHER_OPTIONS.map(w => <option key={w} value={w}>{t(w)}</option>)}
                     </select>
                 </div>
             </div>
@@ -443,10 +438,10 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 >
                     {currentWorld.currencyOptions && currentWorld.currencyOptions.length > 0 ? (
                         currentWorld.currencyOptions.map((currency: string) => (
-                            <option key={currency} value={currency}>{t(currency as any)}</option>
+                            <option key={currency} value={currency}>{t(currency)}</option>
                         ))
                     ) : (
-                        <option value={currentWorld.currencyName || 'Gold'}>{t((currentWorld.currencyName || 'Gold') as any)}</option>
+                        <option value={currentWorld.currencyName || 'Gold'}>{t((currentWorld.currencyName || 'Gold'))}</option>
                     )}
                 </select>
             </div>
@@ -455,17 +450,17 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 <div>
                     <label htmlFor="race" className="block text-sm font-medium text-gray-300 mb-2">{formData.universe === 'history' || formData.universe === 'myths' ? t("People") : t("Race")}</label>
                     <select id="race" name="race" onChange={handleInputChange} value={race} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition">
-                        {raceOptions.map(r => <option key={r} value={r}>{t(r as any)}</option>)}
+                        {raceOptions.map(r => <option key={r} value={r}>{t(r)}</option>)}
                     </select>
-                    {selectedRaceInfo && <p className="text-xs text-cyan-300/80 mt-2">{t(selectedRaceInfo.description as any)}</p>}
+                    {selectedRaceInfo && <p className="text-xs text-cyan-300/80 mt-2">{t(selectedRaceInfo.description)}</p>}
                 </div>
 
                 <div>
                     <label htmlFor="charClass" className="block text-sm font-medium text-gray-300 mb-2">{t("Class")}</label>
                     <select id="charClass" name="charClass" onChange={handleInputChange} value={charClass} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition">
-                        {classOptions.map(c => <option key={c} value={c}>{t(c as any)}</option>)}
+                        {classOptions.map(c => <option key={c} value={c}>{t(c)}</option>)}
                     </select>
-                    {selectedClassInfo && <p className="text-xs text-cyan-300/80 mt-2">{t(selectedClassInfo.description as any)}</p>}
+                    {selectedClassInfo && <p className="text-xs text-cyan-300/80 mt-2">{t(selectedClassInfo.description)}</p>}
                 </div>
             </div>
 
@@ -514,7 +509,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                             <button type="button" onClick={() => handleDifficultyChange('hard')} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${currentDifficulty === 'hard' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('Hard')}</button>
                             <button type="button" onClick={() => handleDifficultyChange('impossible')} className={`flex-1 p-2 rounded-md text-center text-sm font-semibold transition-all ${currentDifficulty === 'impossible' ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{t('Impossible')}</button>
                         </div>
-                        <p className="text-xs text-gray-400 mt-2 text-center">{t(`${currentDifficulty}_mode_description` as any)}</p>
+                        <p className="text-xs text-gray-400 mt-2 text-center">{t(`${currentDifficulty}_mode_description`)}</p>
                     </div>
                     <ToggleSwitch label={t('Disable World Events')} description={t('disable_world_events_desc')} name="doNotUseWorldEvents" checked={formData.doNotUseWorldEvents} onChange={handleCheckboxChange} />
                     <ToggleSwitch label={t('Allow History Manipulation')} description={t('allowHistoryManipulationDescription')} name="allowHistoryManipulation" checked={formData.allowHistoryManipulation} onChange={handleCheckboxChange} />
@@ -673,7 +668,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {(['shareCharacteristics', 'shareSkills', 'shareNpcReputation', 'shareFactionReputation', 'shareInventory'] as const).map(key => (
                                 <div key={key} className="flex items-center justify-between p-2 bg-gray-900/30 rounded-lg">
-                                        <label className="font-medium text-gray-300 text-sm">{t(key as any)}</label>
+                                        <label className="font-medium text-gray-300 text-sm">{t(key)}</label>
                                         <label htmlFor={key} className="relative inline-flex items-center cursor-pointer">
                                             <input
                                             type="checkbox"
@@ -847,7 +842,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
 
 
     const handleLanguageToggle = () => {
-        const newLang = language === 'ru' ? 'en' : 'ru';
+        const newLang = nextLanguage(language);
         setLanguage(newLang);
     };
 
@@ -873,33 +868,31 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
         const loadedData = await loadConfigurationFromFile(t);
         if (loadedData && loadedData.customGameData) {
             // Start with the loaded data as the base. It is the source of truth.
-            const newGameData = JSON.parse(JSON.stringify(loadedData.customGameData));
+            const newGameData: typeof gameData = JSON.parse(JSON.stringify(loadedData.customGameData));
+            const universeTable: WorldSource = newGameData;
 
             // Now, fill in any missing universes from the default gameData.
-            for (const key in gameData) {
-                if (Object.prototype.hasOwnProperty.call(gameData, key)) {
-                    // If the loaded data does NOT have this universe, add it from the default.
-                    if (!(newGameData as any)[key]) {
-                        (newGameData as any)[key] = (gameData as any)[key];
-                    }
-                }
-            }
+            Object.entries(gameData).forEach(([key, shippedUniverse]) => {
+                // If the loaded data does NOT have this universe, add it from the default.
+                if (!universeTable[key]) universeTable[key] = shippedUniverse;
+            });
 
-            const addDefaultCalendarRecursively = (obj: any, defaultCalendar: any) => {
-                if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return;
+            const addDefaultCalendarRecursively = (obj: unknown, defaultCalendar: Calendar) => {
+                const record = asRecord(obj);
+                if (!record) return;
 
                 // Heuristic to identify a "world" object
-                if (obj.name && obj.description && typeof obj.races === 'object' && typeof obj.classes === 'object') {
-                    if (!obj.calendar) {
-                        console.log(`Adding default calendar to world: ${obj.name}`);
-                        obj.calendar = JSON.parse(JSON.stringify(defaultCalendar));
+                if (record.name && record.description && typeof record.races === 'object' && typeof record.classes === 'object') {
+                    if (!record.calendar) {
+                        console.log(`Adding default calendar to world: ${String(record.name)}`);
+                        record.calendar = JSON.parse(JSON.stringify(defaultCalendar));
                     }
                 }
 
                 // Always recurse deeper, unless it's a leaf node or a calendar itself
-                for (const key in obj) {
-                    if (key !== 'calendar' && Object.prototype.hasOwnProperty.call(obj, key)) {
-                        addDefaultCalendarRecursively(obj[key], defaultCalendar);
+                for (const key in record) {
+                    if (key !== 'calendar' && Object.prototype.hasOwnProperty.call(record, key)) {
+                        addDefaultCalendarRecursively(record[key], defaultCalendar);
                     }
                 }
             };
@@ -908,7 +901,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
             addDefaultCalendarRecursively(newGameData, defaultCalendar);
 
             setCustomGameData(newGameData);
-            const loadedFormData = { ...loadedData.formData } as typeof initialFormData & Record<string, unknown>;
+            const loadedFormData: typeof initialFormData & Record<string, unknown> = { ...(loadedData.formData as Record<string, unknown>) } as typeof initialFormData & Record<string, unknown>;
             [
                 'aiProvider', 'modelName', 'correctionModelName', 'isCustomModel', 'customModelName',
                 'openRouterModelName', 'geminiThinkingBudget', 'geminiThinkingLevel', 'useDynamicThinkingBudget',
@@ -922,23 +915,16 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
 
     const currentWorld: WorldData = useMemo(() => {
         const { universe, selectedEra } = formData;
-        const gameDataSource = customGameData || gameData;
-        let world;
-
-        if (universe === 'custom') {
-            world = (gameDataSource.custom && (gameDataSource.custom as any)[selectedEra])
-                || { name: selectedEra || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] };
-        } else if (universe === 'history') {
-            world = gameDataSource.history[selectedEra as keyof typeof gameDataSource.history];
-        } else if (universe === 'myths') {
-            world = gameDataSource.myths[selectedEra as keyof typeof gameDataSource.myths];
-        } else {
-            world = (gameDataSource as any)[universe];
-        }
+        const gameDataSource = (customGameData || gameData) as WorldSource;
+        const world = resolveWorldFor(gameDataSource, universe, selectedEra)
+            // A custom universe without an era is still being invented: show the empty shell.
+            || (universe === 'custom'
+                ? { name: selectedEra || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] }
+                : undefined);
 
         if (!world) {
             console.warn(`Could not find world data for universe: ${universe}, era: ${selectedEra}. Falling back to fantasy.`);
-            return gameDataSource.fantasy;
+            return getUniverseWorld(gameDataSource, 'fantasy') || gameData.fantasy;
         }
 
         return world;
@@ -982,7 +968,10 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
     }, [currentWorld, isConfigLoading]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
+        applyFieldChange(e.target.name, e.target.value);
+    };
+
+    const applyFieldChange = (name: string, value: string) => {
 
         if (name === 'universe' || name === 'selectedEra') {
             let newUniverse = formData.universe;
@@ -1003,18 +992,11 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
             }
 
             const getNewWorldData = (universe: string, era: string) => {
-                const gameDataSource = customGameData || gameData;
-                if (universe === 'custom') {
-                    return ((gameDataSource.custom as any) && (gameDataSource.custom as any)[era])
-                        || { name: era || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] };
-                }
-                if (universe === 'history') {
-                    return gameDataSource.history[era as keyof typeof gameDataSource.history];
-                }
-                if (universe === 'myths') {
-                    return gameDataSource.myths[era as keyof typeof gameDataSource.myths];
-                }
-                return (gameDataSource as any)[universe];
+                const gameDataSource = (customGameData || gameData) as WorldSource;
+                return resolveWorldFor(gameDataSource, universe, era)
+                    || (universe === 'custom'
+                        ? { name: era || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'] }
+                        : undefined);
             };
 
             const newWorld = getNewWorldData(newUniverse, newEra);
@@ -1213,6 +1195,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                             {worldTranslationsReady && <CreationForm
                                 formData={formData}
                                 handleInputChange={handleInputChange}
+                                applyFieldChange={applyFieldChange}
                                 handleCheckboxChange={handleCheckboxChange}
                                 handleAdultModeClick={handleAdultModeClick}
                                 handleNonMagicModeClick={handleNonMagicModeClick}

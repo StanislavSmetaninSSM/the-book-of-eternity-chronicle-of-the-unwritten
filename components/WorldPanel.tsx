@@ -1,10 +1,12 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 // FIX: Add missing import for ImageCacheEntry
-import { NPC, Location, Faction, ImageCacheEntry, WorldState, WorldStateFlag, WorldEvent, GameSettings } from '../types';
+import { NPC, Location, Faction, ImageCacheEntry, WorldState, WorldStateFlag, WorldEvent, GameSettings, DetailData} from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import ImageRenderer from './ImageRenderer';
 import MarkdownRenderer from './MarkdownRenderer';
+import WorldStateNotes from './WorldStateNotes';
+import { assessEvent } from '../utils/worldAssessment.js';
 // FIX: Add missing icon imports and aliases to resolve multiple 'Cannot find name' errors.
 import {
     UserGroupIcon, BookOpenIcon, GlobeAltIcon,
@@ -37,12 +39,12 @@ interface WorldPanelProps {
     onDeleteFlag: (flagId: string) => void;
     editWorldState: (updates: Partial<{ day: number, time: string, year: number, monthIndex: number }>) => void;
     onEditWeather: (newWeather: string) => void;
-    onEditFlagData: (flagId: string, field: keyof WorldStateFlag, value: any) => void;
+    onEditFlagData: (flagId: string, field: keyof WorldStateFlag, value: WorldStateFlag['value']) => void;
     biome: string | null | undefined;
     allNpcs: NPC[];
     allFactions: Faction[];
     allLocations: Location[];
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onDeleteEvent: (eventId: string) => void;
     deleteWorldEventsByTurnRange: (startTurn: number, endTurn: number) => void;
     onShowMessageModal: (title: string, content: string) => void;
@@ -63,7 +65,7 @@ const formatTime = (totalMinutes: number) => {
 // FIX: Added missing FlagEditor component to resolve compilation error.
 const FlagEditor: React.FC<{
     flag: WorldStateFlag;
-    onSave: (newValue: any) => void;
+    onSave: (newValue: WorldStateFlag['value']) => void;
     onCancel: () => void;
 }> = ({ flag, onSave, onCancel }) => {
     const { t } = useLocalization();
@@ -164,7 +166,7 @@ const WorldStateDisplay: React.FC<{
 
     // Use absolute value for year display to handle BC/negative years cleanly
     const fullDateString = worldState?.date
-    ? `${t(worldState.date.dayOfWeekName as any)}, ${t('day_of_month', { dayOfMonth: worldState.date.dayOfMonth })} ${t(worldState.date.currentMonthName as any)}, ${Math.abs(worldState.date.currentYear)}`
+    ? `${t(worldState.date.dayOfWeekName)}, ${t('day_of_month', { dayOfMonth: worldState.date.dayOfMonth })} ${t(worldState.date.currentMonthName)}, ${Math.abs(worldState.date.currentYear)}`
     : `Day ${worldState?.day || '?'}`;
     
     const daysInSelectedMonth = useMemo(() => {
@@ -224,7 +226,7 @@ const WorldStateDisplay: React.FC<{
                                     onChange={e => setEditedWeather(e.target.value)} 
                                     className="dark-select w-full text-center text-lg font-semibold capitalize"
                                 >
-                                    {FULL_WEATHER_OPTIONS.map(w => <option key={w} value={w}>{t(w as any)}</option>)}
+                                    {FULL_WEATHER_OPTIONS.map(w => <option key={w} value={w}>{t(w)}</option>)}
                                 </select>
                                 <div className="flex justify-end gap-2">
                                     <button onClick={handleWeatherCancel} className="p-1 text-red-400 hover:text-white rounded-full hover:bg-red-700/50" title={t('Cancel')}><XMarkIcon className="w-4 h-4" /></button>
@@ -233,12 +235,12 @@ const WorldStateDisplay: React.FC<{
                             </div>
                         ) : (
                             <div onClick={() => { setEditedWeather(worldState?.weather || 'Clear'); setIsEditingWeather(true); }} className="group cursor-pointer p-1 rounded-md hover:bg-gray-700/50 transition-colors relative">
-                                <p className="text-lg font-semibold capitalize text-center">{t((worldState?.weather || 'N/A') as any)}</p>
+                                <p className="text-lg font-semibold capitalize text-center">{t((worldState?.weather || 'N/A'))}</p>
                                 <PencilSquareIcon className="w-4 h-4 text-gray-500 absolute top-1/2 -translate-y-1/2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
                         )
                     ) : (
-                        <p className="text-lg font-semibold capitalize">{t((worldState?.weather || 'N/A') as any)}</p>
+                        <p className="text-lg font-semibold capitalize">{t((worldState?.weather || 'N/A'))}</p>
                     )}
                 </div>
             </div>
@@ -259,7 +261,7 @@ const WorldStateDisplay: React.FC<{
                             <div>
                                 <label className="block text-sm font-medium text-gray-300">{t('Month')}</label>
                                 <select value={editedDate.monthIndex} onChange={(e) => setEditedDate(p => ({...p, monthIndex: parseInt(e.target.value, 10)}))} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-2 text-gray-200">
-                                    {calendar?.months.map((month, index) => <option key={month.name} value={index}>{t(month.name as any)}</option>)}
+                                    {calendar?.months.map((month, index) => <option key={month.name} value={index}>{t(month.name)}</option>)}
                                 </select>
                             </div>
                             <div>
@@ -280,17 +282,23 @@ const WorldStateDisplay: React.FC<{
 
 interface WorldEventCardProps {
     event: WorldEvent;
+    /** The turn the world is on: the event's own stamp is read against it, and nothing else. */
+    currentTurnNumber?: number | null;
     onDelete: (event: WorldEvent) => void;
     allowHistoryManipulation: boolean;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
     gameSettings: GameSettings | null;
     onOpenImageModal: (displayPrompt: string, originalTextPrompt: string, onClearCustom?: () => void, onUpload?: (base64: string) => void, pendingPrompt?: string | null, onAcceptPending?: () => void) => void;
 }
 
-const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, onDelete, allowHistoryManipulation, onOpenDetailModal, imageCache, onImageGenerated, gameSettings, onOpenImageModal }) => {
+const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, currentTurnNumber, onDelete, allowHistoryManipulation, onOpenDetailModal, imageCache, onImageGenerated, gameSettings, onOpenImageModal }) => {
     const { t } = useLocalization();
+
+    // #30.4.2 writes the turn of an event out of the Context and makes its date carry HH:MM, so the
+    // card answers for its own timestamp - the timeline neither clamps nor repairs it.
+    const eventNotes = useMemo(() => assessEvent(event, currentTurnNumber).notes, [event, currentTurnNumber]);
 
     const eventTypeMapping = useMemo(() => ({
         'Political': { icon: PoliticalIcon, colorClass: 'event-type-Political', label: t('Political') },
@@ -302,7 +310,7 @@ const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, onDelete, allowH
         'Personal': { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t('Personal') },
     }), [t]);
 
-    const typeInfo = eventTypeMapping[event.eventType as keyof typeof eventTypeMapping] || { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t(event.eventType as any) || t('Personal') };
+    const typeInfo = eventTypeMapping[event.eventType as keyof typeof eventTypeMapping] || { icon: PersonalIcon, colorClass: 'event-type-Personal', label: t(event.eventType) || t('Personal') };
 
     const shouldRenderImage = event.image_prompt && (gameSettings?.generateWorldEventImages ?? true);
 
@@ -352,7 +360,7 @@ const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, onDelete, allowH
                         <div className="flex-1">
                             <p className="font-bold text-gray-100 pr-8 group-hover:text-cyan-300 transition-colors">{event.headline}</p>
                             <div className="text-xs text-gray-400 mt-1">
-                                {event.date ? `${t('day_of_month', {dayOfMonth: event.date.dayOfMonth})} ${t(event.date.monthName as any)} - ${event.date.timeOfDay} - ${t('Turn')} ${event.turnNumber}` : `${t('Turn')} ${event.turnNumber}`}
+                                {event.date ? `${t('day_of_month', {dayOfMonth: event.date.dayOfMonth})} ${t(event.date.monthName)} - ${event.date.timeOfDay} - ${t('Turn')} ${event.turnNumber}` : `${t('Turn')} ${event.turnNumber}`}
                             </div>
                         </div>
                     </div>
@@ -360,6 +368,9 @@ const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, onDelete, allowH
                         <MarkdownRenderer content={event.summary} />
                     </p>
                 </button>
+                {eventNotes.length > 0 && (
+                    <WorldStateNotes notes={eventNotes} compact className="mt-2 pt-2 border-t border-amber-500/20" />
+                )}
             </div>
         </div>
     );
@@ -744,6 +755,7 @@ const WorldPanel = (props: WorldPanelProps) => {
                                         <WorldEventCard 
                                             key={event.eventId} 
                                             event={event} 
+                                            currentTurnNumber={turnNumber} 
                                             onDelete={setEventToDelete}
                                             allowHistoryManipulation={allowHistoryManipulation}
                                             onOpenDetailModal={onOpenDetailModal}

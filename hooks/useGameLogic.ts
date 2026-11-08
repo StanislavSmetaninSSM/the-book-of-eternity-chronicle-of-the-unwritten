@@ -1,16 +1,16 @@
-import { localizeLegacySave, localizeLegacyState } from '../utils/localizeLegacySave';
 import { sanitizeGameState } from '../utils/sanitizeGameState';
 import { isLocalPreferenceKey, sharedSettingsEqual } from '../utils/localGamePreferences';
+import { asRecord } from '../utils/typeGuards';
+import { DEFAULT_CRITICAL_EXCESS_WEIGHT } from '../utils/carryWeight.js';
 import { beginGameplayMutation, gameplayMutationCommitted, guardGameplayActions } from '../utils/gameplayMutationGate';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-// FIX: Imported missing types to resolve multiple "Cannot find name" errors.
-import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Wound, WorldStateFlag, UnlockedMemory, Effect, LocationStorage, Item, CompletedActivity, Cinematic, FactionRank, CinemaFrame, ImageCacheEntry, DayInfo, Month } from '../types';
+import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, CharacterCreationData, Location, NPC, Faction, Wound, WorldStateFlag, UnlockedMemory, Effect, LocationStorage, Item, CompletedActivity, Cinematic, CinemaFrame, ImageCacheEntry, DayInfo, Month } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { getCinemaPrompt, getContinueCinemaPrompt } from '../prompts/cinemaPrompt';
 import narrativeStyleGuide from '../prompts/narrativeStyleGuide.js';
 
-import { formatError } from '../utils/errorUtils';
+import { formatError, isAbortError } from '../utils/errorUtils';
 
 import { createTurnManager } from './logic/turn';
 import { createSaveLoadManager } from './logic/saveLoad';
@@ -19,7 +19,6 @@ import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
 import { restorePlayerStats } from '../utils/restorePlayer';
 import { cloneGameStateForEdit } from '../utils/gameStateClone';
-import { migrateGameSettings } from '../utils/settingsMigration';
 import { withLiveActivePlayer } from '../utils/partyView';
 import { recalculateAllWeights } from '../utils/inventoryManager';
 import { recalculateDerivedStats, calculateDate, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
@@ -54,8 +53,8 @@ interface UseGameLogicProps {
     setLanguage: (lang: Language) => void;
 }
 
-const isObject = (item: any): item is object => {
-    return (item && typeof item === 'object' && !Array.isArray(item));
+const isObject = (item: unknown): item is Record<string, unknown> => {
+    return !!item && typeof item === 'object' && !Array.isArray(item);
 };
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => {
@@ -481,117 +480,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [gameState, gameSettings, superInstructions, worldState, turnNumber]);
 
     const restoreFromSaveData = useCallback((source: SaveFile) => {
-        const data = localizeLegacySave(source);
-        // Old saves keep the pre-single-player settings key; rename it before it is used.
-        if (data.gameContext?.gameSettings) {
-            data.gameContext.gameSettings = migrateGameSettings(data.gameContext.gameSettings);
-        }
+        // A save is read as written: this game writes one format and does not recognise
+        // older ones. The document is still copied, because the integrity pass below fills
+        // in values the game master can omit (storage IDs, a missing calendar) and the
+        // caller keeps its own bytes for a retry.
+        const data: SaveFile = { ...source };
         syncRevisionRef.current += 1;
         clearPendingContextEdits();
         if (activeTurnRef.current) abortControllerRef.current?.abort();
-        // --- BACKWARD COMPATIBILITY MIGRATION FOR EVENT LOGS ---
-        const migrateLocationEvents = (loc: any) => {
-            if (loc && loc.lastEventsDescription && typeof loc.lastEventsDescription === 'string' && !loc.eventDescriptions) {
-                console.warn(`Migrating old 'lastEventsDescription' for location: ${loc.name || loc.locationId}`);
-                loc.eventDescriptions = loc.lastEventsDescription.split('\n\n').filter((e: string) => e.trim()).reverse();
-                delete loc.lastEventsDescription;
-            }
-        };
-
-        migrateLocationEvents(data.gameContext?.currentLocation);
-        if (data.gameContext?.worldMap) {
-            Object.values(data.gameContext.worldMap).forEach(migrateLocationEvents);
-        }
-        if (data.gameContext?.visitedLocations) {
-            data.gameContext.visitedLocations.forEach(migrateLocationEvents);
-        }
-        if (data.gameState?.currentLocationData) {
-            migrateLocationEvents(data.gameState.currentLocationData);
-        }
-        // --- END EVENT LOG MIGRATION ---
-
-        // --- BACKWARD COMPATIBILITY MIGRATION FOR DIFFICULTY PROFILES ---
-        const migrateDifficultyProfile = (obj: any) => {
-            if (obj && obj.difficultyProfile && !obj.internalDifficultyProfile) {
-                console.warn(`Migrating old 'difficultyProfile' for: ${obj.name || obj.locationId}`);
-                obj.internalDifficultyProfile = JSON.parse(JSON.stringify(obj.difficultyProfile));
-                obj.externalDifficultyProfile = JSON.parse(JSON.stringify(obj.difficultyProfile));
-                delete obj.difficultyProfile;
-            }
-        };
-        const migrateAdjacencyMap = (adjMap: any[] | undefined) => {
-            if (!adjMap) return;
-            adjMap.forEach((link: any) => {
-                if (link && link.estimatedDifficultyProfile && !link.estimatedInternalDifficultyProfile) {
-                    console.warn(`Migrating old 'estimatedDifficultyProfile' for link: ${link.name}`);
-                    link.estimatedInternalDifficultyProfile = JSON.parse(JSON.stringify(link.estimatedDifficultyProfile));
-                    link.estimatedExternalDifficultyProfile = JSON.parse(JSON.stringify(link.estimatedDifficultyProfile));
-                    delete link.estimatedDifficultyProfile;
-                }
-            });
-        };
-
-        // Migrate all locations
-        const allLocationsToMigrate = [
-            data.gameContext?.currentLocation,
-            ...(Object.values(data.gameContext?.worldMap || {})),
-            ...(data.gameContext?.visitedLocations || [])
-        ].filter(Boolean);
-
-        allLocationsToMigrate.forEach(loc => {
-            migrateDifficultyProfile(loc);
-            migrateAdjacencyMap(loc.adjacencyMap);
-        });
-
-        // Migrate worldMapUpdates in previousTurnResponse
-        const worldMapUpdates = data.gameContext?.previousTurnResponse?.worldMapUpdates;
-        if (worldMapUpdates) {
-            asArray(worldMapUpdates.locationUpdates).forEach((update: any) => {
-                if (update && update.newDifficultyProfile && !update.newInternalDifficultyProfile) {
-                    update.newInternalDifficultyProfile = JSON.parse(JSON.stringify(update.newDifficultyProfile));
-                    update.newExternalDifficultyProfile = JSON.parse(JSON.stringify(update.newDifficultyProfile));
-                    delete update.newDifficultyProfile;
-                }
-            });
-            asArray(worldMapUpdates.newLocations).forEach((newLoc: any) => {
-                migrateDifficultyProfile(newLoc);
-            });
-        }
-        // --- END MIGRATION ---
-
-        // --- EXPERIENCE MIGRATION ---
-        const experienceForLevelTransition = (level: number): number => {
-            if (level < 1) return 100;
-            const baseXP = 100;
-            return Math.floor(baseXP * Math.pow(level, 2.5));
-        };
-
-        const migrateExperience = <T extends PlayerCharacter | NPC>(character: T): T => {
-            if (!character || typeof character.level !== 'number' || character.level < 1) {
-                return character;
-            }
-
-            const currentExperience = Number(character.experience) || 0;
-            const currentExpForNextLevel = Number(character.experienceForNextLevel) || 0;
-
-            const correctExpForNextLevel = experienceForLevelTransition(character.level);
-
-            if (currentExpForNextLevel > 0 && currentExpForNextLevel !== correctExpForNextLevel) {
-                console.warn(`Migrating experience for ${character.name} (Lvl ${character.level}). Old next level XP: ${currentExpForNextLevel}, New: ${correctExpForNextLevel}`);
-
-                const oldProportion = currentExperience / currentExpForNextLevel;
-                const newExperience = Math.floor(correctExpForNextLevel * oldProportion);
-
-                character.experience = newExperience;
-                character.experienceForNextLevel = correctExpForNextLevel;
-            } else if (currentExpForNextLevel === 0 && correctExpForNextLevel > 0 && character.level > 0) {
-                character.experienceForNextLevel = correctExpForNextLevel;
-            }
-            return character;
-        };
-        // --- END EXPERIENCE MIGRATION ---
-
-        // --- LOCATION STORAGE ID MIGRATION ---
+        // --- MISSING LOCATION STORAGE IDS ---
         const fixStorageIdsInLocation = (loc: Location | undefined | null): void => {
             if (!loc || !loc.locationStorages) return;
             loc.locationStorages = loc.locationStorages.map(storage => {
@@ -613,42 +510,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (data.gameState?.currentLocationData) {
             fixStorageIdsInLocation(data.gameState.currentLocationData);
         }
-        // --- END LOCATION STORAGE ID MIGRATION ---
-
-        // --- FACTION RANK MIGRATION ---
-        const migrateFactionRanks = (faction: Partial<Faction> | undefined | null) => {
-            if (faction && (faction as any).ranks && Array.isArray((faction as any).ranks)) {
-                console.warn(`Migrating old array-based rank structure for faction: ${faction.name}`);
-                const oldRanks = (faction as any).ranks as FactionRank[];
-                faction.ranks = {
-                    branches: [
-                        {
-                            branchId: 'core',
-                            displayName: t('core_path_name'),
-                            isCoreBranch: true,
-                            ranks: oldRanks
-                        }
-                    ]
-                };
-            }
-        };
-
-        if (data.gameState?.encounteredFactions) {
-            data.gameState.encounteredFactions.forEach(migrateFactionRanks);
-        }
-        if (data.gameContext?.encounteredFactions) {
-            data.gameContext.encounteredFactions.forEach(migrateFactionRanks);
-        }
-        if (data.gameContext?.previousTurnResponse?.factionDataChanges) {
-            data.gameContext.previousTurnResponse.factionDataChanges.forEach(migrateFactionRanks);
-        }
-        // --- END FACTION RANK MIGRATION ---
+        // --- END MISSING LOCATION STORAGE IDS ---
 
         let loadedSettings = data.gameContext.gameSettings;
         const loadedLanguage = loadedSettings.language || 'en';
         setLanguage(loadedLanguage);
 
-        // --- CALENDAR MIGRATION AND LOCALIZATION ---
+        // --- CALENDAR LOCALIZATION ---
         if (loadedSettings.gameWorldInformation && loadedSettings.gameWorldInformation.calendar) {
             const calendar = loadedSettings.gameWorldInformation.calendar;
 
@@ -656,22 +524,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 loadedSettings.gameWorldInformation.baseInfo?.calendar ||
                 calendar ||
                 gameData.fantasy.calendar;
-
-            // MIGRATION FOR OLD dayNames FORMAT (string[] instead of DayInfo[])
-            // This now runs on the chosen template, ensuring consistency.
-            if (baseCalendarTemplate.dayNames && baseCalendarTemplate.dayNames.length > 0 && typeof baseCalendarTemplate.dayNames[0] === 'string') {
-                console.warn("Migrating old calendar dayNames format from string[] to DayInfo[].");
-
-                const isFantasyCalendar = baseCalendarTemplate.months && baseCalendarTemplate.months[0] && (baseCalendarTemplate.months[0].name === 'Месяц Начал' || baseCalendarTemplate.months[0].name === 'fantasy_month_1_name');
-
-                if (isFantasyCalendar) {
-                    console.log("Fantasy calendar detected. Restoring day names with descriptions.");
-                    baseCalendarTemplate.dayNames = gameData.fantasy.calendar.dayNames;
-                } else {
-                    console.log("Standard calendar detected. Converting day names to object format.");
-                    baseCalendarTemplate.dayNames = (baseCalendarTemplate.dayNames as unknown as string[]).map((dayName: string) => ({ name: dayName, description: '' }));
-                }
-            }
 
             const localizedCalendar = JSON.parse(JSON.stringify(baseCalendarTemplate));
             localizedCalendar.months = localizedCalendar.months.map((month: Month) => ({ ...month, name: translate(loadedLanguage, month.name), description: month.description ? translate(loadedLanguage, month.description) : '' }));
@@ -682,9 +534,9 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (data.gameContext.worldState) {
                 const totalMinutes = data.gameContext.worldState.currentTimeInMinutes;
                 data.gameContext.worldState.date = calculateDate(totalMinutes, localizedCalendar);
-                // FIX: Recalculate 'day' to ensure it's in sync with 'currentTimeInMinutes'.
-                // This resolves inconsistencies from older save files where these two values could diverge.
-                // Use helper for consistent day calculation
+                // 'day' is derived from the minute counter, not stored beside it, so it is
+                // recomputed here: a game-master turn can advance one of the two values and
+                // leave the other behind. The same helper computes it everywhere else.
                 data.gameContext.worldState.day = calculateJourneyDay(totalMinutes, data.gameContext.worldState.campaignStartTimeInMinutes);
             }
         } else if (loadedSettings.gameWorldInformation) {
@@ -692,32 +544,21 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             loadedSettings.gameWorldInformation.calendar = gameData.fantasy.calendar;
         }
 
-        // Strip provider, model, search, and image-pipeline settings from legacy saves.
-        const legacyAISettings = loadedSettings as GameSettings & Record<string, unknown>;
+        // A save can come from anywhere, including a build that configured model
+        // providers and API keys. Those keys have no meaning here and must not be kept
+        // in state or written back out, so they are dropped on the way in.
+        const foreignSettings = loadedSettings as GameSettings & Record<string, unknown>;
         [
             'modelName', 'correctionModelName', 'aiProvider', 'isCustomModel', 'customModelName',
             'openRouterModelName', 'openRouterApiKey', 'geminiThinkingBudget', 'geminiThinkingLevel',
             'useDynamicThinkingBudget', 'geminiApiKey', 'useGoogleSearch', 'imageGenerationModelPipeline',
             'pollinationsImageModel', 'useNanoBananaFallback', 'useNanoBananaPrimary',
-        ].forEach(key => delete legacyAISettings[key]);
-        loadedSettings.showImageSourceInfo = false;
+        ].forEach(key => delete foreignSettings[key]);
 
         ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameContext.currentLocation);
         ensureThreatActivityIds(data.gameContext.worldMap || {}, data.gameState?.currentLocationData);
         gameContextRef.current = data.gameContext;
         let loadedGameState = data.gameState;
-
-        // --- APPLY EXPERIENCE MIGRATION ---
-        if (loadedGameState.playerCharacter) {
-            loadedGameState.playerCharacter = migrateExperience(loadedGameState.playerCharacter);
-        }
-        if (loadedGameState.players) {
-            loadedGameState.players = loadedGameState.players.map(p => p ? migrateExperience(p) : p).filter((p): p is PlayerCharacter => !!p);
-        }
-        if (loadedGameState.encounteredNPCs) {
-            loadedGameState.encounteredNPCs = loadedGameState.encounteredNPCs.map(npc => npc ? migrateExperience(npc) : npc).filter((n): n is NPC => !!n);
-        }
-        // --- END APPLY EXPERIENCE MIGRATION ---
 
         if (loadedGameState.playerCharacter && !loadedGameState.playerCharacter.playerId) {
             console.warn("Loaded playerCharacter is missing a playerId. Generating a new one.");
@@ -770,13 +611,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         if (!loadedGameState.imageCache) {
             loadedGameState.imageCache = {};
         } else {
-            // MIGRATION LOGIC FOR imageCache
+            // A response payload can hand over a picture as a bare data URL where the
+            // gallery expects an entry with its source recorded, so those entries are
+            // widened into objects instead of being rendered as a string.
             const firstValue = Object.values(loadedGameState.imageCache)[0];
-            if (typeof firstValue === 'string' || !firstValue?.src) { // Check if it's old format
-                console.warn("Migrating old imageCache format.");
+            if (typeof firstValue === 'string' || !firstValue?.src) {
                 const newCache: Record<string, ImageCacheEntry> = {};
-                for (const key in loadedGameState.imageCache) {
-                    const value = (loadedGameState.imageCache as any)[key];
+                const legacyCache: Record<string, unknown> = loadedGameState.imageCache;
+                for (const key in legacyCache) {
+                    const value = legacyCache[key];
                     if (typeof value === 'string') {
                         newCache[key] = {
                             src: value,
@@ -785,7 +628,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                         };
                     }
                 }
-                loadedGameState.imageCache = newCache as any;
+                loadedGameState.imageCache = newCache;
             }
         }
 
@@ -799,10 +642,14 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (Array.isArray(originalFlags)) {
                 processedFlags = originalFlags;
             } else if (typeof originalFlags === 'object') {
-                processedFlags = Object.keys(originalFlags).map(key => {
-                    const flagData = (originalFlags as any)[key];
-                    if (isObject(flagData) && !(flagData as any).flagId) {
-                        return { ...flagData, flagId: key };
+                // The rules ask for an array, but a table keyed by flag id carries the same
+                // information and is what a response often produces; the key becomes the id.
+                const flagTable: Record<string, unknown> = originalFlags as unknown as Record<string, unknown>;
+                processedFlags = Object.keys(flagTable).map(key => {
+                    const flagData = flagTable[key];
+                    const flagRecord = asRecord(flagData);
+                    if (flagRecord && !flagRecord.flagId) {
+                        return { ...flagRecord, flagId: key };
                     }
                     return flagData;
                 }).filter((f): f is WorldStateFlag => isObject(f));
@@ -820,13 +667,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 }
                 let updatedNpc = recalculateDerivedStats(npc);
                 updatedNpc = recalculateAllWeights(updatedNpc);
-                if (updatedNpc.totalWeight !== undefined && updatedNpc.maxWeight !== undefined) {
-                    updatedNpc.isOverloaded = updatedNpc.totalWeight > updatedNpc.maxWeight;
-                } else {
-                    updatedNpc.isOverloaded = false;
-                }
                 if (updatedNpc.criticalExcessWeight === undefined) {
-                    updatedNpc.criticalExcessWeight = 15;
+                    updatedNpc.criticalExcessWeight = DEFAULT_CRITICAL_EXCESS_WEIGHT;
                 }
                 return updatedNpc;
             }).filter(isObject) as NPC[];
@@ -926,13 +768,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         fetchInitialData();
     }, []);
 
-    const addPlayer = useCallback((creationData: PlayerCharacter | any) => {
+    const addPlayer = useCallback((creationData: PlayerCharacter | CharacterCreationData) => {
         if (!gameSettings || userGameplayActionBlocked()) return;
-        const newPlayer: PlayerCharacter = creationData.playerId ? creationData : createNewPlayerCharacter(
-            creationData, gameSettings, {
+        const creationRecord = asRecord(creationData);
+        const existingPlayer = typeof creationRecord?.playerId === 'string';
+        const newPlayer: PlayerCharacter = existingPlayer ? creationData as PlayerCharacter : createNewPlayerCharacter(
+            creationData as CharacterCreationData, gameSettings, {
                 partyLevel: gameStateRef.current?.playerCharacter.level || 1,
                 shareCharacteristics: gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false,
-                templatePlayer: creationData.templatePlayer
+                templatePlayer: creationRecord?.templatePlayer as PlayerCharacter | undefined
             });
         setGameState(prev => {
             if (!prev) return prev;
@@ -1188,18 +1032,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     ]);
 
 
-    // The manager exposes a low-level recovery primitive for its own turn
-    // machinery. Do not expose it from the hook without checking the live
-    // session: the checkpoint's role is not the current connection's role.
+    // The manager exposes a low-level recovery primitive for its own turn machinery.
+    // Do not expose it from the hook without checking the live session first: a turn
+    // or a game edit in flight would be overwritten by the checkpoint.
     const resumeInterruptedTurnSafely = useCallback((recovery: Parameters<typeof allManagers.resumeInterruptedTurn>[0]) => {
-        if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none') || activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current) {
+        if (activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current) {
             setError(t('interrupted_turn_recovery_needs_local_idle_game'));
             return;
         }
-        try {
-            const localized = localizeLegacyState(recovery.baseState, recovery.context);
-            return allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
-        } catch (error) { setError(formatError(error)); return; }
+        return allManagers.resumeInterruptedTurn(recovery);
     }, [allManagers, t, setError]);
 
     const resumeInterruptedGameTurn = useCallback(async () => {
@@ -1217,20 +1058,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
         if (blocked()) return reject();
         if (!recovery) return false;
-        if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none')) {
-            setError(t('interrupted_turn_recovery_legacy_network_checkpoint'));
-            return false;
-        }
-        let localized: ReturnType<typeof localizeLegacyState>;
-        try { localized = localizeLegacyState(recovery.baseState, recovery.context); }
-        catch (error) { setError(formatError(error)); return false; }
         await cancelInterruptedArenaGmRequest();
         // Cancellation and checkpoint reads can both yield to a connection,
         // restore, turn, or local edit. Do not clear the recovery on refusal.
         if (blocked()) return reject();
         setInterruptedTurnRecovery(null);
         setError(null);
-        void allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
+        void allManagers.resumeInterruptedTurn(recovery);
         return true;
     }, [allManagers, interruptedTurnRecovery, t, setError]);
 
@@ -1338,7 +1172,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             restoreFromSaveData(data);
             return true;
-        } catch (e: any) {
+        } catch (e: unknown) {
             setError(formatError(e));
             return false;
         }
@@ -1381,7 +1215,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setSuperInstructions(() => applied(newInstructions));
     }, [userGameplayActionBlocked, beginSharedContextEdit]);
 
-    const editLocationData = (locationId: string, field: keyof Location, value: any) => {
+    const editLocationData = (locationId: string, field: keyof Location, value: unknown) => {
         if (!gameSettings?.allowHistoryManipulation || userGameplayActionBlocked()) return;
 
         setUserWorldMap(prevMap => {
@@ -1574,7 +1408,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         try {
             restoreFromSaveData(turnSaveToUse);
             return true;
-        } catch (e: any) {
+        } catch (e: unknown) {
             setError(formatError(e));
             return false;
         }
@@ -2159,8 +1993,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             setCinemaGenerationProgress({ current: newCinematic.frames.length, total: newCinematic.frames.length, message: t('TrailerReady') });
 
-        } catch (e: any) {
-            if (e.name !== 'AbortError') {
+        } catch (e: unknown) {
+            if (!isAbortError(e)) {
                 setError(formatError(e));
                 console.error("Failed to generate film trailer:", e);
             }
@@ -2235,8 +2069,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             setCinemaGenerationProgress({ current: newFrames.length, total: newFrames.length, message: t('TrailerReady') });
 
-        } catch (e: any) {
-             if (e.name !== 'AbortError') {
+        } catch (e: unknown) {
+             if (!isAbortError(e)) {
                 setError(formatError(e));
                 console.error("Failed to continue film trailer:", e);
             }
@@ -2364,7 +2198,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return true;
             }
             return false;
-        } catch (e: any) {
+        } catch (e: unknown) {
             setError(formatError(e));
             return false;
         }
@@ -2387,7 +2221,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     responseModalities: [Modality.AUDIO],
                     speechConfig: {
                         voiceConfig: {
-                            prebuiltVoiceConfig: { voiceName: voice as any },
+                            prebuiltVoiceConfig: { voiceName: voice },
                         },
                     },
                 },
@@ -2400,7 +2234,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             } else {
                 throw new Error("No audio data returned");
             }
-        } catch (e: any) {
+        } catch (e: unknown) {
             setError(formatError(e));
         } finally {
             setIsGeneratingCinema(false);

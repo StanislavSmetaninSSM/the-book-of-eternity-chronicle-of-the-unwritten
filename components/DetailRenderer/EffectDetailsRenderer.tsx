@@ -16,8 +16,8 @@ const EffectDetailsRenderer: React.FC<{ effect: Effect }> = ({ effect }) => {
      <div className="space-y-4">
         <div className="italic text-gray-400"><MarkdownRenderer content={effect.description} /></div>
         <Section title={t("Properties")} icon={InformationCircleIcon}>
-            <DetailRow label={t("Type")} value={t(effect.effectType as any)} icon={effect.effectType?.includes('Buff') ? SunIcon : CloudIcon} />
-            <DetailRow label={t("Value")} value={t(effect.value as any)} icon={BeakerIcon} />
+            <DetailRow label={t("Type")} value={t(effect.effectType)} icon={effect.effectType?.includes('Buff') ? SunIcon : CloudIcon} />
+            <DetailRow label={t("Value")} value={t(effect.value)} icon={BeakerIcon} />
             <DetailRow label={t("Target")} value={parseAndTranslateTargetType(effect.targetType, t)} icon={AdjustmentsHorizontalIcon} />
             {effect.duration < 999 && <DetailRow label={t("Duration")} value={t('turns_left_count', { duration: effect.duration })} icon={ClockIcon} />}
             {effect.sourceSkill && <DetailRow label={t("Source")} value={effect.sourceSkill} icon={SparklesIcon} />}

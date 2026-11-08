@@ -10,7 +10,7 @@ test('loading recalculates the active character regardless of level-up', async (
     const { restorePlayerStats } = await server.ssrLoadModule('/utils/restorePlayer.ts');
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const pc = { ...context.playerCharacter, playerId: 'me', maxHealth: 999, totalWeight: 999, isOverloaded: true, experience: 0, inventory: [] };
-    const state = { playerCharacter: pc, players: [pc], activePlayerIndex: 0, networkRole: 'none', myPeerId: null };
+    const state = { playerCharacter: pc, players: [pc], activePlayerIndex: 0 };
     const logs = restorePlayerStats(state, key => key, false);
     assert.deepEqual(logs, []);
     assert.notEqual(state.playerCharacter.maxHealth, 999);

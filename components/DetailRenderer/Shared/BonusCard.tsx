@@ -31,14 +31,14 @@ const BonusCard: React.FC<{ bonus: StructuredBonus, onDelete?: () => void }> = (
         <div className={`bg-gray-800/60 p-3 rounded-md border-l-4 ${colorClass} relative group`}>
             <div className="flex items-center gap-2 mb-2">
                 <Icon className={`w-5 h-5 flex-shrink-0 ${colorClass.replace('border-', 'text-')}`} />
-                <h5 className="font-semibold text-gray-200">{t(titleKey as any)}</h5>
+                <h5 className="font-semibold text-gray-200">{t(titleKey)}</h5>
             </div>
             <p className="text-gray-300 font-bold text-lg mb-2 pl-7">{bonus.description}</p>
             <div className="text-xs text-gray-400 pl-7 grid grid-cols-2 gap-x-4 gap-y-1">
-                <span><strong>{t("Target")}:</strong> {bonus.bonusType === 'Characteristic' ? t(bonus.target as any) : bonus.target}</span>
-                <span><strong>{t("Value")}:</strong> {String(bonus.value)} ({t(bonus.valueType as any)})</span>
-                <span><strong>{t("Application")}:</strong> {t(bonus.application as any)}</span>
-                {bonus.condition && <span><strong>{t("Condition")}:</strong> {t(bonus.condition as any)}</span>}
+                <span><strong>{t("Target")}:</strong> {bonus.bonusType === 'Characteristic' ? t(bonus.target) : bonus.target}</span>
+                <span><strong>{t("Value")}:</strong> {String(bonus.value)} ({t(bonus.valueType)})</span>
+                <span><strong>{t("Application")}:</strong> {t(bonus.application)}</span>
+                {bonus.condition && <span><strong>{t("Condition")}:</strong> {t(bonus.condition)}</span>}
             </div>
             {onDelete && (
                 <button

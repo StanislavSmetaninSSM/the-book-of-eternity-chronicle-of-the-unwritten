@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { canCarryWeight } from '../utils/carryWeight.js';
 import { Item, PlayerCharacter, GameSettings, ImageCacheEntry } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { ArchiveBoxXMarkIcon, ExclamationTriangleIcon, TrashIcon, ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
@@ -75,7 +76,7 @@ const StashView: React.FC<StashViewProps> = ({ stash, playerCharacter, onTake, o
                 {stash.map(item => {
                     const itemQuantityToTake = parseInt(quantities[item.existedId!] ?? '1', 10) || 1;
                     const itemTakeWeight = item.weight * itemQuantityToTake;
-                    const canTake = playerCharacter.totalWeight + itemTakeWeight <= playerCharacter.maxWeight + playerCharacter.criticalExcessWeight;
+                    const canTake = canCarryWeight(playerCharacter.maxWeight, playerCharacter.criticalExcessWeight, playerCharacter.totalWeight + itemTakeWeight);
                     const requiresWholeStack = (item.isContainer || item.isSentient) && itemQuantityToTake < item.count;
                     const imagePrompt = item.custom_image_prompt || item.image_prompt || `game asset, inventory icon, ${item.quality} ${item.name}, fantasy art, plain background`;
 

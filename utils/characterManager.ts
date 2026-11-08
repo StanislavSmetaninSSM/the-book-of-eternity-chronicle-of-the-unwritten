@@ -1,11 +1,14 @@
-import { PlayerCharacter, Characteristics, GameSettings } from '../types';
+import { PlayerCharacter, Characteristics, GameSettings, CharacterCreationData } from '../types';
 import { recalculateDerivedStats } from './gameContext';
+import { asWorld } from './worldData';
+import { DEFAULT_CRITICAL_EXCESS_WEIGHT, isEncumbered } from './carryWeight.js';
+import { critChanceBuffFromLuck, criticalHitThreshold, experienceForLevelTransition, maxCarryWeight, maxEnergyPercent, maxHealthPercent } from './derivedStats.js';
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 export function createNewPlayerCharacter(
-    creationData: any, 
+    creationData: CharacterCreationData, 
     gameSettings: GameSettings, 
     options: { 
         partyLevel: number, 
@@ -14,14 +17,6 @@ export function createNewPlayerCharacter(
     }
 ): PlayerCharacter {
     const { templatePlayer, shareCharacteristics, partyLevel } = options;
-
-    const experienceForLevelTransition = (level: number): number => {
-        if (level < 1) return 100; // Fallback for safety
-        const baseXP = 100;
-        // New formula: TotalXPForLevel(L) = floor(BaseXP * (L ^ 2.5))
-        // This is interpreted as the XP required to go from level L to L+1.
-        return Math.floor(baseXP * Math.pow(level, 2.5));
-    };
 
     if (templatePlayer) {
         // --- CREATING FROM TEMPLATE ---
@@ -52,14 +47,14 @@ export function createNewPlayerCharacter(
                 customClassAttributes
             } = creationData;
             
-            const currentWorld = gameSettings.gameWorldInformation.baseInfo as any;
+            const currentWorld = asWorld(gameSettings.gameWorldInformation.baseInfo);
 
             newPlayer.race = isCustomRace ? customRaceName : race;
             newPlayer.class = isCustomClass ? customClassName : charClass;
             newPlayer.raceDescription = isCustomRace ? customRaceDescription : currentWorld?.races[race]?.description || '';
             newPlayer.classDescription = isCustomClass ? customClassDescription : currentWorld?.classes[charClass]?.description || '';
             
-            const standardCharacteristics: any = {};
+            const standardCharacteristics: Record<string, number> = {};
             const isLevelSyncedCreation = partyLevel > 1;
 
             if (isLevelSyncedCreation) {
@@ -94,6 +89,10 @@ export function createNewPlayerCharacter(
             newPlayer.maxHealth = recalculated.maxHealth;
             newPlayer.maxEnergy = recalculated.maxEnergy;
             newPlayer.maxWeight = recalculated.maxWeight;
+            // The recalculation owns the overload flag, so it is copied with the rest of what it
+            // derived; a character created without it would report "unknown" until some weight
+            // change happened to publish it.
+            newPlayer.isOverloaded = recalculated.isOverloaded;
             newPlayer.critChanceThreshold = recalculated.critChanceThreshold;
             newPlayer.critChanceBuffFromLuck = recalculated.critChanceBuffFromLuck;
             newPlayer.currentHealth = recalculated.maxHealth;
@@ -124,9 +123,9 @@ export function createNewPlayerCharacter(
         customClassAttributes,
     } = creationData;
 
-    const currentWorld = gameSettings.gameWorldInformation.baseInfo as any;
+    const currentWorld = asWorld(gameSettings.gameWorldInformation.baseInfo);
 
-    const standardCharacteristics: any = {};
+    const standardCharacteristics: Record<string, number> = {};
     const finalLevel = (partyLevel > 1 && !shareCharacteristics) ? partyLevel : 1;
 
     if (finalLevel > 1) {
@@ -158,11 +157,11 @@ export function createNewPlayerCharacter(
     const stdFth = standardCharacteristics.standardFaith;
     const stdLck = standardCharacteristics.standardLuck;
     
-    const maxHealth = 100 + Math.floor(stdCon * 2.0) + Math.floor(stdStr * 1.0);
-    const maxEnergy = 100 + Math.floor(stdCon * 0.75) + Math.floor(stdInt * 0.75) + Math.floor(stdWis * 0.75) + Math.floor(stdFth * 0.75);
-    const maxWeight = 30 + Math.floor(stdStr * 1.8 + stdCon * 0.4);
-    const critChanceBuffFromLuck = Math.floor(stdLck / 20);
-    const critChanceThreshold = 20 - critChanceBuffFromLuck;
+    const maxHealth = maxHealthPercent(stdCon, stdStr);
+    const maxEnergy = maxEnergyPercent(stdCon, stdInt, stdWis, stdFth);
+    const maxWeight = maxCarryWeight(stdStr, stdCon);
+    const luckBuff = critChanceBuffFromLuck(stdLck);
+    const critChanceThreshold = criticalHitThreshold(stdLck);
 
     const playerCharacter: PlayerCharacter = {
         playerId: generateId('player'),
@@ -188,8 +187,11 @@ export function createNewPlayerCharacter(
         maxEnergy: maxEnergy,
         maxWeight: maxWeight,
         totalWeight: 0,
-        criticalExcessWeight: 15,
-        critChanceBuffFromLuck,
+        // An empty pack is not an overloaded one, and the ceiling says so; deriving the flag here
+        // keeps it a reading of the two weights rather than a default someone typed in.
+        isOverloaded: isEncumbered(maxWeight, 0),
+        criticalExcessWeight: DEFAULT_CRITICAL_EXCESS_WEIGHT,
+        critChanceBuffFromLuck: luckBuff,
         critChanceThreshold,
         characteristics: {
             ...standardCharacteristics,
@@ -205,7 +207,7 @@ export function createNewPlayerCharacter(
             modifiedPerception: standardCharacteristics.standardPerception,
             modifiedLuck: standardCharacteristics.standardLuck,
             modifiedSpeed: standardCharacteristics.standardSpeed,
-        },
+        } as Characteristics,
         activeSkills: [],
         passiveSkills: [],
         skillMasteryData: [],

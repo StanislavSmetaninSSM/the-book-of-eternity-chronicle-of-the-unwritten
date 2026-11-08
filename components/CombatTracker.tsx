@@ -1,12 +1,18 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { EnemyCombatObject, AllyCombatObject, NPC, PlayerCharacter, GameSettings, ImageCacheEntry } from '../types';
+import { EnemyCombatObject, AllyCombatObject, NPC, PlayerCharacter, GameSettings, ImageCacheEntry, DetailData} from '../types';
 import { ShieldExclamationIcon, BoltIcon, ShieldCheckIcon, SunIcon, CloudIcon, DocumentTextIcon, ArchiveBoxIcon, Cog6ToothIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { FireIcon } from '@heroicons/react/24/solid';
 import ImageRenderer from './ImageRenderer';
 import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import { generateEffectDescription } from './DetailRenderer/utils';
+import { isEncumbered } from '../utils/carryWeight.js';
+import { assessCombat, auditCombatLog } from '../utils/combatAssessment.js';
+import { assessEffects } from '../utils/effectAssessment.js';
+import { assessWoundProgress } from '../utils/worldAssessment.js';
+import { assessCooldowns, cooldownStatuses } from '../utils/combatCooldowns.js';
+import WorldStateNotes from './WorldStateNotes';
 
 type Combatant = EnemyCombatObject | AllyCombatObject;
 
@@ -57,18 +63,20 @@ const HealthGrid: React.FC<{ healthStates: string[], maxHealth: string }> = ({ h
 
 interface CombatantCardProps {
     combatant: Combatant;
+    /** The turn the world is on: a wait is counted against it, and nothing else. */
+    turnNumber?: number | null;
     fullNpcData: NPC | null;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
     onOpenImageModal: (displayPrompt: string, originalTextPrompt: string, onClearCustom?: () => void, onUpload?: (base64: string) => void, pendingPrompt?: string | null, onAcceptPending?: () => void) => void;
     gameSettings: GameSettings | null;
-    editNpcData?: (npcId: string, field: keyof NPC, value: any) => void;
+    editNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
 }
 
 
-const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, onOpenDetailModal, onViewCharacterSheet, imageCache, onImageGenerated, onOpenImageModal, gameSettings, editNpcData }) => {
+const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, turnNumber, fullNpcData, onOpenDetailModal, onViewCharacterSheet, imageCache, onImageGenerated, onOpenImageModal, gameSettings, editNpcData }) => {
     const isGroup = combatant.isGroup;
     const isDefeated = isGroup ? (combatant.count ?? 0) <= 0 : parseInt(combatant.currentHealth ?? '0') <= 0;
     
@@ -171,6 +179,24 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
         return allWounds.filter(w => !w.healingState || w.healingState.currentState !== 'Healed');
     }, [fullNpcData, combatant.wounds]);
     const hasWounds = woundsToDisplay.length > 0;
+    // The card is where a fighter's own buffs, debuffs and open wounds are listed, so the reading is
+    // done here and over these exact arrays - the summary has nothing of its own to contradict.
+    const allWounds = fullNpcData?.wounds || combatant.wounds || [];
+    // The count is the client's, so the wait is shown where the action is listed - on its own row,
+    // and only while it runs.
+    const waitingByAction = new Map(cooldownStatuses(combatant.cooldowns, turnNumber).map(entry => [entry.actionName, entry]));
+
+    const combatantNotes = [
+        ...assessEffects({
+            characters: [
+                { name: combatant.name || '?', effects: combatant.activeBuffs, wounds: allWounds },
+                { name: combatant.name || '?', effects: combatant.activeDebuffs, wounds: allWounds },
+            ],
+        }).notes,
+        ...assessWoundProgress(woundsToDisplay, combatant.name || '?').notes,
+        // The cooldown the client counts belongs to this fighter, so this card is where it is read.
+        ...assessCooldowns(combatant.cooldowns, combatant.name || '?').notes,
+    ];
 
     const TABS = useMemo(() => {
         const tabs: string[] = ['Actions', 'CombatantStats'];
@@ -196,6 +222,14 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                         <div>
                             <div className="flex items-baseline gap-2">
                                 <h4 className={`font-bold text-lg ${isDefeated ? 'text-gray-500 line-through' : 'text-white'}`}>{combatant.name}</h4>
+                                {fullNpcData && isEncumbered(fullNpcData.maxWeight, fullNpcData.totalWeight) && (
+                                    <span
+                                        className="text-sm font-mono px-2 py-0.5 rounded-full bg-red-500/20 text-red-300"
+                                        title={t('overloaded_hint', { max: `${fullNpcData.maxWeight} ${t('kg_short')}` })}
+                                    >
+                                        {t('overloaded_badge')}
+                                    </span>
+                                )}
                                 {level !== null && !isDefeated && (
                                     fullNpcData ? (
                                         <span className="text-sm font-mono px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">
@@ -212,9 +246,9 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                                 )}
                             </div>
                              {isGroup ? (
-                                <p className="text-xs text-gray-400 uppercase tracking-wider">{t('{count}x {unitName} ({type})', { count: combatant.count || 0, unitName: t(combatant.unitName as any), type: t(combatant.type as any) })}</p>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider">{t('{count}x {unitName} ({type})', { count: combatant.count || 0, unitName: t(combatant.unitName), type: t(combatant.type) })}</p>
                             ) : (
-                                <p className="text-xs text-gray-400 uppercase tracking-wider">{t(combatant.type as any)}</p>
+                                <p className="text-xs text-gray-400 uppercase tracking-wider">{t(combatant.type)}</p>
                             )}
                         </div>
                         {isDefeated && <span className="text-xs bg-red-900/50 text-red-400 px-2 py-1 rounded-full font-bold">{t('DEFEATED')}</span>}
@@ -247,6 +281,9 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                     ) : null}
                 </div>
             </div>
+            {combatantNotes.length > 0 && (
+                <WorldStateNotes notes={combatantNotes} compact className="mt-2 pt-2 border-t border-amber-500/20" />
+            )}
             
             {TABS.length > 1 && (
                 <div className="flex space-x-1 rounded-lg bg-gray-900/50 p-1 mt-3">
@@ -256,7 +293,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                         onClick={(e) => { e.stopPropagation(); setActiveTab(tab); }}
                         className={`w-full rounded-md py-2 text-xs font-medium leading-5 transition flex items-center justify-center gap-1.5 ${activeTab === tab ? 'bg-gray-700 text-cyan-400 shadow' : 'text-gray-300 hover:bg-gray-700/50'}`}
                     >
-                        {t(tab as any)}
+                        {t(tab)}
                     </button>
                 ))}
                 </div>
@@ -275,6 +312,14 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                                 {(action.effects ?? []).map((e, idx) => (
                                     <p key={idx} className="text-gray-400 italic">{generateEffectDescription(e, t)}</p>
                                 ))}
+                                {waitingByAction.get(action.actionName) && (
+                                    <p data-testid="action-cooldown-chip" className="mt-1 font-medium text-amber-300/90">
+                                        {t('cooldown_chip', {
+                                            action: action.actionName,
+                                            turn: waitingByAction.get(action.actionName).readyFromTurn,
+                                        })}
+                                    </p>
+                                )}
                             </button>
                         ))}
                     </Section>
@@ -287,7 +332,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                                 <div className="grid grid-cols-2 gap-1 text-xs">
                                     {(combatant.resistances ?? []).map((res, i) => (
                                         <div key={i} className="bg-gray-800/60 p-1.5 rounded flex justify-between items-center">
-                                            <span className="text-gray-300">{res.resistTypeDisplayName || t(res.resistType as any)}</span>
+                                            <span className="text-gray-300">{res.resistTypeDisplayName || t(res.resistType)}</span>
                                             <span className={`font-mono font-semibold ${parseInt(res.resistanceValue ?? '0') >= 0 ? 'text-green-400' : 'text-red-400'}`}>{res.resistanceValue}</span>
                                         </div>
                                     ))}
@@ -303,7 +348,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                                         <div className="flex-1">
                                             <div className="flex justify-between items-baseline">
                                                  <span className="font-semibold text-red-400">{wound.woundName}</span>
-                                                 <span className="text-xs text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t(wound.severity as any)}</span>
+                                                 <span className="text-xs text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t(wound.severity)}</span>
                                             </div>
                                              <p className="text-sm text-gray-400 italic mt-1 line-clamp-2">{wound.descriptionOfEffects}</p>
                                         </div>
@@ -369,12 +414,14 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
 
 interface CombatTrackerProps {
     enemies: EnemyCombatObject[];
+    turnNumber?: number | null;
     allies: AllyCombatObject[];
     combatLog: string[];
+    gameLog: string[];
     allNpcs: NPC[];
     playerCharacter: PlayerCharacter;
     setAutoCombatSkill: (skillName: string | null) => void;
-    onOpenDetailModal: (title: string, data: any) => void;
+    onOpenDetailModal: (title: string, data: DetailData) => void;
     onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
     onSendMessage: (message: string) => void;
     isLoading: boolean;
@@ -385,14 +432,38 @@ interface CombatTrackerProps {
     isFullScreen?: boolean;
     onCollapse?: () => void;
     gameSettings: GameSettings | null;
-    editNpcData?: (npcId: string, field: keyof NPC, value: any) => void;
+    editNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
 }
 
-export default function CombatTracker({ enemies, allies, combatLog, allNpcs, playerCharacter, setAutoCombatSkill, onOpenDetailModal, onViewCharacterSheet, onSendMessage, isLoading, imageCache, onImageGenerated, onOpenImageModal, gameSettings, onExpand, isFullScreen, onCollapse, editNpcData }: CombatTrackerProps): React.ReactNode {
+export default function CombatTracker({ enemies, allies, combatLog, gameLog, turnNumber, allNpcs, playerCharacter, setAutoCombatSkill, onOpenDetailModal, onViewCharacterSheet, onSendMessage, isLoading, imageCache, onImageGenerated, onOpenImageModal, gameSettings, onExpand, isFullScreen, onCollapse, editNpcData }: CombatTrackerProps): React.ReactNode {
     const { t } = useLocalization();
     const hasCombatants = (enemies && enemies.length > 0) || (allies && allies.length > 0);
     const hasLog = combatLog && combatLog.length > 0;
+
+    // #28.1.3 forbids calculations and dice rolls in these entries, so each one is read back for
+    // exactly those two shapes - the wording of an entry is nobody's business here.
+    const logNotes = useMemo(() => auditCombatLog(combatLog || []), [combatLog]);
     const hasContent = hasCombatants || hasLog;
+
+    // Read back from the state: who of the listed participants can still stand, how much of them
+    // is left, and whether the numbers of the turn fit together. Nothing here decides anything -
+    // a line is shown only when a stated number contradicts another stated number.
+    const assessment = useMemo(() => assessCombat({
+        enemies: enemies || [], allies: allies || [], npcs: allNpcs || [], player: playerCharacter || null,
+        // The rules make the game master log its arithmetic into the game log; only the tail of it
+        // belongs to the fight the panel is describing.
+        calculationLines: (gameLog || []).slice(-40),
+    }), [enemies, allies, allNpcs, playerCharacter, gameLog]);
+    const healthOf = (percent: number | null) => (percent === null ? t('combat_summary_unknown_health') : `${percent}%`);
+    const sideOf = (label: string, side: { total: number; standing: number; wounds: number; effects: number; healthPercent: number | null }) => (
+        <p>
+            <span className="text-gray-400">{label}</span>{' '}
+            {t('combat_summary_side', {
+                alive: side.standing, total: side.total, health: healthOf(side.healthPercent),
+                wounds: side.wounds, effects: side.effects,
+            })}
+        </p>
+    );
 
     const combatSkills = useMemo(() => {
         if (!playerCharacter) return [];
@@ -460,6 +531,54 @@ export default function CombatTracker({ enemies, allies, combatLog, allNpcs, pla
                     </div>
                 </div>
             )}
+            {(hasCombatants || assessment.issues.length > 0) && (
+                <div data-testid="combat-summary" className="bg-gray-900/40 p-3 rounded-lg border border-gray-700/50">
+                    <h4 className="text-sm font-semibold text-cyan-300/80 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <ShieldCheckIcon className="w-4 h-4" />
+                        {t('Combat Summary')}
+                        {!isFullScreen && onExpand && (
+                            <button onClick={onExpand} className="ml-auto p-1 text-gray-400 rounded-full hover:bg-gray-700 hover:text-white" title={t('Expand Combat View')}>
+                                <ArrowsPointingOutIcon className="w-4 h-4" />
+                            </button>
+                        )}
+                    </h4>
+                    <div className="space-y-1 text-sm text-gray-300">
+                        {assessment.enemies.total > 0 && sideOf(`${t('Enemies')}:`, assessment.enemies)}
+                        {assessment.allies.total > 0 && sideOf(`${t('Allies')}:`, assessment.allies)}
+                        {assessment.player && (
+                            <p>
+                                {t('combat_summary_you', {
+                                    health: healthOf(assessment.player.healthPercent),
+                                    wounds: assessment.player.wounds,
+                                    effects: assessment.player.effects,
+                                })}
+                                {assessment.player.overloaded && <span className="text-red-400"> · {t('combat_summary_overloaded')}</span>}
+                            </p>
+                        )}
+                        {assessment.issues.map((issue, index) => (
+                            <p key={`${issue.subject}-${issue.kind}-${index}`} className="text-amber-300">
+                                {t(`combat_summary_issue_${issue.kind}`, {
+                                    subject: issue.subject,
+                                    health: issue.health, max: issue.max,
+                                    count: issue.count, units: issue.units,
+                                })}
+                            </p>
+                        ))}
+                        <p className={assessment.calculations.failures.length > 0 ? 'text-amber-300' : 'text-gray-400'}>
+                            {assessment.calculations.checked > 0
+                                ? (assessment.calculations.failures.length > 0
+                                    ? t('combat_summary_checks_failed', { failed: assessment.calculations.failures.length, checked: assessment.calculations.checked })
+                                    : t('combat_summary_checks', { checked: assessment.calculations.checked }))
+                                : t('combat_summary_checks_none')}
+                        </p>
+                        {assessment.calculations.failures.slice(0, 3).map((failure, index) => (
+                            <p key={`${failure.line}-${index}`} className="text-amber-300/90 font-mono text-xs leading-snug">
+                                {failure.line} · {failure.claimed} ≠ {failure.computed}
+                            </p>
+                        ))}
+                    </div>
+                </div>
+            )}
             {enemies && enemies.length > 0 && (
                 <div>
                     <h3 className="text-xl font-bold text-red-400 mb-3 narrative-text">{t('Enemies')}</h3>
@@ -478,7 +597,7 @@ export default function CombatTracker({ enemies, allies, combatLog, allNpcs, pla
                             return (
                                 <div key={enemy.NPCId || `enemy-${index}`} className="flex items-start gap-2 group">
                                     <div className="flex-1">
-                                        <CombatantCard combatant={enemy} fullNpcData={fullNpcData} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} editNpcData={editNpcData} />
+                                        <CombatantCard turnNumber={turnNumber} combatant={enemy} fullNpcData={fullNpcData} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} editNpcData={editNpcData} />
                                     </div>
                                     {!isDefeated && (
                                         <button
@@ -509,7 +628,7 @@ export default function CombatTracker({ enemies, allies, combatLog, allNpcs, pla
                              if (!fullNpcData && ally.name) {
                                  fullNpcData = allNpcs.find(npc => npc.name === ally.name) || null;
                              }
-                            return <CombatantCard key={ally.NPCId || `ally-${index}`} combatant={ally} fullNpcData={fullNpcData} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} editNpcData={editNpcData} />
+                            return <CombatantCard key={ally.NPCId || `ally-${index}`} turnNumber={turnNumber} combatant={ally} fullNpcData={fullNpcData} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} editNpcData={editNpcData} />
                         })}
                     </div>
                 </div>
@@ -524,6 +643,10 @@ export default function CombatTracker({ enemies, allies, combatLog, allNpcs, pla
                         {(combatLog ?? []).map((entry, index) => (
                             <div key={index} className="text-sm text-gray-300 font-mono leading-snug">
                                 <MarkdownRenderer content={entry} className="prose-sm" />
+                                {/* The verdict sits under the entry it is about, never in a bar above the list. */}
+                                {logNotes.byIndex[index]?.length ? (
+                                    <WorldStateNotes notes={logNotes.byIndex[index]} compact className="mt-1" />
+                                ) : null}
                             </div>
                         ))}
                     </div>

@@ -38,7 +38,7 @@ test('equipment edits invalidate both turn paths while presentation updates surv
       const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
       context.currentTurnNumber = 2;
       const p = { ...context.playerCharacter, playerId: 'p', currentHealth: 40 }; const item={existedId:'sword-1',name:'Sword',durability:'100%',equipmentSlot:'MainHand',weight:0,volume:0,count:1,requiresTwoHands:false}; p.inventory=[item]; p.equippedItems={...p.equippedItems,MainHand:null}; context.playerCharacter = p; context.players = [p];
-      const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: mode === 'player-edit' ? 'player' : 'host', myPeerId: 'p', peers: [], isConnectedToHost: true };
+      const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
       const initialHistory = [{ sender:'gm', content:'Old message' }, { sender:'player', content:'Other message' }];
       let state = base, history = initialHistory, gameLog = ['Old log'], combatLog = ['Old battle'], error = null, loading = null, image = 'Original', suggested = [], sendCount = 0;
       const contextRef = { current: context }, revision = { current: 0 }, active = { current: null }, sent = deferred(), sendGate = deferred();
@@ -59,7 +59,7 @@ test('equipment edits invalidate both turn paths while presentation updates surv
         assert.equal(controller.current.signal.aborted,false); assert.equal(mutationRevision.current,0);
       } else if (mode === 'history') {
         const actions = createPlayerActionsManager({setGameState:noop, setGameHistory:noop, setUserGameHistory:update=>{
-          const rev=beginGameplayMutation(mutationRevision,mutationPending,hostRef.current.networkRole,phaseRef.current);
+          const rev=beginGameplayMutation(mutationRevision,mutationPending);
           assert.notEqual(rev,null); history=typeof update==='function'?update(history):update; mutationApplied.current=rev;
           if(active.current && phaseRef.current==='generating') controller.current.abort();
         }, setGameLog:noop,setCombatLog:noop,setVisitedLocations:noop,setWorldMap:noop,setWorldState:noop,gameSettings:{allowHistoryManipulation:true},gameContextRef:contextRef,t:k=>k});
@@ -67,7 +67,7 @@ test('equipment edits invalidate both turn paths while presentation updates surv
         gameplayMutationCommitted(mutationPending,mutationApplied,mutationRevision,state,state);
       } else {
         const inventory = createInventoryActions({gameState:state,gameContextRef:contextRef,t:k=>k,setGameState:update=>{
-          const rev=beginGameplayMutation(mutationRevision,mutationPending,hostRef.current.networkRole,phaseRef.current);
+          const rev=beginGameplayMutation(mutationRevision,mutationPending);
           assert.notEqual(rev,null); state=typeof update==='function'?update(state):update; hostRef.current=state; mutationApplied.current=rev;
           if(active.current && phaseRef.current==='generating') controller.current.abort();
         }});

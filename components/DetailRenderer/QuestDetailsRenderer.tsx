@@ -13,7 +13,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 interface QuestDetailsProps extends Omit<DetailRendererProps, 'data'> {
-  quest: Quest | (Omit<Quest, 'rewards'> & { rewards?: string | any }); // Relax type to allow string rewards
+  quest: Quest | (Omit<Quest, 'rewards'> & { rewards?: string }); // Old saves carry a plain string reward
   onOpenForgetConfirm: () => void;
   gameSettings: GameSettings | null;
 }
@@ -102,7 +102,7 @@ const QuestDetailsRenderer: React.FC<QuestDetailsProps> = ({ quest, onOpenForget
                 ) : (
                     <>
                         {quest.rewards.experience && <DetailRow label={t("Experience")} value={quest.rewards.experience} />}
-                        {quest.rewards.money && <DetailRow label={t("Money")} value={`${quest.rewards.money} ${t(currencyName as any)}`} />}
+                        {quest.rewards.money && <DetailRow label={t("Money")} value={`${quest.rewards.money} ${t(currencyName)}`} />}
                         {quest.rewards.items && quest.rewards.items.length > 0 && <DetailRow label={t("Items")} value={quest.rewards.items.join(', ')} />}
                         {quest.rewards.other && <MarkdownRenderer content={quest.rewards.other} />}
                     </>

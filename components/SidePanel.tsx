@@ -6,13 +6,16 @@
 
 import React, { useState, useMemo } from 'react';
 import CharacterSheet from './CharacterSheet';
+import { nextLanguage } from '../utils/localization';
 import QuestLog from './QuestLog';
-import { GameState, Location, WorldState, GameSettings, PlayerCharacter, Faction, Item, DBSaveSlotInfo, WorldStateFlag, UnlockedMemory, NPC, Quest, CompletedActivity, LocationStorage, Cinematic, ImageCacheEntry } from '../types';
+import { GameState, Location, WorldState, GameSettings, PlayerCharacter, Faction, Item, DBSaveSlotInfo, WorldStateFlag, UnlockedMemory, NPC, Quest, CompletedActivity, LocationStorage, Cinematic, ImageCacheEntry, CharacterCreationData, DetailData} from '../types';
 import { UserCircleIcon, BookOpenIcon, CodeBracketIcon, DocumentTextIcon, UsersIcon, ShieldExclamationIcon, Cog6ToothIcon, MapIcon, MapPinIcon, QuestionMarkCircleIcon, UserGroupIcon, GlobeAltIcon, ArchiveBoxXMarkIcon, BeakerIcon, TrashIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ArrowsPointingOutIcon, FilmIcon, PhotoIcon } from '@heroicons/react/24/outline';
 import { ChevronDoubleRightIcon, ChevronDoubleLeftIcon, UserIcon as UserIconSolid } from '@heroicons/react/24/solid';
 import JsonDebugView from './JsonDebugView';
 import GameLogView from './GameLogView';
 import NpcLog from './NpcLog';
+import WorldStateNotes from './WorldStateNotes';
+import { assessWorld } from '../utils/worldAssessment.js';
 import CombatTracker from './CombatTracker';
 import GameMenuView from './GameMenuView';
 import LocationViewer from './LocationViewer';
@@ -47,7 +50,7 @@ interface SidePanelProps {
   onLoadAutosave: () => void;
   autosaveTimestamp: string | null;
   visitedLocations: Location[];
-  onOpenDetailModal: (title: string, data: any) => void;
+  onOpenDetailModal: (title: string, data: DetailData) => void;
   onOpenJournalModal: (npc: NPC) => void;
   onOpenImageModal: (prompt: string, originalTextPrompt: string, onClearCustom?: () => void, onUpload?: (base64: string) => void) => void;
   onShowMessageModal: (title: string, content: string) => void;
@@ -70,15 +73,15 @@ interface SidePanelProps {
   dropItemFromStash: (item: Item) => void;
   turnNumber: number | null;
   editChatMessage: (index: number, newContent: string) => void;
-  editNpcData: (npcId: string, field: keyof NPC, value: any) => void;
-  editQuestData: (questId: string, field: keyof Quest, value: any) => void;
-  editItemData: (itemId: string, field: keyof Item, value: any) => void;
-  editFactionData: (factionId: string, field: keyof Faction, value: any) => void;
-  editLocationData: (locationId: string, field: keyof Location, value: any) => void;
-  editPlayerData: (field: keyof PlayerCharacter, value: any) => void;
+  editNpcData: (npcId: string, field: keyof NPC, value: unknown) => void;
+  editQuestData: (questId: string, field: keyof Quest, value: unknown) => void;
+  editItemData: (itemId: string, field: keyof Item, value: unknown) => void;
+  editFactionData: (factionId: string, field: keyof Faction, value: unknown) => void;
+  editLocationData: (locationId: string, field: keyof Location, value: unknown) => void;
+  editPlayerData: (field: keyof PlayerCharacter, value: unknown) => void;
   editWorldState: (updates: Partial<{ day: number; time: string; year: number; monthIndex: number; }>) => void;
   editWeather: (newWeather: string) => void;
-  editWorldStateFlagData: (flagId: string, field: keyof WorldStateFlag, value: any) => void;
+  editWorldStateFlagData: (flagId: string, field: keyof WorldStateFlag, value: unknown) => void;
   saveGameToSlot: (slotId: number) => Promise<void>;
   loadGameFromSlot: (slotId: number) => Promise<void>;
   deleteGameSlot: (slotId: number) => Promise<void>;
@@ -92,7 +95,7 @@ interface SidePanelProps {
   forgetHealedWound: (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => void;
   forgetActiveWound: (characterType: 'player' | 'npc', characterId: string | null, woundId: string) => void;
   clearAllHealedWounds: (characterType: 'player' | 'npc', characterId: string | null) => void;
-  onRegenerateId: (entity: any, entityType: string) => void;
+  onRegenerateId: (entity: unknown, entityType: string) => void;
   deleteCustomState: (stateId: string) => void;
   deleteNpcCustomState: (npcId: string, stateId: string) => void;
   deleteWorldStateFlag: (flagId: string) => void;
@@ -118,7 +121,7 @@ interface SidePanelProps {
   onEditNpcMemory: (npcId: string, memory: UnlockedMemory) => void;
   onDeleteNpcMemory: (npcId: string, memoryId: string) => void;
   clearNpcJournalsNow: () => void;
-  addPlayer: (creationData: any) => void;
+  addPlayer: (creationData: PlayerCharacter | CharacterCreationData) => void;
   updatePlayerPortrait: (playerId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
   allNpcs?: NPC[];
   allFactions?: Faction[];
@@ -189,7 +192,7 @@ type TFunction = (key: string, replacements?: Record<string, string | number>) =
 
 const FactionItem: React.FC<{
     faction: Faction;
-    onOpenModal: (title: string, data: any) => void;
+    onOpenModal: (title: string, data: DetailData) => void;
     allowHistoryManipulation: boolean;
     onDelete: () => void;
     gameSettings: GameSettings | null;
@@ -199,6 +202,9 @@ const FactionItem: React.FC<{
     isLoading: boolean;
 }> = ({ faction, onOpenModal, allowHistoryManipulation, onDelete, gameSettings, imageCache, onImageGenerated, t, isLoading }) => {
     const imagePrompt = faction.custom_image_prompt || faction.image_prompt;
+    // The card holds the standing and the projects, so the card is where its own contradiction
+    // belongs - a list-wide note would sit further from the number it quotes.
+    const factionNotes = assessWorld({ factions: [faction] }).notes;
     return (
         <div className="relative w-full text-left bg-gray-900/40 p-3 rounded-lg border-l-4 shadow-md transition-all hover:ring-1 hover:ring-cyan-500/50 group" style={{ borderColor: faction.color || '#4b5563' }}>
             {allowHistoryManipulation && (
@@ -228,13 +234,16 @@ const FactionItem: React.FC<{
                     <p className="text-sm text-gray-400">{t('Reputation')}: {faction.reputation}</p>
                 </div>
             </button>
+            {factionNotes.length > 0 && (
+                <WorldStateNotes notes={factionNotes} compact className="mt-2 pt-2 border-t border-amber-500/20" />
+            )}
         </div>
     );
 };
 
 const FactionLog: React.FC<{
     factions: Faction[];
-    onOpenModal: (title: string, data: any) => void;
+    onOpenModal: (title: string, data: DetailData) => void;
     allowHistoryManipulation: boolean;
     forgetFaction: (factionId: string) => void;
     imageCache: Record<string, ImageCacheEntry>;
@@ -390,7 +399,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
   const { language, t } = useLocalization();
 
   const handleLanguageToggle = () => {
-    const newLang = language === 'ru' ? 'en' : 'ru';
+    const newLang = nextLanguage(language);
     updateGameSettings({ language: newLang });
   };
 
@@ -461,7 +470,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
                 }`}
                 >
                 <Icon className={`w-6 h-6 flex-shrink-0 ${isStashTab ? 'text-red-400' : 'text-cyan-400/80'}`} />
-                <span className="font-semibold text-base">{t(tab.name as any)}</span>
+                <span className="font-semibold text-base">{t(tab.name)}</span>
                 {isStashTab && showStash && (
                     <span className="absolute top-2 right-2 flex h-4 w-4">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -558,7 +567,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
               {sidePanelView === 'NPCs' && gameState && <NpcLog gameState={gameState} npcs={gameState.encounteredNPCs} encounteredFactions={gameState.encounteredFactions} onOpenModal={onOpenDetailModal} onOpenJournalModal={onOpenJournalModal} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} updateNpcSortOrder={updateNpcSortOrder} forgetNpc={forgetNpc} allowHistoryManipulation={gameSettings?.allowHistoryManipulation ?? false} gameSettings={gameSettings} onOpenImageModal={onOpenImageModal} updateNpcPortrait={updateNpcPortrait} />}
               {sidePanelView === 'Locations' && gameState && <LocationLog locations={visitedLocations} currentLocation={gameState.currentLocationData} onOpenModal={onOpenDetailModal} allowHistoryManipulation={gameSettings?.allowHistoryManipulation ?? false} onEditLocationData={editLocationData} imageCache={gameState.imageCache} onImageGenerated={onImageGenerated} forgetLocation={forgetLocation} gameSettings={gameSettings} />}
               {sidePanelView === 'Map' && gameState && <LocationViewer visitedLocations={visitedLocations} currentLocation={gameState.currentLocationData} onOpenModal={onOpenDetailModal} imageCache={gameState.imageCache} onImageGenerated={onImageGenerated} onExpand={onExpandMap} gameSettings={gameSettings} encounteredFactions={gameState.encounteredFactions || []} />}
-              {sidePanelView === 'Combat' && gameState && <CombatTracker enemies={gameState.enemiesData} allies={gameState.alliesData} combatLog={combatLog} allNpcs={gameState.encounteredNPCs} playerCharacter={gameState.playerCharacter} setAutoCombatSkill={setAutoCombatSkill} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} onSendMessage={onSendMessage} isLoading={isLoading} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} onExpand={onExpandCombat} editNpcData={editNpcData} />}
+              {sidePanelView === 'Combat' && gameState && <CombatTracker turnNumber={turnNumber} enemies={gameState.enemiesData} allies={gameState.alliesData} combatLog={combatLog} gameLog={gameLog} allNpcs={gameState.encounteredNPCs} playerCharacter={gameState.playerCharacter} setAutoCombatSkill={setAutoCombatSkill} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} onSendMessage={onSendMessage} isLoading={isLoading} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} onExpand={onExpandCombat} editNpcData={editNpcData} />}
               {sidePanelView === 'Stash' && showStash && gameState && <StashView stash={temporaryStash} onTake={moveFromStashToInventory} onDrop={dropItemFromStash} playerCharacter={gameState.playerCharacter} imageCache={imageCache} onImageGenerated={onImageGenerated} gameSettings={gameSettings} />}
               {sidePanelView === 'Crafting' && gameState && <CraftingScreen playerCharacter={gameState.playerCharacter} craftItem={craftItem} />}
               {sidePanelView === 'ImageCache' && gameState && <ImageCacheGallery

@@ -47,20 +47,11 @@ test.describe('single-player chronicle', () => {
     await expect(page.getByTestId('pass-turn-0')).toBeEnabled();
     await expect(page.getByTestId('chat-window')).toContainText('Borin');
 
-    expect(pageErrors.filter(message => !/favicon/i.test(message))).toEqual([]);
-  });
-
-  test('a legacy networked save opens as a local party without network controls', async ({ page }) => {
-    await page.goto('/');
-    await importSave(page, 'legacy-network-save.json');
-
-    await expect(page.getByTestId('chat-window')).toBeVisible();
-    await page.getByTestId('side-tab-Characters').click();
-    await expect(page.getByTestId('players-panel')).toContainText('Cyra');
-
     // The removed networking UI must not come back in any form.
     await expect(page.getByRole('button', { name: /host|join|connect|sync|peer/i })).toHaveCount(0);
     await expect(page.getByText(/waiting for the host|connected to host|sync/i)).toHaveCount(0);
+
+    expect(pageErrors.filter(message => !/favicon/i.test(message))).toEqual([]);
   });
 
   test('a save with an image exports the save and its images as two files', async ({ page }) => {
@@ -76,7 +67,7 @@ test.describe('single-player chronicle', () => {
         request.onerror = () => reject(request.error);
       });
       const saves = await openDb('gemini-rpg-db');
-      const record = await new Promise<any>((resolve, reject) => {
+      const record = await new Promise<{ saveData?: { gameState?: { imageCache?: Record<string, unknown> } } } | undefined>((resolve, reject) => {
         const request = saves.transaction('autosaves', 'readonly').objectStore('autosaves').get('current_autosave');
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
@@ -127,5 +118,25 @@ test.describe('single-player chronicle', () => {
 
     const portable = await readExport('Download save file');
     expect(JSON.stringify(portable!.body)).toContain('data:image/png;base64,');
+  });
+
+  // The start screen hands a request to the game host instead of mounting the game itself.
+  test('a new chronicle starts from the creation form and reaches the game host', async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+
+    await page.goto('/');
+    await expect(page.getByTestId('start-screen')).toBeVisible();
+
+    await page.locator('#playerName').fill('Wanderer');
+    await page.locator('#characterDescription').fill('A traveller of the unwritten roads.');
+    await page.locator('#initialPrompt').fill('I open the book.');
+    await page.getByTestId('begin-adventure').click();
+
+    await expect(page.getByTestId('chat-window')).toBeVisible({ timeout: 20_000 });
+    // The creation data reached the game host: the lone adventurer's tab shows the name.
+    await page.getByTestId('side-tab-Character').click();
+    await expect(page.getByText('Wanderer').first()).toBeVisible();
+    expect(pageErrors).toEqual([]);
   });
 });
