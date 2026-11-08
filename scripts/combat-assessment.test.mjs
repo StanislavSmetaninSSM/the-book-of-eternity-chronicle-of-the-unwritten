@@ -202,24 +202,27 @@ test('both combat views are given the log to re-check', async () => {
   }
 });
 
-test('the fighters’ effect lists are read back by the same reader the sheets use', () => {
-  const assessment = assessCombat({
-    enemies: [
-      {
-        name: 'Frost Troll',
-        wounds: [{ woundId: 'w1', woundName: 'Old gash', healingState: { currentState: 'Stabilized' } }],
-        activeDebuffs: [{ effectType: 'WoundReference', sourceWoundId: 'w1', duration: 3 }],
-      },
-      {
-        name: 'Shadow',
-        wounds: [],
-        activeBuffs: [{ effectType: 'Buff', targetType: 'strength', duration: 2 }],
-      },
-    ],
-  });
+test('the fighter’s card reads the lists it shows, and the summary reads none', async () => {
+    const tracker = await read('../components/CombatTracker.tsx');
+    assert.match(tracker, /const combatantNotes = \[/, 'the card starts its own reading');
+    assert.match(tracker, /effects: combatant\.activeBuffs, wounds: allWounds/, 'over the buffs it renders');
+    assert.match(tracker, /effects: combatant\.activeDebuffs, wounds: allWounds/, 'and the debuffs it renders');
+    assert.match(tracker, /assessWoundProgress\(woundsToDisplay, combatant\.name \|\| '\?'\)/, 'and over the very wounds the card lists');
+    assert.match(tracker, /<WorldStateNotes notes=\{combatantNotes\} compact/, 'shown inside the card, next to the health bar');
+    assert.doesNotMatch(tracker, /effectNotes/, 'the summary keeps the counts and leaves the verdicts to the cards');
 
-  assert.deepEqual(assessment.effectNotes.map(note => note.kind), ['wound_reference_duration'], 'a well-formed list says nothing');
-  assert.equal(assessment.effectNotes[0].subject, 'Frost Troll');
+    // The same reader, so a card and a sheet cannot disagree about one and the same effect.
+    assert.match(tracker, /import \{ assessEffects \} from '\.\.\/utils\/effectAssessment\.js';/);
+
+    const assessment = assessCombat({
+        enemies: [{
+            name: 'Frost Troll',
+            wounds: [{ woundId: 'w1', healingState: { currentState: 'Stabilized', treatmentProgress: 20, progressNeeded: 20 } }],
+            activeDebuffs: [{ effectType: 'Buff', targetType: 'strength', duration: 0 }],
+        }],
+    });
+    assert.equal(assessment.effectNotes, undefined, 'the reading is not the summary’s to own');
+    assert.equal(assessment.rows.length, 1, 'while the summary still counts what it shows');
 });
 
 test('the player keeps their wounds under the field the player uses', () => {
@@ -236,9 +239,10 @@ test('the player keeps their wounds under the field the player uses', () => {
   assert.equal(assessment.player.wounds, 1, 'the closed wound is history, and the open one has to be counted');
 });
 
-test('the combat view shows the effect notes inside its own summary', async () => {
+test('the sheet keeps the heading its boxed reading needs', async () => {
   const tracker = await read('../components/CombatTracker.tsx');
-  assert.match(tracker, /data-testid="combat-effect-notes"/, 'the notes have a hook of their own');
-  assert.match(tracker, /assessment\.effectNotes\.slice\(0, 3\)/, 'and stay short, the rest is in the sheets');
-  assert.match(tracker, /t\('Effect State Check'\)/, 'under the same heading the sheet uses');
+  assert.doesNotMatch(tracker, /combat-effect-notes/, 'the combat panel no longer prints a verdict of its own');
+
+  const sheet = await read('../components/CharacterSheet/ConditionsView.tsx');
+  assert.match(sheet, /t\('Active Effects'\)/, 'and the player’s own effects stay where they are listed');
 });

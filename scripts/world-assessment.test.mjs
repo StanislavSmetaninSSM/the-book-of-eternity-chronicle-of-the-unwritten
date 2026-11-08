@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { assessTracker, assessWorld, REPUTATION_CEILING, REPUTATION_FLOOR } from '../utils/worldAssessment.js';
+import { assessTracker, assessWorld, assessWoundProgress, REPUTATION_CEILING, REPUTATION_FLOOR } from '../utils/worldAssessment.js';
 
 /** One faction with one active project, the shortest state that can contradict itself. */
 const factionWithProject = (project, extra = {}) => ({
@@ -152,6 +152,17 @@ test('one tracker can be read on its own, for the card that shows it', () => {
     assert.equal(assessTracker(null, 'Rites of Ash').notes.length, 0, 'a card without a tracker says nothing');
 });
 
+test('the wound rule can be read over a list of wounds, without the character around it', () => {
+    const stuck = [{ healingState: { currentState: 'Stabilized', treatmentProgress: 20, progressNeeded: 20 } }];
+    const { notes } = assessWoundProgress(stuck, 'Frost Troll');
+    assert.deepEqual(notes.map(note => note.key), ['world_notes_wound_awaiting_transition']);
+    assert.equal(notes[0].params.needed, 20);
+
+    assert.equal(assessWoundProgress([{ healingState: { currentState: 'Healed', treatmentProgress: 80, progressNeeded: 20 } }], 'Troll').notes.length, 0, 'a closed wound is history');
+    assert.equal(assessWoundProgress([], 'Troll').notes.length, 0);
+    assert.equal(assessWoundProgress(undefined, 'Troll').notes.length, 0, 'a view that shows no list asserts nothing');
+});
+
 test('the contradiction is read in the card that shows the numbers', () => {
     const read = name => readFileSync(new URL(`../components/${name}`, import.meta.url), 'utf8');
 
@@ -171,6 +182,7 @@ test('the contradiction is read in the card that shows the numbers', () => {
     assert.doesNotMatch(locationLog, /name: `\$\{threat\.name\} \(\$\{loc\.name\}\)`/, 'the place no longer has to be spelled into the subject');
 
     const projects = read('DetailRenderer/FactionDetailsRenderer.tsx');
+    assert.doesNotMatch(projects, /<WorldStateNotes[^>]*factions=/, 'the detail view reads the project, not the faction');
     assert.match(projects, /assessTracker\(project, project\.projectName \|\| '\?'\)/, 'the project card reads its own tracker');
     assert.match(projects, /<WorldStateNotes notes=\{projectNotes\} compact/);
 });

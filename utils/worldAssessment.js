@@ -64,6 +64,19 @@ export const assessTracker = (tracker, subject) => {
     return { notes };
 };
 
+/**
+ * The wound rule on its own, over the list a card actually renders: for the views that show a
+ * fighter's wounds without being a record of the whole character.
+ * @param {object[]} wounds
+ * @param {string} subject
+ * @returns {{ notes: StateNote[] }}
+ */
+export const assessWoundProgress = (wounds, subject) => {
+    const notes = [];
+    assessWoundList(wounds, subject, notes);
+    return { notes };
+};
+
 /** The bounds a character's standing with the world has to stay inside. */
 function assessStanding(value, subject, notes) {
     const reputation = statedNumber(value);
@@ -79,8 +92,8 @@ function assessStanding(value, subject, notes) {
  * A wound whose treatment reached what it needed: the rules make that the moment the state
  * changes, so a wound left where it was has either the wrong progress or the wrong threshold.
  */
-function assessWounds(character, subject, notes) {
-    for (const wound of Array.isArray(character?.wounds) ? character.wounds : []) {
+function assessWoundList(wounds, subject, notes) {
+    for (const wound of Array.isArray(wounds) ? wounds : []) {
         const state = wound?.healingState;
         if (!state || state.currentState === 'Healed') continue;
         const progress = statedNumber(state.treatmentProgress);
@@ -120,7 +133,7 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
         const subject = npc.name || npc.NPCId || '?';
         assessTrackerInto(npc.currentActivity, subject, notes);
         assessStanding(npc.relationshipLevel, subject, notes);
-        assessWounds(npc, subject, notes);
+        assessWoundList(npc.wounds, subject, notes);
         // A person's own effects are read by the same reader the character sheet uses, so a buff
         // listed in the world and in the sheet cannot disagree about what it states.
         notes.push(...assessEffects({

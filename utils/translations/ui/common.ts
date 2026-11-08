@@ -127,7 +127,6 @@ export const common = {
     "effect_notes_wound_reference_wound_missing": "{subject}: a 'WoundReference' effect points at wound '{wound}', which is not in the record.",
     "effect_notes_wound_reference_wound_healed": "{subject}: the wound '{wound}' behind a 'WoundReference' effect is healed, so the effect tied to it should have ended.",
     "effect_notes_duplicate_effect_id": "{subject}: the effect id '{effectId}' appears {times} times; the id exists so that one effect is not listed twice.",
-    "effect_notes_more": "+{rest} more, listed in the characters' own sheets.",
     ...ui_overrides.en
   },
   ru: {
@@ -255,7 +254,6 @@ export const common = {
     "effect_notes_wound_reference_wound_missing": "{subject}: эффект WoundReference ссылается на рану «{wound}», которой нет в записи.",
     "effect_notes_wound_reference_wound_healed": "{subject}: рана «{wound}», на которую ссылается эффект WoundReference, исцелена — привязанный к ней эффект должен был завершиться.",
     "effect_notes_duplicate_effect_id": "{subject}: id эффекта «{effectId}» встречается {times} раза; id и нужен, чтобы один эффект не попадал в список дважды.",
-    "effect_notes_more": "+{rest} ещё — в самих листах персонажей.",
     ...ui_overrides.ru
   }
 }

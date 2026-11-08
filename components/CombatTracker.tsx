@@ -9,6 +9,9 @@ import MarkdownRenderer from './MarkdownRenderer';
 import { generateEffectDescription } from './DetailRenderer/utils';
 import { isEncumbered } from '../utils/carryWeight.js';
 import { assessCombat } from '../utils/combatAssessment.js';
+import { assessEffects } from '../utils/effectAssessment.js';
+import { assessWoundProgress } from '../utils/worldAssessment.js';
+import WorldStateNotes from './WorldStateNotes';
 
 type Combatant = EnemyCombatObject | AllyCombatObject;
 
@@ -173,6 +176,18 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
         return allWounds.filter(w => !w.healingState || w.healingState.currentState !== 'Healed');
     }, [fullNpcData, combatant.wounds]);
     const hasWounds = woundsToDisplay.length > 0;
+    // The card is where a fighter's own buffs, debuffs and open wounds are listed, so the reading is
+    // done here and over these exact arrays - the summary has nothing of its own to contradict.
+    const allWounds = fullNpcData?.wounds || combatant.wounds || [];
+    const combatantNotes = [
+        ...assessEffects({
+            characters: [
+                { name: combatant.name || '?', effects: combatant.activeBuffs, wounds: allWounds },
+                { name: combatant.name || '?', effects: combatant.activeDebuffs, wounds: allWounds },
+            ],
+        }).notes,
+        ...assessWoundProgress(woundsToDisplay, combatant.name || '?').notes,
+    ];
 
     const TABS = useMemo(() => {
         const tabs: string[] = ['Actions', 'CombatantStats'];
@@ -257,6 +272,9 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                     ) : null}
                 </div>
             </div>
+            {combatantNotes.length > 0 && (
+                <WorldStateNotes notes={combatantNotes} compact className="mt-2 pt-2 border-t border-amber-500/20" />
+            )}
             
             {TABS.length > 1 && (
                 <div className="flex space-x-1 rounded-lg bg-gray-900/50 p-1 mt-3">
@@ -536,19 +554,6 @@ export default function CombatTracker({ enemies, allies, combatLog, gameLog, all
                                 {failure.line} · {failure.claimed} ≠ {failure.computed}
                             </p>
                         ))}
-                        {assessment.effectNotes.length > 0 && (
-                            <div data-testid="combat-effect-notes" className="mt-2 space-y-1">
-                                <p className="text-amber-300/70 uppercase tracking-wider text-[10px]">{t('Effect State Check')}</p>
-                                {assessment.effectNotes.slice(0, 3).map((note, index) => (
-                                    <p key={`${note.subject}-${note.kind}-${index}`} className="text-amber-300/90 text-xs leading-snug">
-                                        {t(note.key, note.params)}
-                                    </p>
-                                ))}
-                                {assessment.effectNotes.length > 3 && (
-                                    <p className="text-amber-200/60 text-xs">{t('effect_notes_more', { rest: assessment.effectNotes.length - 3 })}</p>
-                                )}
-                            </div>
-                        )}
                     </div>
                 </div>
             )}

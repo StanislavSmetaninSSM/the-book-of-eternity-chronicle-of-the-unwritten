@@ -9,7 +9,6 @@
  * an invented accusation about a fictional character is worse than no summary at all.
  */
 
-import { assessEffects } from './effectAssessment.js';
 /** A value written as `55`, `55.5` or `"55%"` - the three shapes health arrives in. */
 const parsePercent = (value) => {
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
@@ -391,24 +390,6 @@ const rowFor = (combatant, side) => {
  * @param {{ enemies?: object[], allies?: object[], npcs?: object[], player?: object|null, calculationLines?: string[] }} input
  */
 export function assessCombat({ enemies = [], allies = [], npcs = [], player = null, calculationLines = [] } = {}) {
-    // The fighters' effect lists tick down during combat, so an effect whose duration the rules fix
-    // rather than count is the difference between a wound that keeps hurting and one that silently
-    // stops. `./effectAssessment.js` is the one reader for that; the sheet reads the same fields.
-    const effectCarriers = [];
-    for (const combatant of [...enemies, ...allies]) {
-        if (!combatant || typeof combatant !== 'object') continue;
-        const name = combatant.name || combatant.NPCId || '?';
-        effectCarriers.push({ name, effects: combatant.activeBuffs, wounds: combatant.wounds });
-        effectCarriers.push({ name, effects: combatant.activeDebuffs, wounds: combatant.wounds });
-    }
-    if (player && typeof player === 'object') {
-        effectCarriers.push({
-            name: player.name || '?',
-            effects: player.activePlayerEffects,
-            wounds: player.playerWounds || player.wounds,
-        });
-    }
-    const effectNotes = assessEffects({ characters: effectCarriers }).notes;
     const characters = Array.isArray(npcs) ? npcs : [];
     const rows = [...enemies, ...allies].map(combatant => {
         if (!combatant || typeof combatant !== 'object') return null;
@@ -463,7 +444,6 @@ export function assessCombat({ enemies = [], allies = [], npcs = [], player = nu
             overloaded: player.isOverloaded === true,
         } : null,
         issues: rows.flatMap(row => row.issues.map(issue => ({ ...issue, subject: row.name }))),
-        effectNotes,
         calculations,
     };
 }
