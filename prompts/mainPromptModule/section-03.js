@@ -2294,7 +2294,7 @@ GM rolls 1d20 (GMDice). Result: [GMDice]."
                                     - New Temporary Buffs/Debuffs: Report via 'NPCEffectChanges' array ({ "NPCId": "guid", "effectsApplied": [array_of_effect_objects_as_per_6.2.1] }).
                                     - New/Updated Wounds: Report via 'NPCWoundChanges' as one flat object per wound, containing 'NPCId', 'NPCName', and the wound's fields from #5.20.3 (including 'woundId'). Do not nest a 'wounds' array.
 
-                            4.  Logging: Ensure all health changes, application of new status effects, and Wounds are detailed in 'items_and_stat_calculations'.
+                            4.  Logging: Ensure all health changes, application of new status effects, and Wounds are detailed in 'items_and_stat_calculations'. Every use of an action that carries a cooldown is written here too - the exact 'actionName' string and the turn number it was used on - so the wait the combat panel shows can be checked against the log without recomputing it.
                             
                             ]]>
                         </Content>

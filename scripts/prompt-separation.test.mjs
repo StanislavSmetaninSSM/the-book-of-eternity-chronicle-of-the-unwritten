@@ -32,7 +32,9 @@ test('the entire guide is invariant across different turn contexts', () => {
   // that reads step by step, and a threshold written with its verdict - outside combat as well.
   // #6.1.6.7 now names the owner of the cooldown count - the system, not the GM - and #12.9.3 gives
   // the channel for it: the names used this turn, in 'cooldownsUsed' on that combatant's object.
-  assert.equal(sha256(guide), '7d3a8a40bfbc86f91a9dc53b2ac417a37ff20740de883d57fbf244be8310c7d0');
+  // The Logging point of #12.9.3 now carries that spend into 'items_and_stat_calculations' as well,
+  // which is where the player can check the wait the panel shows against the two numbers it names.
+  assert.equal(sha256(guide), 'da3f46ec126ce26dfdd15c22387438d172ade7daf25fe50fca7d86456538395d');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);

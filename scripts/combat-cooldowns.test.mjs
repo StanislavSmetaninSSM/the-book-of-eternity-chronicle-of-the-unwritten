@@ -113,6 +113,9 @@ test('the guide states the channel, and the client is the one holding it', () =>
         '#12.9.3 states the field the client reads');
     assert.ok(lines.some(line => line.includes('no countdown may be invented for it')),
         'and states what a name outside the action list means: nothing');
+    assert.ok(lines.some(line => line.startsWith('4.  Logging:')
+        && line.includes('Every use of an action that carries a cooldown is written here too')),
+        'and #12.9.3 sends the spend itself to the log, so the two numbers are on the record');
 
     const processor = readFileSync(new URL('../utils/responseProcessor.ts', import.meta.url), 'utf8');
     assert.match(processor, /applyCooldownUses\(\{/, 'the stamping happens while the turn is applied');
