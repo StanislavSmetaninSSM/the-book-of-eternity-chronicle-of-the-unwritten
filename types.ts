@@ -475,7 +475,7 @@ export interface PlayerCharacter {
     maxWeight: number;
     totalWeight: number;
     criticalExcessWeight: number;
-    isOverloaded?: boolean;
+    isOverloaded: boolean;
     critChanceBuffFromLuck: number;
     critChanceThreshold: number;
     characteristics: Characteristics;

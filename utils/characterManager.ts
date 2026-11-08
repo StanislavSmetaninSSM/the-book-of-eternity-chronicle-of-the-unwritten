@@ -1,7 +1,7 @@
 import { PlayerCharacter, Characteristics, GameSettings, CharacterCreationData } from '../types';
 import { recalculateDerivedStats } from './gameContext';
 import { asWorld } from './worldData';
-import { DEFAULT_CRITICAL_EXCESS_WEIGHT } from './carryWeight.js';
+import { DEFAULT_CRITICAL_EXCESS_WEIGHT, isEncumbered } from './carryWeight.js';
 import { critChanceBuffFromLuck, criticalHitThreshold, maxCarryWeight, maxEnergyPercent, maxHealthPercent } from './derivedStats.js';
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
@@ -97,6 +97,10 @@ export function createNewPlayerCharacter(
             newPlayer.maxHealth = recalculated.maxHealth;
             newPlayer.maxEnergy = recalculated.maxEnergy;
             newPlayer.maxWeight = recalculated.maxWeight;
+            // The recalculation owns the overload flag, so it is copied with the rest of what it
+            // derived; a character created without it would report "unknown" until some weight
+            // change happened to publish it.
+            newPlayer.isOverloaded = recalculated.isOverloaded;
             newPlayer.critChanceThreshold = recalculated.critChanceThreshold;
             newPlayer.critChanceBuffFromLuck = recalculated.critChanceBuffFromLuck;
             newPlayer.currentHealth = recalculated.maxHealth;
@@ -191,6 +195,9 @@ export function createNewPlayerCharacter(
         maxEnergy: maxEnergy,
         maxWeight: maxWeight,
         totalWeight: 0,
+        // An empty pack is not an overloaded one, and the ceiling says so; deriving the flag here
+        // keeps it a reading of the two weights rather than a default someone typed in.
+        isOverloaded: isEncumbered(maxWeight, 0),
         criticalExcessWeight: DEFAULT_CRITICAL_EXCESS_WEIGHT,
         critChanceBuffFromLuck: luckBuff,
         critChanceThreshold,
