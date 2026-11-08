@@ -116,3 +116,16 @@ test('every gate asks the shared helper instead of adding the constant itself', 
     assert.doesNotMatch(source, /criticalExcessWeight[:=] 15/, `${name} must not restate the constant`);
   }
 });
+
+test('a capacity that cannot be a capacity does not lower the ceiling under the threshold', () => {
+  // A negative `criticalExcessWeight` is not extra lift: read literally it puts the absolute
+  // ceiling below the overload threshold, so the same load would be both "merely burdensome"
+  // by the flag and "impossible" by the gate. The ceiling cannot be under the threshold it is
+  // measured from, so an impossible reading falls back to the constant.
+  assert.equal(criticalCarryWeight(50, -20), 65);
+  assert.equal(criticalCarryWeight(50, DEFAULT_CRITICAL_EXCESS_WEIGHT), criticalCarryWeight(50, -20));
+  assert.equal(canCarryWeight(50, -20, 50), true, 'a load at the threshold is carried, not refused');
+  assert.equal(canCarryWeight(50, -20, 66), false, 'and the ordinary ceiling still applies above itself');
+  assert.equal(criticalCarryWeight(50, Number.NaN), 65);
+  assert.equal(isEncumbered(50, 50), false, 'the flag stays on its own inclusive boundary');
+});

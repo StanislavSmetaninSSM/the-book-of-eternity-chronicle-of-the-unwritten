@@ -23,7 +23,13 @@ export const DEFAULT_CRITICAL_EXCESS_WEIGHT = 15;
  */
 export function criticalCarryWeight(maxWeight, criticalExcessWeight) {
     const threshold = Number.isFinite(maxWeight) && maxWeight > 0 ? maxWeight : 0;
-    const extra = Number.isFinite(criticalExcessWeight) ? criticalExcessWeight : DEFAULT_CRITICAL_EXCESS_WEIGHT;
+    // Extra lift is a capacity, so a negative of it is not a capacity at all: the ceiling it would
+    // produce sits below the overload threshold, and the character would be refused a load the same
+    // rules call merely burdensome - two statements about one body that cannot both be true. A
+    // recorded value that cannot be a capacity falls back to the constant, like a missing one.
+    const extra = Number.isFinite(criticalExcessWeight) && criticalExcessWeight >= 0
+        ? criticalExcessWeight
+        : DEFAULT_CRITICAL_EXCESS_WEIGHT;
     return threshold + extra;
 }
 
