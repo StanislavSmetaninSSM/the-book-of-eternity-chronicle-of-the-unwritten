@@ -1,4 +1,6 @@
-import { defineConfig, Plugin } from 'vite';
+import { defineConfig, Plugin, type Connect } from 'vite';
+import type { ServerResponse } from 'node:http';
+import { asRecord } from './utils/typeGuards';
 import { mkdir, open, readFile, rename, rm, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 // @ts-ignore -- server-only JS module
@@ -33,8 +35,8 @@ function serializeRelayOperation<T>(operation: () => Promise<T>): Promise<T> {
 async function readJsonIfPresent<T>(filePath: string): Promise<T | null> {
   try {
     return JSON.parse(await readFile(filePath, 'utf8')) as T;
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return null;
+  } catch (error: unknown) {
+    if (asRecord(error)?.code === 'ENOENT') return null;
     throw error;
   }
 }
@@ -118,8 +120,8 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
     // The active file is a durable claim. If the process restarts after this rename,
     // the next request can reconstruct pending.json from the active packet.
     await rename(queuePath, activeRequestPath);
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return dispatchNextRequest();
+  } catch (error: unknown) {
+    if (asRecord(error)?.code === 'ENOENT') return dispatchNextRequest();
     throw error;
   }
   await writeJsonAtomically(pendingPath, next.entry.packet);
@@ -132,8 +134,8 @@ async function removeResponseForCorrelation(correlationId: string): Promise<void
   if (legacy?.correlationId === correlationId) await rm(legacyResponsePath, { force: true });
 }
 
-function registerRelayMiddleware(server: { middlewares: { use: (handler: any) => void } }): void {
-  server.middlewares.use(async (req: any, res: any, next: any) => {
+function registerRelayMiddleware(server: { middlewares: { use: (handler: Connect.NextHandleFunction) => void } }): void {
+  server.middlewares.use(async (req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
         const url = new URL(req.url || '/', 'http://vite.local');
         if (!url.pathname.startsWith('/__arena_gm/')) return next();
         res.setHeader('Cache-Control', 'no-store');
@@ -249,8 +251,8 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
               try {
                 await rm(queuedPath);
                 wasQueued = true;
-              } catch (error: any) {
-                if (error?.code !== 'ENOENT') throw error;
+              } catch (error: unknown) {
+                if (asRecord(error)?.code !== 'ENOENT') throw error;
               }
               const active = await readActiveRequest();
               const wasActive = active?.packet.correlationId === correlationId;
@@ -348,8 +350,9 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: any) =>
             return;
           }
           send(404, { error: 'Unknown relay endpoint.' });
-        } catch (error: any) {
-          send(error?.statusCode || 500, { error: error instanceof Error ? error.message : 'Relay server error.' });
+        } catch (error: unknown) {
+          const statusCode = asRecord(error)?.statusCode;
+          send(typeof statusCode === 'number' ? statusCode : 500, { error: error instanceof Error ? error.message : 'Relay server error.' });
         }
   });
 }

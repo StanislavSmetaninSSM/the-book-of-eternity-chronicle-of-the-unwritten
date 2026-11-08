@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { PlayerCharacter, NPC, Location, Faction, FactionAffiliation, ImageCacheEntry, Quest } from '../../types';
+import { PlayerCharacter, NPC, Location, Faction, FactionAffiliation, ImageCacheEntry, Quest, GameSettings } from '../../types';
 import { useLocalization } from '../../context/LocalizationContext';
 import SectionHeader from './Shared/SectionHeader';
 import ReadableEditableField from './Shared/ReadableEditableField';
@@ -25,16 +25,16 @@ interface ProfileViewProps {
     isPlayer: boolean;
     isAdminEditable: boolean;
     isViewOnly: boolean;
-    onEditPlayerData?: (field: keyof PlayerCharacter, value: any) => void;
-    onEditNpcData?: (npcId: string, field: keyof NPC, value: any) => void;
+    onEditPlayerData?: (field: keyof PlayerCharacter, value: unknown) => void;
+    onEditNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
     onShowMessageModal: (title: string, content: string) => void;
     updatePlayerPortrait?: (playerId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
     updateNpcPortrait?: (npcId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
     allLocations: Location[];
     onOpenDetailModal: (title: string, data: any) => void;
     onSwitchView: (view: string) => void;
-    onRegenerateId?: (entity: any, entityType: string) => void;
-    gameSettings: any; 
+    onRegenerateId?: (entity: unknown, entityType: string) => void;
+    gameSettings: GameSettings | null; 
     imageCache: Record<string, ImageCacheEntry>;
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
     encounteredFactions: Faction[];

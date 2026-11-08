@@ -63,8 +63,8 @@ export interface CharacterSheetProps {
     onDeleteCustomState: (stateId: string) => void;
     onDeleteNpcCustomState?: (npcId: string, stateId: string) => void;
     onDeleteActiveEffect: (characterType: 'player' | 'npc', characterId: string | null, effectId: string) => void;
-    onEditPlayerData?: (field: keyof PlayerCharacter, value: any) => void;
-    onEditNpcData?: (npcId: string, field: keyof NPC, value: any) => void;
+    onEditPlayerData?: (field: keyof PlayerCharacter, value: unknown) => void;
+    onEditNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
     updatePlayerPortrait?: (playerId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
     updateNpcPortrait?: (npcId: string, portraitData: { prompt?: string | null; custom?: string | null; }) => void;
     onDeleteActiveSkill: (skillName: string) => void;
@@ -92,14 +92,14 @@ export interface CharacterSheetProps {
     handleSplitItemForNpc: (npcId: string, item: Item, quantity: number) => void;
     handleMergeItemsForNpc: (npcId: string, sourceItem: Item, targetItem: Item) => void;
     initialView?: string;
-    onRegenerateId: (entity: any, entityType: string) => void;
+    onRegenerateId: (entity: unknown, entityType: string) => void;
     isLoading: boolean;
 }
 
 interface JournalViewProps {
     character: NPC;
     isAdminEditable: boolean;
-    onEditNpcData: (npcId: string, field: keyof NPC, value: any) => void;
+    onEditNpcData: (npcId: string, field: keyof NPC, value: unknown) => void;
     onOpenTextReader: (title: string, content: string) => void;
 }
 
@@ -252,7 +252,7 @@ const JournalView: React.FC<JournalViewProps> = ({ character, isAdminEditable, o
 interface ChronicleViewProps {
     character: PlayerCharacter;
     isAdminEditable: boolean;
-    onEditPlayerData: (field: keyof PlayerCharacter, value: any) => void;
+    onEditPlayerData: (field: keyof PlayerCharacter, value: unknown) => void;
     onOpenTextReader: (title: string, content: string) => void;
 }
 

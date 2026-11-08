@@ -64,7 +64,7 @@ interface CombatantCardProps {
     onImageGenerated: (prompt: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => void;
     onOpenImageModal: (displayPrompt: string, originalTextPrompt: string, onClearCustom?: () => void, onUpload?: (base64: string) => void, pendingPrompt?: string | null, onAcceptPending?: () => void) => void;
     gameSettings: GameSettings | null;
-    editNpcData?: (npcId: string, field: keyof NPC, value: any) => void;
+    editNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
 }
 
 
@@ -385,7 +385,7 @@ interface CombatTrackerProps {
     isFullScreen?: boolean;
     onCollapse?: () => void;
     gameSettings: GameSettings | null;
-    editNpcData?: (npcId: string, field: keyof NPC, value: any) => void;
+    editNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
 }
 
 export default function CombatTracker({ enemies, allies, combatLog, allNpcs, playerCharacter, setAutoCombatSkill, onOpenDetailModal, onViewCharacterSheet, onSendMessage, isLoading, imageCache, onImageGenerated, onOpenImageModal, gameSettings, onExpand, isFullScreen, onCollapse, editNpcData }: CombatTrackerProps): React.ReactNode {

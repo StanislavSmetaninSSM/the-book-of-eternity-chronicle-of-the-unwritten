@@ -37,7 +37,7 @@ interface WorldPanelProps {
     onDeleteFlag: (flagId: string) => void;
     editWorldState: (updates: Partial<{ day: number, time: string, year: number, monthIndex: number }>) => void;
     onEditWeather: (newWeather: string) => void;
-    onEditFlagData: (flagId: string, field: keyof WorldStateFlag, value: any) => void;
+    onEditFlagData: (flagId: string, field: keyof WorldStateFlag, value: WorldStateFlag['value']) => void;
     biome: string | null | undefined;
     allNpcs: NPC[];
     allFactions: Faction[];
@@ -63,7 +63,7 @@ const formatTime = (totalMinutes: number) => {
 // FIX: Added missing FlagEditor component to resolve compilation error.
 const FlagEditor: React.FC<{
     flag: WorldStateFlag;
-    onSave: (newValue: any) => void;
+    onSave: (newValue: WorldStateFlag['value']) => void;
     onCancel: () => void;
 }> = ({ flag, onSave, onCancel }) => {
     const { t } = useLocalization();

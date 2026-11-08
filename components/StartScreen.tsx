@@ -9,7 +9,8 @@ import { useWorldTranslations } from '../hooks/useWorldTranslations';
 import { gameData } from '../utils/localizationGameData';
 import { getUniverseWorld, resolveWorldFor, type WorldData, type WorldSource } from '../utils/worldData';
 import AboutContent from './AboutContent';
-import { DBSaveSlotInfo, Calendar } from '../types';
+import { DBSaveSlotInfo, Calendar, CharacterCreationData } from '../types';
+import { asRecord } from '../utils/typeGuards';
 import { loadPresetRuleTexts, type PresetRuleTexts } from '../utils/translations/presetRules';
 import { fillPresetRuleDefaults } from '../utils/presetRuleDefaults';
 import { initializeAndPreviewSound } from '../utils/soundManager';
@@ -23,7 +24,7 @@ const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intellig
 const cooperativeModeButtonBaseClass = 'min-w-0 min-h-[5rem] px-2 py-3 rounded-md text-center transition-all border flex items-center justify-center whitespace-normal break-words leading-snug';
 
 interface StartScreenProps {
-    onStartLocal: (creationData: any) => void;
+    onStartLocal: (creationData: CharacterCreationData) => void;
     onLoadGame: () => Promise<void>;
     onLoadAutosave: () => Promise<boolean>;
     autosaveTimestamp: string | null;
@@ -226,7 +227,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
     const currentDifficulty = impossibleMode ? 'impossible' : (hardMode ? 'hard' : 'normal');
 
     const daysInSelectedMonth = useMemo(() => {
-        const monthData = currentWorld.calendar?.months.find((m: any) => m.name === startingMonth);
+        const monthData = currentWorld.calendar?.months.find(m => m.name === startingMonth);
         return monthData ? monthData.days : 31;
     }, [startingMonth, currentWorld.calendar]);
 
@@ -361,7 +362,7 @@ const CreationForm: React.FC<CreationFormProps> = ({
                     <div>
                         <label htmlFor="startingMonth" className="block text-sm font-medium text-gray-300 mb-2">{t("Starting Month")}</label>
                         <select id="startingMonth" name="startingMonth" onChange={handleInputChange} value={formData.startingMonth} className="w-full bg-gray-700/50 border border-gray-600 rounded-md p-3 text-gray-200 focus:ring-2 focus:ring-cyan-500 transition dark-select">
-                            {currentWorld.calendar?.months.map((month: any) => (
+                            {currentWorld.calendar?.months.map(month => (
                                 <option key={month.name} value={month.name}>{t(month.name)}</option>
                             ))}
                         </select>
@@ -875,21 +876,22 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
                 if (!universeTable[key]) universeTable[key] = shippedUniverse;
             });
 
-            const addDefaultCalendarRecursively = (obj: any, defaultCalendar: any) => {
-                if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return;
+            const addDefaultCalendarRecursively = (obj: unknown, defaultCalendar: Calendar) => {
+                const record = asRecord(obj);
+                if (!record) return;
 
                 // Heuristic to identify a "world" object
-                if (obj.name && obj.description && typeof obj.races === 'object' && typeof obj.classes === 'object') {
-                    if (!obj.calendar) {
-                        console.log(`Adding default calendar to world: ${obj.name}`);
-                        obj.calendar = JSON.parse(JSON.stringify(defaultCalendar));
+                if (record.name && record.description && typeof record.races === 'object' && typeof record.classes === 'object') {
+                    if (!record.calendar) {
+                        console.log(`Adding default calendar to world: ${String(record.name)}`);
+                        record.calendar = JSON.parse(JSON.stringify(defaultCalendar));
                     }
                 }
 
                 // Always recurse deeper, unless it's a leaf node or a calendar itself
-                for (const key in obj) {
-                    if (key !== 'calendar' && Object.prototype.hasOwnProperty.call(obj, key)) {
-                        addDefaultCalendarRecursively(obj[key], defaultCalendar);
+                for (const key in record) {
+                    if (key !== 'calendar' && Object.prototype.hasOwnProperty.call(record, key)) {
+                        addDefaultCalendarRecursively(record[key], defaultCalendar);
                     }
                 }
             };
