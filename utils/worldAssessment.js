@@ -36,7 +36,7 @@ export const REPUTATION_CEILING = 400;
  * Both are updated by the same two sentences - the new total "(Cannot go below 0)", and "THE
  * COMPLETION CHECK: isComplete = (newTimeSpentMinutes >= totalTimeCostMinutes)".
  */
-function assessTracker(tracker, subject, notes) {
+function assessTrackerInto(tracker, subject, notes) {
     if (!tracker || typeof tracker !== 'object') return;
     // 'Abandoned' is a decision, not a contradiction: the completion check is only owed to a task
     // the world still expects to finish.
@@ -50,6 +50,19 @@ function assessTracker(tracker, subject, notes) {
         notes.push(worldNote('completed_but_active', subject, { subject, spent, cost }));
     }
 }
+
+/**
+ * What one tracker states about itself: for the card that shows exactly that project or activity,
+ * where the list around it is not the subject and nothing has to be read as a whole.
+ * @param {object} tracker
+ * @param {string} subject - the name the note should be read as talking about
+ * @returns {{ notes: StateNote[] }}
+ */
+export const assessTracker = (tracker, subject) => {
+    const notes = [];
+    assessTrackerInto(tracker, subject, notes);
+    return { notes };
+};
 
 /** The bounds a character's standing with the world has to stay inside. */
 function assessStanding(value, subject, notes) {
@@ -98,14 +111,14 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
         if (!faction || typeof faction !== 'object') continue;
         const subject = faction.name || faction.factionId || '?';
         for (const project of Array.isArray(faction.activeProjects) ? faction.activeProjects : []) {
-            assessTracker(project, subject, notes);
+            assessTrackerInto(project, subject, notes);
         }
         assessStanding(faction.reputation, subject, notes);
     }
     for (const npc of Array.isArray(npcs) ? npcs : []) {
         if (!npc || typeof npc !== 'object') continue;
         const subject = npc.name || npc.NPCId || '?';
-        assessTracker(npc.currentActivity, subject, notes);
+        assessTrackerInto(npc.currentActivity, subject, notes);
         assessStanding(npc.relationshipLevel, subject, notes);
         assessWounds(npc, subject, notes);
         // A person's own effects are read by the same reader the character sheet uses, so a buff
@@ -116,7 +129,7 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
     }
     for (const threat of Array.isArray(threats) ? threats : []) {
         if (!threat || typeof threat !== 'object') continue;
-        assessTracker(threat.currentActivity, threat.name || threat.threatId || '?', notes);
+        assessTrackerInto(threat.currentActivity, threat.name || threat.threatId || '?', notes);
     }
 
     return { notes, bySubject: groupNotesBySubject(notes) };

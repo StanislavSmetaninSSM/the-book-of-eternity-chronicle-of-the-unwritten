@@ -6,6 +6,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import ImageRenderer from './ImageRenderer';
 import ConfirmationModal from './ConfirmationModal';
 import WorldStateNotes from './WorldStateNotes';
+import { assessWorld } from '../utils/worldAssessment.js';
 
 interface LocationLogProps {
   locations: Location[];
@@ -32,6 +33,9 @@ const LocationItem: React.FC<{
   const { t } = useLocalization();
   
   const displayType = t((loc.indoorType || loc.biome || loc.locationType));
+  // A threat keeps its own activity tracker, so it answers to the completion check inside the card
+  // of the place that hosts it - the place is already named, so it does not have to be repeated.
+  const threatNotes = assessWorld({ threats: loc.activeThreats || [] }).notes;
   
   const { eventType, eventText } = useMemo(() => {
     const fullEventText = loc.eventDescriptions && loc.eventDescriptions.length > 0 ? loc.eventDescriptions[0].trim() : '';
@@ -168,6 +172,9 @@ const LocationItem: React.FC<{
                 </button>
             </div>
         )}
+        {threatNotes.length > 0 && (
+          <WorldStateNotes notes={threatNotes} compact className="mt-3 pt-3 border-t border-amber-500/20" />
+        )}
       </button>
     </div>
   );
@@ -203,12 +210,6 @@ export default function LocationLog({ locations, currentLocation, onOpenModal, a
     <>
       <div className="space-y-4">
         <h3 className="text-xl font-bold text-cyan-400 mb-3 narrative-text">{t('Known Locations')}</h3>
-        {/* A threat works through its own activity tracker, so it answers to the same completion
-            check. The place is named with it because a threat name alone does not say where it is. */}
-        <WorldStateNotes
-          threats={sortedLocations.flatMap(loc => (loc.activeThreats || []).map(threat => ({ ...threat, name: `${threat.name} (${loc.name})` })))}
-          className="mb-4"
-        />
         {sortedLocations && sortedLocations.length > 0 ? (
           <div className="space-y-3">
             {sortedLocations.map((loc) => (

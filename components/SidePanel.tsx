@@ -15,6 +15,7 @@ import JsonDebugView from './JsonDebugView';
 import GameLogView from './GameLogView';
 import NpcLog from './NpcLog';
 import WorldStateNotes from './WorldStateNotes';
+import { assessWorld } from '../utils/worldAssessment.js';
 import CombatTracker from './CombatTracker';
 import GameMenuView from './GameMenuView';
 import LocationViewer from './LocationViewer';
@@ -201,6 +202,9 @@ const FactionItem: React.FC<{
     isLoading: boolean;
 }> = ({ faction, onOpenModal, allowHistoryManipulation, onDelete, gameSettings, imageCache, onImageGenerated, t, isLoading }) => {
     const imagePrompt = faction.custom_image_prompt || faction.image_prompt;
+    // The card holds the standing and the projects, so the card is where its own contradiction
+    // belongs - a list-wide note would sit further from the number it quotes.
+    const factionNotes = assessWorld({ factions: [faction] }).notes;
     return (
         <div className="relative w-full text-left bg-gray-900/40 p-3 rounded-lg border-l-4 shadow-md transition-all hover:ring-1 hover:ring-cyan-500/50 group" style={{ borderColor: faction.color || '#4b5563' }}>
             {allowHistoryManipulation && (
@@ -230,6 +234,9 @@ const FactionItem: React.FC<{
                     <p className="text-sm text-gray-400">{t('Reputation')}: {faction.reputation}</p>
                 </div>
             </button>
+            {factionNotes.length > 0 && (
+                <WorldStateNotes notes={factionNotes} compact className="mt-2 pt-2 border-t border-amber-500/20" />
+            )}
         </div>
     );
 };
@@ -258,9 +265,6 @@ const FactionLog: React.FC<{
         <>
             <div className="space-y-4">
                  <h3 className="text-xl font-bold text-cyan-400 mb-3 narrative-text">{t('Factions')}</h3>
-                {/* The same read-back over the factions listed here - a project whose spent time
-                    reached its cost is finished, a standing outside the scale is not a state. */}
-                <WorldStateNotes factions={factions} className="mb-4" />
                 {factions.length > 0 ? (
                     <div className="space-y-3">
                         {factions.map((faction) => (

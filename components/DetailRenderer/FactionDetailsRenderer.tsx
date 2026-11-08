@@ -35,6 +35,8 @@ import {
 import ConfirmationModal from '../ConfirmationModal';
 import FactionChronicleView from './Shared/FactionChronicleView';
 import BonusCard from './Shared/BonusCard';
+import WorldStateNotes from '../WorldStateNotes';
+import { assessTracker } from '../../utils/worldAssessment.js';
 
 interface FactionDetailsProps extends Omit<DetailRendererProps, 'data'> {
   faction: Faction & { initialView?: string, perspectiveFor?: { name: string; rank: string | null; branch?: string | null; } };
@@ -323,6 +325,9 @@ const formatDuration = (totalMinutes: number, t: (key: string) => string): strin
 const ProjectCard: React.FC<{ project: Project; onDelete?: () => void }> = ({ project, onDelete }) => {
     const { t } = useLocalization();
     const timeProgress = project.totalTimeCostMinutes > 0 ? (project.timeSpentMinutes / project.totalTimeCostMinutes) * 100 : 0;
+    // This card is the one place where both numbers of the project are shown together, so the
+    // contradiction is read off this tracker alone instead of counted over the faction's whole list.
+    const { notes: projectNotes } = assessTracker(project, project.projectName || '?');
     
     return (
         <div className="bg-gray-800/60 p-4 rounded-lg border border-gray-700/50 group relative">
@@ -340,6 +345,9 @@ const ProjectCard: React.FC<{ project: Project; onDelete?: () => void }> = ({ pr
                     </div>
                 </div>
             </div>
+            {projectNotes.length > 0 && (
+                <WorldStateNotes notes={projectNotes} compact className="mt-2" />
+            )}
             {onDelete && (
                 <button
                     onClick={onDelete}

@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { assessWorld, REPUTATION_CEILING, REPUTATION_FLOOR } from '../utils/worldAssessment.js';
+import { assessTracker, assessWorld, REPUTATION_CEILING, REPUTATION_FLOOR } from '../utils/worldAssessment.js';
 
 /** One faction with one active project, the shortest state that can contradict itself. */
 const factionWithProject = (project, extra = {}) => ({
@@ -142,13 +142,43 @@ test('every note the assessment can raise has a line in both locales', () => {
     }
 });
 
-test('the world panels are the ones that read it back', () => {
-    const sidePanel = readFileSync(new URL('../components/SidePanel.tsx', import.meta.url), 'utf8');
-    assert.match(sidePanel, /<WorldStateNotes factions=\{factions\}/, 'the faction list should carry its own notes');
+test('one tracker can be read on its own, for the card that shows it', () => {
+    const { notes } = assessTracker({ projectName: 'Rites', totalTimeCostMinutes: 120, timeSpentMinutes: 130 }, 'Rites of Ash');
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].key, 'world_notes_completed_but_active');
+    assert.equal(notes[0].subject, 'Rites of Ash', 'the card is named by the tracker it shows');
 
-    const npcLog = readFileSync(new URL('../components/NpcLog.tsx', import.meta.url), 'utf8');
-    assert.match(npcLog, /<WorldStateNotes npcs=\{/, 'the NPC list should carry its own notes');
+    assert.equal(assessTracker({ totalTimeCostMinutes: 120, timeSpentMinutes: 30 }, 'Rites of Ash').notes.length, 0);
+    assert.equal(assessTracker(null, 'Rites of Ash').notes.length, 0, 'a card without a tracker says nothing');
+});
 
-    const locationLog = readFileSync(new URL('../components/LocationLog.tsx', import.meta.url), 'utf8');
-    assert.match(locationLog, /<WorldStateNotes\n\s*threats=\{/, 'the location list should read its threats back too');
+test('the contradiction is read in the card that shows the numbers', () => {
+    const read = name => readFileSync(new URL(`../components/${name}`, import.meta.url), 'utf8');
+
+    const sidePanel = read('SidePanel.tsx');
+    assert.match(sidePanel, /const factionNotes = assessWorld\(\{ factions: \[faction\] \}\)\.notes;/, 'the faction card reads its own faction');
+    assert.match(sidePanel, /<WorldStateNotes notes=\{factionNotes\} compact/, 'and shows the lines inside the card');
+    assert.doesNotMatch(sidePanel, /<WorldStateNotes factions=\{factions\}/, 'nothing is counted over the whole list anymore');
+
+    const npcLog = read('NpcLog.tsx');
+    assert.match(npcLog, /const npcNotes = assessWorld\(\{ npcs: \[npc\] \}\)\.notes;/, 'the person’s card reads the person');
+    assert.match(npcLog, /<WorldStateNotes notes=\{npcNotes\} compact/);
+    assert.doesNotMatch(npcLog, /<WorldStateNotes npcs=\{/, 'and the list keeps no summary of its own');
+
+    const locationLog = read('LocationLog.tsx');
+    assert.match(locationLog, /const threatNotes = assessWorld\(\{ threats: loc\.activeThreats \|\| \[\] \}\)\.notes;/, 'the place reads the threats it hosts');
+    assert.match(locationLog, /<WorldStateNotes notes=\{threatNotes\} compact/);
+    assert.doesNotMatch(locationLog, /name: `\$\{threat\.name\} \(\$\{loc\.name\}\)`/, 'the place no longer has to be spelled into the subject');
+
+    const projects = read('DetailRenderer/FactionDetailsRenderer.tsx');
+    assert.match(projects, /assessTracker\(project, project\.projectName \|\| '\?'\)/, 'the project card reads its own tracker');
+    assert.match(projects, /<WorldStateNotes notes=\{projectNotes\} compact/);
+});
+
+test('the compact reading stays a line, not a second frame', () => {
+    const renderer = readFileSync(new URL('../components/WorldStateNotes.tsx', import.meta.url), 'utf8');
+    assert.match(renderer, /data-testid="world-state-notes-inline"/, 'inline notes have their own hook');
+    assert.match(renderer, /if \(compact\) \{/, 'and a branch of their own');
+    const boxed = renderer.slice(renderer.indexOf('return ('));
+    assert.match(boxed, /t\(titleKey\)/, 'while the boxed reading keeps its heading');
 });

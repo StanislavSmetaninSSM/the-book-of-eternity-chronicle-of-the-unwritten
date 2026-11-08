@@ -1,5 +1,5 @@
 import React from 'react';
-import { ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
+import { ClipboardDocumentCheckIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 import { assessWorld } from '../utils/worldAssessment.js';
 
@@ -23,6 +23,8 @@ interface WorldStateNotesProps {
     notes?: WorldStateNote[];
     /** A view with its own heading; the world panels share one. */
     titleKey?: string;
+    /** Inside a card, where the card has already said whose state this is and boxed it twice. */
+    compact?: boolean;
 }
 
 /**
@@ -30,7 +32,7 @@ interface WorldStateNotesProps {
  * that contradicts each other. Deliberately not a warning banner - it stays out of the way while
  * the world is consistent, and it never offers to fix anything.
  */
-const WorldStateNotes: React.FC<WorldStateNotesProps> = ({ factions, npcs, threats, className = '', only, notes: givenNotes, titleKey = 'World State Check' }) => {
+const WorldStateNotes: React.FC<WorldStateNotesProps> = ({ factions, npcs, threats, className = '', only, notes: givenNotes, titleKey = 'World State Check', compact = false }) => {
     const { t } = useLocalization();
     const notes: WorldStateNote[] = React.useMemo(
         () => (givenNotes
@@ -40,6 +42,20 @@ const WorldStateNotes: React.FC<WorldStateNotesProps> = ({ factions, npcs, threa
     );
     const shown = only ? notes.filter(note => note.subject === only) : notes;
     if (shown.length === 0) return null;
+
+    if (compact) {
+        // Inside the card that already names its subject: the lines, without a second frame.
+        return (
+            <div data-testid="world-state-notes-inline" className={`space-y-1 text-xs text-amber-300/90 ${className}`}>
+                {shown.map((note, index) => (
+                    <p key={`${note.subject}-${note.kind}-${index}`} className="leading-snug flex items-start gap-1.5">
+                        <ExclamationTriangleIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-400/70" />
+                        <span>{t(note.key, note.params)}</span>
+                    </p>
+                ))}
+            </div>
+        );
+    }
 
     return (
         <div

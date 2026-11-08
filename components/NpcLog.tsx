@@ -6,6 +6,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import ImageRenderer from './ImageRenderer';
 import ConfirmationModal from './ConfirmationModal';
 import WorldStateNotes from './WorldStateNotes';
+import { assessWorld } from '../utils/worldAssessment.js';
 
 interface NpcLogProps {
   gameState: GameState | null;
@@ -52,6 +53,9 @@ const NpcItem: React.FC<{
         if (level <= 150) return t('relationship_level_deep_bond');
         return t('relationship_level_devotion');
     };
+
+    // Activity, standing, wounds and effects of this one person, read back into their card.
+    const npcNotes = assessWorld({ npcs: [npc] }).notes;
 
     const journalPreviewContent = useMemo(() => {
         if (!npc.journalEntries || npc.journalEntries.length === 0) {
@@ -140,6 +144,9 @@ const NpcItem: React.FC<{
                     )}
                 </div>
             </button>
+            {npcNotes.length > 0 && (
+                <WorldStateNotes notes={npcNotes} compact className="mt-2 pt-2 border-t border-amber-500/20" />
+            )}
             {journalPreviewContent && (
                 <div className="mt-3 pt-3 border-t border-gray-700/50">
                     <h5 className="text-xs font-semibold text-cyan-400/80 mb-1 uppercase tracking-wider">{t('journal_preview')}</h5>
@@ -258,9 +265,6 @@ export default function NpcLog({ gameState, npcs, encounteredFactions, onOpenJou
             {isSorting ? t('Done') : t('Sort')}
         </button>
       </div>
-      {/* Read back over the people listed here: an activity that outlived its own completion check,
-          a standing off the scale, a wound whose treatment reached the number that changes it. */}
-      <WorldStateNotes npcs={filteredNpcs || []} />
        {allTags.length > 0 && (
           <div className="p-3 bg-gray-900/30 rounded-lg">
               <h4 className="text-sm font-semibold text-gray-400 mb-2">{t('Filter by tags:')}</h4>
