@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { PlayerCharacter, GameSettings } from '../types';
+import { PlayerCharacter, GameSettings, WorldData, CharacterCreationData } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import Modal from './Modal';
 import { PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
@@ -30,10 +30,10 @@ const initialFormData = {
 interface PlayerCreationModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSubmit: (creationData: any) => void;
+    onSubmit: (creationData: CharacterCreationData) => void;
     templatePlayer?: PlayerCharacter | null;
     universe: string;
-    currentWorldData: any;
+    currentWorldData: WorldData;
     gameSettings: GameSettings | null;
     partyLevel: number;
     shareCharacteristics: boolean;

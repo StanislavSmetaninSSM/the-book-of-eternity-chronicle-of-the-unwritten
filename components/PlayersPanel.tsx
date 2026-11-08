@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { PlayerCharacter, GameSettings, NPC, ImageCacheEntry } from '../types';
+import { PlayerCharacter, GameSettings, NPC, ImageCacheEntry, CharacterCreationData } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { UserIcon, PlusCircleIcon, DocumentDuplicateIcon, ArrowRightOnRectangleIcon, TrashIcon } from '@heroicons/react/24/outline';
 import PlayerCreationModal from './PlayerCreationModal';
@@ -12,7 +12,7 @@ interface PlayersPanelProps {
     playerCharacter: PlayerCharacter;
     players: PlayerCharacter[];
     gameSettings: GameSettings | null;
-    onAddPlayer: (creationData: any) => void;
+    onAddPlayer: (creationData: PlayerCharacter | CharacterCreationData) => void;
     onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
     removePlayer: (playerId: string) => void;
     passTurnToPlayer: (playerIndex: number) => void;
@@ -39,7 +39,7 @@ const PlayersPanel: React.FC<PlayersPanelProps> = ({ playerCharacter, players, g
         setIsCreating(true);
     };
 
-    const handleSubmitCreation = (creationData: any) => {
+    const handleSubmitCreation = (creationData: CharacterCreationData) => {
         onAddPlayer(creationData);
         setIsCreating(false);
     };

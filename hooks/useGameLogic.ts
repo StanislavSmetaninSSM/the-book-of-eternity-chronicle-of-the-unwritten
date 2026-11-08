@@ -5,7 +5,7 @@ import { asRecord } from '../utils/typeGuards';
 import { beginGameplayMutation, gameplayMutationCommitted, guardGameplayActions } from '../utils/gameplayMutationGate';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // FIX: Imported missing types to resolve multiple "Cannot find name" errors.
-import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, Location, NPC, Faction, Wound, WorldStateFlag, UnlockedMemory, Effect, LocationStorage, Item, CompletedActivity, Cinematic, FactionRank, CinemaFrame, ImageCacheEntry, DayInfo, Month } from '../types';
+import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, CharacterCreationData, Location, NPC, Faction, Wound, WorldStateFlag, UnlockedMemory, Effect, LocationStorage, Item, CompletedActivity, Cinematic, FactionRank, CinemaFrame, ImageCacheEntry, DayInfo, Month } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { getCinemaPrompt, getContinueCinemaPrompt } from '../prompts/cinemaPrompt';
@@ -936,13 +936,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         fetchInitialData();
     }, []);
 
-    const addPlayer = useCallback((creationData: PlayerCharacter | any) => {
+    const addPlayer = useCallback((creationData: PlayerCharacter | CharacterCreationData) => {
         if (!gameSettings || userGameplayActionBlocked()) return;
-        const newPlayer: PlayerCharacter = creationData.playerId ? creationData : createNewPlayerCharacter(
-            creationData, gameSettings, {
+        const creationRecord = asRecord(creationData);
+        const existingPlayer = typeof creationRecord?.playerId === 'string';
+        const newPlayer: PlayerCharacter = existingPlayer ? creationData as PlayerCharacter : createNewPlayerCharacter(
+            creationData as CharacterCreationData, gameSettings, {
                 partyLevel: gameStateRef.current?.playerCharacter.level || 1,
                 shareCharacteristics: gameSettings.multiplePersonalitiesSettings?.shareCharacteristics ?? false,
-                templatePlayer: creationData.templatePlayer
+                templatePlayer: creationRecord?.templatePlayer as PlayerCharacter | undefined
             });
         setGameState(prev => {
             if (!prev) return prev;

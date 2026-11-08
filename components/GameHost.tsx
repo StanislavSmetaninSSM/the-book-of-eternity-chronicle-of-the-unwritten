@@ -15,6 +15,7 @@ import TurnIndicator from './TurnIndicator';
 import { useLocalization } from '../context/LocalizationContext';
 import { useGameLogic } from '../hooks/useGameLogic';
 import { ChatMessage, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, LocationData, ImageCacheEntry, CharacterCreationData } from '../types';
+import { asRecord } from '../utils/typeGuards';
 import { useSpeech } from '../context/SpeechContext';
 import { releasePreparedSaveFiles, type PreparedSaveFiles } from '../utils/fileManager';
 import ConfirmationModal from './ConfirmationModal';
@@ -46,13 +47,37 @@ interface ImageModalInfo {
     onAcceptPending?: () => void;
 }
 
-const isNpc = (d: any): d is NPC => d && typeof d === 'object' && !Array.isArray(d) && (d.relationshipLevel !== undefined || d.NPCId !== undefined);
-const isItem = (d: any): d is Item => d && typeof d === 'object' && !Array.isArray(d) && typeof d.quality === 'string' && typeof d.weight === 'number';
-const isQuest = (d: any): d is Quest => d && typeof d === 'object' && !Array.isArray(d) && typeof d.questGiver === 'string' && Array.isArray(d.objectives);
-const isLocation = (d: any): d is (Location & { type: 'location' }) => d && typeof d === 'object' && !Array.isArray(d) && d.type === 'location' && d.externalDifficultyProfile !== undefined;
-const isWound = (d: any): d is (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null }) => d && typeof d === 'object' && !Array.isArray(d) && d.type === 'wound';
-const isPlayerCharacter = (d: any): d is PlayerCharacter & { type: 'playerCharacter' } => d && typeof d === 'object' && !Array.isArray(d) && d.type === 'playerCharacter';
-const isFaction = (data: any): data is Faction & { type: 'faction' } => data && typeof data === 'object' && !Array.isArray(data) && data.type === 'faction' && data.reputation !== undefined;
+const isNpc = (d: unknown): d is NPC => {
+    const record = asRecord(d);
+    return !!record && (record.relationshipLevel !== undefined || record.NPCId !== undefined);
+};
+const isItem = (d: unknown): d is Item => {
+    const record = asRecord(d);
+    return !!record && typeof record.quality === 'string' && typeof record.weight === 'number';
+};
+const isQuest = (d: unknown): d is Quest => {
+    const record = asRecord(d);
+    return !!record && typeof record.questGiver === 'string' && Array.isArray(record.objectives);
+};
+const isLocation = (d: unknown): d is (Location & { type: 'location' }) => {
+    const record = asRecord(d);
+    return !!record && record.type === 'location' && record.externalDifficultyProfile !== undefined;
+};
+const isWound = (d: unknown): d is (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null }) =>
+    asRecord(d)?.type === 'wound';
+const isPlayerCharacter = (d: unknown): d is PlayerCharacter & { type: 'playerCharacter' } =>
+    asRecord(d)?.type === 'playerCharacter';
+const isFaction = (data: unknown): data is Faction & { type: 'faction' } => {
+    const record = asRecord(data);
+    return !!record && record.type === 'faction' && record.reputation !== undefined;
+};
+
+/** One journal entry as the model reports it, before it is attached to an NPC. */
+interface ReportedNpcJournalEntry {
+    NPCId?: string;
+    NPCName?: string;
+    name?: string;
+}
 
 const clampUiScale = (value: unknown, min = 0.8, max = 1.25): number => {
     const parsed = typeof value === 'number' ? value : Number(value);
@@ -383,7 +408,7 @@ export default function GameHost({ request, onSettled }: GameHostProps): React.R
         if (!currentDetailModal || !gameState) return;
 
         const { data } = currentDetailModal;
-        let updatedData: any = null;
+        let updatedData: unknown = null;
 
         if (isWound(data)) {
             const woundData = data as (Wound & { type: 'wound', characterType: 'player' | 'npc', characterId: string | null });
@@ -520,7 +545,7 @@ export default function GameHost({ request, onSettled }: GameHostProps): React.R
                 // This might fail if JSON is streaming, but that's okay.
                 const response = JSON.parse(lastJsonResponse);
                 if (response && response.NPCJournals && Array.isArray(response.NPCJournals)) {
-                    response.NPCJournals.forEach((journalEntry: any) => {
+                    response.NPCJournals.forEach((journalEntry: ReportedNpcJournalEntry) => {
                         const npcName = journalEntry.NPCName || journalEntry.name;
                         if (journalEntry.NPCId) {
                             npcsWithRecentJournalsSet.add(journalEntry.NPCId);
