@@ -28,6 +28,25 @@ export function criticalCarryWeight(maxWeight, criticalExcessWeight) {
 }
 
 /**
+ * Whether the character carries more than the threshold they can bear without penalty. The
+ * overload flag is a property of the load, never a decision: it is refreshed wherever the
+ * weight or the capacity is written, so a save cannot keep claiming a state the inventory
+ * has already changed.
+ *
+ * A character with no stated capacity is not encumbered: nothing has been declared too much
+ * for them yet, and an absent number must not be turned into a condition the rules would
+ * then apply consequences to.
+ * @param {number|undefined} maxWeight overload threshold of the character
+ * @param {number|undefined} totalWeight kilograms currently carried
+ * @returns {boolean}
+ */
+export function isEncumbered(maxWeight, totalWeight) {
+    if (!Number.isFinite(maxWeight)) return false;
+    const carried = Number.isFinite(totalWeight) ? totalWeight : 0;
+    return carried > maxWeight;
+}
+
+/**
  * Whether a load of 'prospectiveWeight' kilograms fits what the character can carry.
  * @param {number|undefined} maxWeight overload threshold of the character
  * @param {number|undefined} criticalExcessWeight recorded extra capacity, if any

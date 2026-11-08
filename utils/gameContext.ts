@@ -1,5 +1,6 @@
 // @ts-ignore -- shared JS helpers
 import { critChanceBuffFromLuck, criticalHitThreshold, maxCarryWeight, maxEnergyPercent, maxHealthPercent } from './derivedStats.js';
+import { isEncumbered } from './carryWeight.js';
 import { coordinateKey, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
 import { withLiveActivePlayer } from './partyView';
 import { GameState, GameResponse, PlayerCharacter, Location, Language, Item, GameSettings, WorldState, NPC, WorldData, CharacterCreationData, Effect, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Calendar, Month, DayInfo, GameContext, ChatMessage, Characteristics, ItemResourceChange, NPCInventoryResourceChange } from '../types';
@@ -159,6 +160,10 @@ export function recalculateDerivedStats<T extends PlayerCharacter | NPC>(pc: T):
 
     newPc.currentHealth = Math.min(newPc.currentHealth, newPc.maxHealth);
     newPc.currentEnergy = Math.min(newPc.currentEnergy, newPc.maxEnergy);
+
+    // The threshold moved here, so a load that used to fit may not fit any more. The weight pass
+    // sets the same flag: either of the two can be the last one to run, and both read fresh values.
+    newPc.isOverloaded = isEncumbered(newPc.maxWeight, newPc.totalWeight);
 
     CHARACTERISTICS_LIST.forEach(char => {
         const charCapitalized = char.charAt(0).toUpperCase() + char.slice(1);

@@ -667,11 +667,6 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 }
                 let updatedNpc = recalculateDerivedStats(npc);
                 updatedNpc = recalculateAllWeights(updatedNpc);
-                if (updatedNpc.totalWeight !== undefined && updatedNpc.maxWeight !== undefined) {
-                    updatedNpc.isOverloaded = updatedNpc.totalWeight > updatedNpc.maxWeight;
-                } else {
-                    updatedNpc.isOverloaded = false;
-                }
                 if (updatedNpc.criticalExcessWeight === undefined) {
                     updatedNpc.criticalExcessWeight = DEFAULT_CRITICAL_EXCESS_WEIGHT;
                 }

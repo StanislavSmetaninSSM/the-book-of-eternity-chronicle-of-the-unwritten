@@ -7,6 +7,7 @@ import ImageRenderer from './ImageRenderer';
 import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import { generateEffectDescription } from './DetailRenderer/utils';
+import { isEncumbered } from '../utils/carryWeight.js';
 
 type Combatant = EnemyCombatObject | AllyCombatObject;
 
@@ -196,6 +197,14 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                         <div>
                             <div className="flex items-baseline gap-2">
                                 <h4 className={`font-bold text-lg ${isDefeated ? 'text-gray-500 line-through' : 'text-white'}`}>{combatant.name}</h4>
+                                {fullNpcData && isEncumbered(fullNpcData.maxWeight, fullNpcData.totalWeight) && (
+                                    <span
+                                        className="text-sm font-mono px-2 py-0.5 rounded-full bg-red-500/20 text-red-300"
+                                        title={t('overloaded_hint', { max: `${fullNpcData.maxWeight} ${t('kg_short')}` })}
+                                    >
+                                        {t('overloaded_badge')}
+                                    </span>
+                                )}
                                 {level !== null && !isDefeated && (
                                     fullNpcData ? (
                                         <span className="text-sm font-mono px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">

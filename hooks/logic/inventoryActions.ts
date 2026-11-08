@@ -51,14 +51,8 @@ export const createInventoryActions = (
 
             newState.encounteredNPCs = newState.encounteredNPCs.map((npc) => {
                 if (!npc) return npc;
-                let updatedNpc = recalculateAllWeights(npc);
-                updatedNpc = recalculateDerivedStats(updatedNpc);
-                if (updatedNpc.totalWeight !== undefined && updatedNpc.maxWeight !== undefined) {
-                    updatedNpc.isOverloaded = updatedNpc.totalWeight > updatedNpc.maxWeight;
-                } else {
-                    updatedNpc.isOverloaded = false;
-                }
-                return updatedNpc;
+                // Both passes settle the overload flag themselves, so no caller has to remember it.
+                return recalculateDerivedStats(recalculateAllWeights(npc));
             });
 
             if (gameContextRef.current) {

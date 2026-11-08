@@ -5,6 +5,7 @@ import {
   DEFAULT_CRITICAL_EXCESS_WEIGHT,
   canCarryWeight,
   criticalCarryWeight,
+  isEncumbered,
 } from '../utils/carryWeight.js';
 import { getGameMasterGuideRules } from '../prompts/mainPromptModule.js';
 
@@ -54,6 +55,38 @@ test('the rulebook states the same ceiling for a player and for a companion', ()
   assert.equal(criticalCarryWeight(50, DEFAULT_CRITICAL_EXCESS_WEIGHT), 65);
   assert.equal(canCarryWeight(50, DEFAULT_CRITICAL_EXCESS_WEIGHT, 40 + 15), true);
 
+});
+
+test('being overloaded is the load passing the threshold, and nothing else', () => {
+  assert.equal(isEncumbered(50, 50), false, 'the threshold itself is still bearable');
+  assert.equal(isEncumbered(50, 50.5), true);
+  assert.equal(isEncumbered(50, undefined), false);
+  // No capacity stated is no load declared too heavy: an absent number must not become a
+  // condition with consequences attached to it.
+  assert.equal(isEncumbered(undefined, 500), false);
+});
+
+test('the flag follows the weight and the capacity, so it cannot go stale', async () => {
+  const [weights, stats] = await Promise.all([
+    read('../utils/inventoryManager.ts'),
+    read('../utils/gameContext.ts'),
+  ]);
+  for (const [name, source] of [['the weight pass', weights], ['the capacity pass', stats]]) {
+    assert.match(source, /isOverloaded = isEncumbered\(newPc\.maxWeight, newPc\.totalWeight\)/, `${name} must publish the flag`);
+  }
+  const [loader, transfers, restore, party, tracker] = await Promise.all([
+    read('../hooks/useGameLogic.ts'),
+    read('../hooks/logic/inventoryActions.ts'),
+    read('../utils/restorePlayer.ts'),
+    read('../components/CharacterSheet/Header.tsx'),
+    read('../components/CombatTracker.tsx'),
+  ]);
+  for (const [name, source] of [['the loader', loader], ['the transfers', transfers], ['the restore', restore]]) {
+    assert.doesNotMatch(source, /isOverloaded = /, `${name} must not compare the two numbers itself`);
+  }
+  for (const [name, source] of [['the character sheet', party], ['the combat tracker', tracker]]) {
+    assert.match(source, /isEncumbered\(/, `${name} must read the state through the same helper`);
+  }
 });
 
 test('every gate asks the shared helper instead of adding the constant itself', async () => {

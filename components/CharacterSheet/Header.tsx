@@ -8,6 +8,7 @@ import EditableField from '../DetailRenderer/Shared/EditableField';
 import StatBar from './Shared/StatBar';
 import { criticalCarryWeight } from '../../utils/carryWeight.js';
 import { CARRY_CAPACITY_BASE_WEIGHT } from '../../utils/derivedStats.js';
+import { isEncumbered } from '../../utils/carryWeight.js';
 import { CharacterSheetProps } from '../CharacterSheet'; // Добавьте этот импорт
 
 import { 
@@ -366,6 +367,14 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                             title={t("Click to view details about Weight")}
                             character={character}
                         />
+                    )}
+                    {isEncumbered(character.maxWeight, character.totalWeight) && (
+                        <p
+                            className="text-xs font-semibold text-red-400 mt-1"
+                            title={t('overloaded_hint', { max: `${character.maxWeight} ${t('kg_short')}` })}
+                        >
+                            {t('overloaded_badge')}
+                        </p>
                     )}
                      {!isPlayer && (character as NPC).relationshipLevel !== undefined && (
                         <StatBar
