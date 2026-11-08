@@ -159,8 +159,8 @@ export interface GameSettings {
 
 /**
  * What the start screen hands to the game: the universe choice, the toggles and
- * the new character. Every field is optional because old shells and old saves
- * only carry some of them.
+ * the new character. Every field is optional because a universe contributes only
+ * the choices it has — a custom universe has no era, and a quick start no class.
  */
 export interface CharacterCreationData {
   universe?: string;

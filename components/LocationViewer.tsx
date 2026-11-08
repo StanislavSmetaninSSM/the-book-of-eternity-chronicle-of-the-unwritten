@@ -3,7 +3,6 @@ import { coordinateKey, resolveLinkTarget } from '../utils/locationLinks.js';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Location, GameSettings, Faction, ImageCacheEntry, DetailData} from '../types';
-import type { DifficultyProfile } from '../types';
 import { 
     MapPinIcon, QuestionMarkCircleIcon, HomeModernIcon, BuildingStorefrontIcon, 
     FireIcon, GlobeAltIcon, SunIcon, ArrowPathIcon, UserGroupIcon,
@@ -94,9 +93,7 @@ const Tooltip = ({
     const { t } = useLocalization();
     if (!location) return null;
     
-    // Legacy saves only had the estimate, not the settled profile.
-    const legacyLocation = location as Location & { estimatedExternalDifficultyProfile?: DifficultyProfile };
-    const profile = location.externalDifficultyProfile || legacyLocation.estimatedExternalDifficultyProfile;
+    const profile = location.externalDifficultyProfile;
 
     const modalRoot = document.getElementById('modal-root');
     if (!modalRoot) return null;
