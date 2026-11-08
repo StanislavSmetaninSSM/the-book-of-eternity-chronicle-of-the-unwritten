@@ -1,4 +1,5 @@
 // @ts-ignore -- shared JS helpers
+import { maxCarryWeight } from './carryWeight.js';
 import { coordinateKey, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
 import { withLiveActivePlayer } from './partyView';
 import { GameState, GameResponse, PlayerCharacter, Location, Language, Item, GameSettings, WorldState, NPC, WorldData, CharacterCreationData, Effect, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Calendar, Month, DayInfo, GameContext, ChatMessage, Characteristics, ItemResourceChange, NPCInventoryResourceChange } from '../types';
@@ -149,7 +150,7 @@ export function recalculateDerivedStats<T extends PlayerCharacter | NPC>(pc: T):
 
     newPc.maxHealth = 100 + Math.floor(pmCon * 2.0) + Math.floor(pmStr * 1.0);
     newPc.maxEnergy = 100 + Math.floor(pmCon * 0.75) + Math.floor(pmInt * 0.75) + Math.floor(pmWis * 0.75) + Math.floor(pmFth * 0.75);
-    newPc.maxWeight = 30 + Math.floor(pmStr * 1.8 + pmCon * 0.4);
+    newPc.maxWeight = maxCarryWeight(pmStr, pmCon);
     newPc.critChanceBuffFromLuck = Math.floor(pmLck / 20);
     newPc.critChanceThreshold = 20 - newPc.critChanceBuffFromLuck;
 

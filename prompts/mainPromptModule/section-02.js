@@ -5222,15 +5222,16 @@ Base Effects:
 
                                     d) Determine Critical Carrying Capacity ('CriticalCarryWeight'):
                                        Formula:
-                                           CriticalCarryWeight = MaxCarryWeight_Overload + Value of 'criticalExcessWeight' from Context (typically 10 or 15)
+                                           CriticalCarryWeight = MaxCarryWeight_Overload + Value of 'criticalExcessWeight' from Context
                                        Where:
                                            - 'MaxCarryWeight_Overload': Max weight before overload.
-                                           - 'criticalExcessWeight': A system constant representing how much extra weight the character can lift beyond the overload point before being completely unable to carry more.
+                                           - 'criticalExcessWeight': how much extra weight the character can lift beyond the overload point before being completely unable to carry more. Read it from Context.playerCharacter.criticalExcessWeight; the universal value is 15 kg (Rule #19.C.1), and a character record without that field means exactly that constant. Never substitute another number: the interface gates the same transfer on this very ceiling.
                                        (This 'CriticalCarryWeight' is the absolute maximum weight the character can lift at all.)
 
                                     e) Perform the Final Check:
                                        Formula:
-                                           CanCarry = (CriticalCarryWeight > TotalProspectiveWeight)
+                                           CanCarry = (CriticalCarryWeight >= TotalProspectiveWeight)
+                                           The ceiling is inclusive: a load that lands exactly on 'CriticalCarryWeight' is still carried, only anything heavier is refused. This mirrors the check for a companion (Rule #19.C.1), so the two kinds of handover cannot disagree at the boundary.
 
                                     f) Log Calculation Details:
                                        Record all values and the calculation steps for this WeightCheck in 'items_and_stat_calculations'.
@@ -5248,16 +5249,16 @@ Base Effects:
                                        - MaxCarryWeight_Overload: 30kg 
 
 
-                                       - criticalExcessWeight: 10kg 
+                                       - criticalExcessWeight: 15kg 
 
 
                                        - TotalProspectiveWeight = 28kg + 2kg + 5kg = 35kg 
 
 
-                                       - CriticalCarryWeight = 30kg + 10kg = 40kg 
+                                       - CriticalCarryWeight = 30kg + 15kg = 45kg 
 
 
-                                       - Check: CriticalCarryWeight (40kg) > TotalProspectiveWeight (35kg) = True 
+                                       - Check: CriticalCarryWeight (45kg) >= TotalProspectiveWeight (35kg) = True 
 
 
                                        - Result: Player CAN pick up the 'Heavy Axe'."                                   
@@ -5265,7 +5266,7 @@ Base Effects:
                                     g)  Action Based on Check Result:
                                         If 'CanCarry' is 'false':
                                            - The item(s) are NOT added to the player's inventory.
-                                           - Log the failure outcome in 'items_and_stat_calculations' (e.g., "... Check: CriticalCarryWeight (40kg) <= TotalProspectiveWeight (42kg) = False. Result: Player CANNOT pick up 'Ancient Tome'.").
+                                           - Log the failure outcome in 'items_and_stat_calculations' (e.g., "... Check: CriticalCarryWeight (45kg) < TotalProspectiveWeight (48kg) = False. Result: Player CANNOT pick up 'Ancient Tome'.").
                                            - Inform the player in 'response' that they cannot carry the item due to its weight.
                                            - Skip all further processing for THIS item acquisition attempt (do not proceed to #10.1.0.2 or #10.1.1 for this item).
                                     

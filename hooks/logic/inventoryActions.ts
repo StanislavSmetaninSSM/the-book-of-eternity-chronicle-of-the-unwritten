@@ -16,6 +16,7 @@ import {
     splitItemStackForNpc as splitItemForNpcUtil,
     mergeItemStacksForNpc as mergeItemForNpcUtil
 } from '../../utils/inventoryManager';
+import { canCarryWeight } from '../../utils/carryWeight.js';
 import { recalculateDerivedStats } from '../../utils/gameContext';
 import { cloneGameStateForEdit } from '../../utils/gameStateClone';
 import { notifyWarning } from '../../utils/notifications';
@@ -78,10 +79,9 @@ export const createInventoryActions = (
                 let npcWithStats = recalculateAllWeights(npc);
                 npcWithStats = recalculateDerivedStats(npcWithStats);
 
-                const criticalWeight = (npcWithStats.maxWeight || 0) + (npcWithStats.criticalExcessWeight || 15);
                 const prospectiveWeight = (npcWithStats.totalWeight || 0) + weightOfMovedItem;
 
-                if (prospectiveWeight > criticalWeight) {
+                if (!canCarryWeight(npcWithStats.maxWeight, npcWithStats.criticalExcessWeight, prospectiveWeight)) {
                     notifyWarning(t('npc_overloaded_refusal'));
                     return;
                 }
@@ -398,7 +398,7 @@ export const createInventoryActions = (
                 prevState.temporaryStash.some(i => i.existedId === splitId)) return prevState;
 
             const prospectiveWeight = prevState.playerCharacter.totalWeight + item.weight * validQuantity;
-            if (prospectiveWeight > prevState.playerCharacter.maxWeight + prevState.playerCharacter.criticalExcessWeight) {
+            if (!canCarryWeight(prevState.playerCharacter.maxWeight, prevState.playerCharacter.criticalExcessWeight, prospectiveWeight)) {
                 notifyWarning(t('You still cannot carry this item. Drop something else first.'));
                 return prevState;
             }

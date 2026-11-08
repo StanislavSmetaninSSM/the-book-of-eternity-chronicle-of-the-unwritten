@@ -6,6 +6,7 @@ import { useLocalization } from '../../context/LocalizationContext';
 import ImageRenderer from '../ImageRenderer';
 import EditableField from '../DetailRenderer/Shared/EditableField';
 import StatBar from './Shared/StatBar';
+import { CARRY_CAPACITY_BASE_WEIGHT, criticalCarryWeight } from '../../utils/carryWeight.js';
 import { CharacterSheetProps } from '../CharacterSheet'; // Добавьте этот импорт
 
 import { 
@@ -170,12 +171,14 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
             name: t('Weight'),
             value: `${character.totalWeight?.toFixed(1)} / ${character.maxWeight?.toFixed(0)} kg`,
             breakdown: [
-                { label: t('Base Capacity'), value: `30 ${t('kg_short')}` },
-                { label: t('Strength Bonus'), value: `+${Math.floor(character.characteristics.standardStrength * 1.8)} ${t('kg_short')}` },
-                { label: t('Constitution Bonus'), value: `+${Math.floor(character.characteristics.standardConstitution * 0.4)} ${t('kg_short')}` },
+                { label: t('Base Capacity'), value: `${CARRY_CAPACITY_BASE_WEIGHT} ${t('kg_short')}` },
+                // Strength and constitution are rounded once, together, and the permanent bonuses
+                // of gear are folded in beforehand, so the two characteristics make up the single
+                // term the capacity formula has rather than two parts that need not add up.
+                { label: t('Strength and Constitution Bonus'), value: `+${Math.max(0, (character.maxWeight ?? CARRY_CAPACITY_BASE_WEIGHT) - CARRY_CAPACITY_BASE_WEIGHT)} ${t('kg_short')}` },
                 { label: '---', value: '' }, // Separator
                 { label: t('Max Weight (Overload Threshold)'), value: `${character.maxWeight?.toFixed(0)} ${t('kg_short')}` },
-                { label: t('Critical Weight'), value: `${((character.maxWeight || 0) + ((character as PlayerCharacter).criticalExcessWeight || 15)).toFixed(0)} ${t('kg_short')}` },
+                { label: t('Critical Weight'), value: `${criticalCarryWeight(character.maxWeight, (character as PlayerCharacter).criticalExcessWeight).toFixed(0)} ${t('kg_short')}` },
             ],
             description: t('primary_stat_description_weight')
         });

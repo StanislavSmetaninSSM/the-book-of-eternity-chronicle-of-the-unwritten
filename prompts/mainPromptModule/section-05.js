@@ -27,8 +27,8 @@ export const section = `    <InstructionBlock id="19.C">
 
                     Step 1: Calculate the NPC's Absolute Carrying Capacity ('criticalWeight')
                     -   Retrieve the NPC's 'maxWeight' (calculated from their Standard stats as per Rule #5.7.3).
-                    -   The universal 'criticalExcessWeight' value is 15 kg. This is a constant for all characters, player or NPC.
-                    -   Formula: 'criticalWeight_NPC = maxWeight_NPC + 15'
+                    -   Read the NPC's own 'criticalExcessWeight'; when the record has none, the universal value is 15 kg, a constant for all characters, player or NPC.
+                    -   Formula: 'criticalWeight_NPC = maxWeight_NPC + criticalExcessWeight'. The ceiling is inclusive: 'prospectiveWeight <= criticalWeight_NPC' is carried, a heavier load is refused.
 
                     Step 2: Calculate the Prospective Total Weight
                     -   Retrieve the NPC's current 'totalWeight' from their context.

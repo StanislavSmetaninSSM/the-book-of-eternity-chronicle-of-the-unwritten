@@ -1,6 +1,7 @@
 import { PlayerCharacter, Characteristics, GameSettings, CharacterCreationData } from '../types';
 import { recalculateDerivedStats } from './gameContext';
 import { asWorld } from './worldData';
+import { DEFAULT_CRITICAL_EXCESS_WEIGHT, maxCarryWeight } from './carryWeight.js';
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -161,7 +162,7 @@ export function createNewPlayerCharacter(
     
     const maxHealth = 100 + Math.floor(stdCon * 2.0) + Math.floor(stdStr * 1.0);
     const maxEnergy = 100 + Math.floor(stdCon * 0.75) + Math.floor(stdInt * 0.75) + Math.floor(stdWis * 0.75) + Math.floor(stdFth * 0.75);
-    const maxWeight = 30 + Math.floor(stdStr * 1.8 + stdCon * 0.4);
+    const maxWeight = maxCarryWeight(stdStr, stdCon);
     const critChanceBuffFromLuck = Math.floor(stdLck / 20);
     const critChanceThreshold = 20 - critChanceBuffFromLuck;
 
@@ -189,7 +190,7 @@ export function createNewPlayerCharacter(
         maxEnergy: maxEnergy,
         maxWeight: maxWeight,
         totalWeight: 0,
-        criticalExcessWeight: 15,
+        criticalExcessWeight: DEFAULT_CRITICAL_EXCESS_WEIGHT,
         critChanceBuffFromLuck,
         critChanceThreshold,
         characteristics: {

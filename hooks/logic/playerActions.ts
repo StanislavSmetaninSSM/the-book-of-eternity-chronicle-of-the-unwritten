@@ -1,5 +1,6 @@
 // @ts-ignore -- shared JS helpers
 import { resolveLinkTarget } from '../../utils/locationLinks.js';
+import { canCarryWeight } from '../../utils/carryWeight.js';
 
 
 
@@ -824,7 +825,7 @@ export const createPlayerActionsManager = (
             const validQuantity = Math.min(quantity, sourceItem.count);
 
             const weightToTake = sourceItem.weight * validQuantity;
-            if (pc.totalWeight + weightToTake > pc.maxWeight + pc.criticalExcessWeight) {
+            if (!canCarryWeight(pc.maxWeight, pc.criticalExcessWeight, pc.totalWeight + weightToTake)) {
                 notifyWarning(t('You are carrying too much to take this item.'));
                 return prevState;
             }

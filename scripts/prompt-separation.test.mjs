@@ -21,8 +21,9 @@ test('the entire guide is invariant across different turn contexts', () => {
   assert.match(guide, /\{\{context\.partiallyGeneratedResponse\}\}/);
   assert.match(guide, /\{\{context\.regenerationReason\}\}/);
   // Intentional guide edits require an explicit snapshot update and review.
-  // Updated for the explicit inventory-transfer protocol.
-  assert.equal(sha256(guide), '975eae86ca879a166f0152d68956256232897fc20f42c539e05429b07d56dd55');
+  // Updated for the explicit inventory-transfer protocol, and for the carrying ceiling that
+  // now states one constant (15 kg, as in #19.C.1) and the inclusive boundary the interface gates on.
+  assert.equal(sha256(guide), '6b971500222583da56e2f295b9041962cdfb0d377f73b07ae843a36f61b2914f');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);

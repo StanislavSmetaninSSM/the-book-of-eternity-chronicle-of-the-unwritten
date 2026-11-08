@@ -1,6 +1,7 @@
 import { sanitizeGameState } from '../utils/sanitizeGameState';
 import { isLocalPreferenceKey, sharedSettingsEqual } from '../utils/localGamePreferences';
 import { asRecord } from '../utils/typeGuards';
+import { DEFAULT_CRITICAL_EXCESS_WEIGHT } from '../utils/carryWeight.js';
 import { beginGameplayMutation, gameplayMutationCommitted, guardGameplayActions } from '../utils/gameplayMutationGate';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, CharacterCreationData, Location, NPC, Faction, Wound, WorldStateFlag, UnlockedMemory, Effect, LocationStorage, Item, CompletedActivity, Cinematic, CinemaFrame, ImageCacheEntry, DayInfo, Month } from '../types';
@@ -672,7 +673,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                     updatedNpc.isOverloaded = false;
                 }
                 if (updatedNpc.criticalExcessWeight === undefined) {
-                    updatedNpc.criticalExcessWeight = 15;
+                    updatedNpc.criticalExcessWeight = DEFAULT_CRITICAL_EXCESS_WEIGHT;
                 }
                 return updatedNpc;
             }).filter(isObject) as NPC[];
