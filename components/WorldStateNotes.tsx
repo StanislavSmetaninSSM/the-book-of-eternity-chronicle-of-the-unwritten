@@ -3,7 +3,9 @@ import { ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
 import { useLocalization } from '../context/LocalizationContext';
 import { assessWorld } from '../utils/worldAssessment.js';
 
-interface WorldStateNote {
+export interface WorldStateNote {
+    /** The UI string the note was written for: the reader owns it, the panel only reads it. */
+    key: string;
     kind: string;
     subject: string;
     params: Record<string, string | number>;
@@ -17,6 +19,10 @@ interface WorldStateNotesProps {
     className?: string;
     /** Notes about one subject only - for a card, where the subject is already named. */
     only?: string;
+    /** Notes computed by the caller, when the view already knows what it holds. */
+    notes?: WorldStateNote[];
+    /** A view with its own heading; the world panels share one. */
+    titleKey?: string;
 }
 
 /**
@@ -24,11 +30,13 @@ interface WorldStateNotesProps {
  * that contradicts each other. Deliberately not a warning banner - it stays out of the way while
  * the world is consistent, and it never offers to fix anything.
  */
-const WorldStateNotes: React.FC<WorldStateNotesProps> = ({ factions, npcs, threats, className = '', only }) => {
+const WorldStateNotes: React.FC<WorldStateNotesProps> = ({ factions, npcs, threats, className = '', only, notes: givenNotes, titleKey = 'World State Check' }) => {
     const { t } = useLocalization();
     const notes: WorldStateNote[] = React.useMemo(
-        () => assessWorld({ factions: factions || [], npcs: npcs || [], threats: threats || [] }).notes,
-        [factions, npcs, threats],
+        () => (givenNotes
+            ? givenNotes
+            : assessWorld({ factions: factions || [], npcs: npcs || [], threats: threats || [] }).notes),
+        [givenNotes, factions, npcs, threats],
     );
     const shown = only ? notes.filter(note => note.subject === only) : notes;
     if (shown.length === 0) return null;
@@ -40,12 +48,12 @@ const WorldStateNotes: React.FC<WorldStateNotesProps> = ({ factions, npcs, threa
         >
             <h4 className="text-sm font-semibold text-amber-300/80 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <ClipboardDocumentCheckIcon className="w-4 h-4" />
-                {t('World State Check')}
+                {t(titleKey)}
             </h4>
             <ul className="space-y-1 text-sm text-amber-200/90">
                 {shown.map((note, index) => (
                     <li key={`${note.subject}-${note.kind}-${index}`} className="leading-snug">
-                        {t(`world_notes_${note.kind}`, note.params)}
+                        {t(note.key, note.params)}
                     </li>
                 ))}
             </ul>

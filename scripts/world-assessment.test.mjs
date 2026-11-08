@@ -128,7 +128,7 @@ test('nothing is repaired: the assessment returns notes and leaves the state alo
 
 test('every note the assessment can raise has a line in both locales', () => {
     const source = readFileSync(new URL('../utils/worldAssessment.js', import.meta.url), 'utf8');
-    const kinds = [...source.matchAll(/kind:\s*'([a-z_]+)'/g)].map(match => match[1]);
+    const kinds = [...source.matchAll(/worldNote\(\s*'([a-z_]+)'/g)].map(match => match[1]);
     assert.ok(kinds.length >= 4, `the read-back should cover more than ${kinds.length} kind(s)`);
 
     const file = readFileSync(new URL('../utils/translations/ui/common.ts', import.meta.url), 'utf8');
@@ -137,7 +137,7 @@ test('every note the assessment can raise has a line in both locales', () => {
     const [en, ru] = [file.slice(0, split), file.slice(split)];
     for (const kind of kinds) {
         for (const [locale, block] of [['en', en], ['ru', ru]]) {
-            assert.ok(block.includes(`"world_notes_${kind}"`), `world_notes_${kind} is missing from the ${locale} block`);
+            assert.ok(block.includes(`"world_notes_${kind}"`), `'world_notes_' + kind is missing from the ${locale} block`);
         }
     }
 });

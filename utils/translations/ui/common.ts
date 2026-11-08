@@ -117,6 +117,17 @@ export const common = {
     "world_notes_completed_but_active": "{subject}: {spent} of {cost} minutes spent - the completion check is met, yet the task is still listed as unfinished.",
     "world_notes_standing_out_of_range": "{subject}: standing {value} is outside the scale of {floor} to {ceiling}.",
     "world_notes_wound_awaiting_transition": "{subject}: treatment progress {progress} of {needed} - at that number the wound is supposed to change its state.",
+    "Effect State Check": "Effect State Check",
+    "effect_notes_expired_but_listed": "{subject}: effect {label} is listed as active with duration {duration}; when the duration reaches 0 the effect expires.",
+    "effect_notes_duration_not_whole": "{subject}: effect {label} states duration {duration}; remaining turns have to be a whole number.",
+    "effect_notes_duration_missing": "{subject}: effect {label} is one of the time-limited types, so it has to state a duration.",
+    "effect_notes_wound_reference_duration": "{subject}: a 'WoundReference' effect must always carry the duration {expected}; this one states {duration}.",
+    "effect_notes_wound_reference_duration_missing": "{subject}: a 'WoundReference' effect has to state the duration that holds it open ({expected}).",
+    "effect_notes_wound_reference_without_id": "{subject}: a 'WoundReference' effect must provide 'sourceWoundId', or there is nothing to tie it to.",
+    "effect_notes_wound_reference_wound_missing": "{subject}: a 'WoundReference' effect points at wound '{wound}', which is not in the record.",
+    "effect_notes_wound_reference_wound_healed": "{subject}: the wound '{wound}' behind a 'WoundReference' effect is healed, so the effect tied to it should have ended.",
+    "effect_notes_duplicate_effect_id": "{subject}: the effect id '{effectId}' appears {times} times; the id exists so that one effect is not listed twice.",
+    "effect_notes_more": "+{rest} more, listed in the characters' own sheets.",
     ...ui_overrides.en
   },
   ru: {
@@ -234,6 +245,17 @@ export const common = {
     "world_notes_completed_but_active": "{subject}: потрачено {spent} из {cost} мин — условие завершения выполнено, но задача всё ещё числится незавершённой.",
     "world_notes_standing_out_of_range": "{subject}: {value} вне шкалы от {floor} до {ceiling}.",
     "world_notes_wound_awaiting_transition": "{subject}: прогресс лечения {progress} из {needed} — при таком значении состояние раны должно измениться.",
+    "Effect State Check": "Проверка состояния эффектов",
+    "effect_notes_expired_but_listed": "{subject}: эффект {label} числится активным при длительности {duration}; на нуле эффект обязан завершиться.",
+    "effect_notes_duration_not_whole": "{subject}: эффект {label} указывает длительность {duration}; оставшиеся ходы должны быть целым числом.",
+    "effect_notes_duration_missing": "{subject}: эффект {label} относится к ограниченным по времени, поэтому он обязан указывать длительность.",
+    "effect_notes_wound_reference_duration": "{subject}: эффект WoundReference обязан нести длительность {expected}; здесь указано {duration}.",
+    "effect_notes_wound_reference_duration_missing": "{subject}: эффект WoundReference должен указать длительность, которая его удерживает ({expected}).",
+    "effect_notes_wound_reference_without_id": "{subject}: эффект WoundReference обязан указать sourceWoundId — иначе его не к чему привязать.",
+    "effect_notes_wound_reference_wound_missing": "{subject}: эффект WoundReference ссылается на рану «{wound}», которой нет в записи.",
+    "effect_notes_wound_reference_wound_healed": "{subject}: рана «{wound}», на которую ссылается эффект WoundReference, исцелена — привязанный к ней эффект должен был завершиться.",
+    "effect_notes_duplicate_effect_id": "{subject}: id эффекта «{effectId}» встречается {times} раза; id и нужен, чтобы один эффект не попадал в список дважды.",
+    "effect_notes_more": "+{rest} ещё — в самих листах персонажей.",
     ...ui_overrides.ru
   }
 }

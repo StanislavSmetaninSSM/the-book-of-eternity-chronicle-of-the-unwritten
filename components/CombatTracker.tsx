@@ -536,6 +536,19 @@ export default function CombatTracker({ enemies, allies, combatLog, gameLog, all
                                 {failure.line} · {failure.claimed} ≠ {failure.computed}
                             </p>
                         ))}
+                        {assessment.effectNotes.length > 0 && (
+                            <div data-testid="combat-effect-notes" className="mt-2 space-y-1">
+                                <p className="text-amber-300/70 uppercase tracking-wider text-[10px]">{t('Effect State Check')}</p>
+                                {assessment.effectNotes.slice(0, 3).map((note, index) => (
+                                    <p key={`${note.subject}-${note.kind}-${index}`} className="text-amber-300/90 text-xs leading-snug">
+                                        {t(note.key, note.params)}
+                                    </p>
+                                ))}
+                                {assessment.effectNotes.length > 3 && (
+                                    <p className="text-amber-200/60 text-xs">{t('effect_notes_more', { rest: assessment.effectNotes.length - 3 })}</p>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

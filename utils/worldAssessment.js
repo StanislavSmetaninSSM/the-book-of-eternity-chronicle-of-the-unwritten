@@ -1,19 +1,27 @@
 /**
  * What the living world states about itself, read back.
  *
- * The game master advances projects, off-screen activities, reputations and wounds; the interface
- * stores the numbers it is given. Some of those numbers are bounded by the rules themselves: effort
- * written into a tracker cannot fall below zero, a task whose spent time reached its cost is a
+ * The game master advances projects, off-screen activities, reputations, wounds and effects; the
+ * interface stores the numbers it is given. Some of those numbers are bounded by the rules
+ * themselves: effort written into a tracker cannot fall below zero, a task whose spent time reached its cost is a
  * finished task, the reputation scale runs from -400 to +400, and a wound whose treatment reached
- * `progressNeeded` has changed state rather than stopped at the threshold. A record that
- * contradicts one of those is not a disagreement about the fiction - it is a state no rule
- * produces, and the panel says so in one line.
+ * `progressNeeded` has changed state rather than stopped at the threshold. Effects are read by
+ * `./effectAssessment.js`, which the NPC lists below feed. A record that contradicts one of those
+ * is not a disagreement about the fiction - it is a state no rule produces, and the panel says so
+ * in one line.
  *
  * Nothing is repaired here. The client cannot know which of the two numbers the turn meant to
  * write: the cost, or the time spent against it. So it names the pair and stays quiet about
  * everything it cannot read off the state - judgement calls (an abandoned project, a bonus the GM
  * granted by hand) are never reported, and a number that is absent is not treated as a zero.
  */
+
+import { assessEffects, groupNotesBySubject, statedNumber } from './effectAssessment.js';
+
+/** @typedef {import('./effectAssessment.js').StateNote} StateNote */
+
+/** The lines of the world read-back live in their own namespace of the UI strings. */
+const worldNote = (kind, subject, params) => ({ key: `world_notes_${kind}`, kind, subject, params });
 
 /**
  * The two ends of the scale both world powers and people are measured on: "the reputation scale is
@@ -22,18 +30,6 @@
  */
 export const REPUTATION_FLOOR = -400;
 export const REPUTATION_CEILING = 400;
-
-/** A number the state actually states; an absent or unparseable one is not a zero. */
-const statedNumber = (value) => {
-    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (!/^-?\d+(?:\.\d+)?$/.test(trimmed)) return null;
-        const parsed = Number(trimmed);
-        return Number.isFinite(parsed) ? parsed : null;
-    }
-    return null;
-};
 
 /**
  * A tracker the rules let the world carry: a faction's active project or an NPC's current activity.
@@ -48,10 +44,10 @@ function assessTracker(tracker, subject, notes) {
     const spent = statedNumber(tracker.timeSpentMinutes);
     const cost = statedNumber(tracker.totalTimeCostMinutes);
     if (spent !== null && spent < 0) {
-        notes.push({ kind: 'negative_effort', subject, params: { subject, minutes: spent } });
+        notes.push(worldNote('negative_effort', subject, { subject, minutes: spent }));
     }
     if (active && spent !== null && cost !== null && cost > 0 && spent >= cost) {
-        notes.push({ kind: 'completed_but_active', subject, params: { subject, spent, cost } });
+        notes.push(worldNote('completed_but_active', subject, { subject, spent, cost }));
     }
 }
 
@@ -60,11 +56,9 @@ function assessStanding(value, subject, notes) {
     const reputation = statedNumber(value);
     if (reputation === null) return;
     if (reputation < REPUTATION_FLOOR || reputation > REPUTATION_CEILING) {
-        notes.push({
-            kind: 'standing_out_of_range',
-            subject,
-            params: { subject, value: reputation, floor: REPUTATION_FLOOR, ceiling: REPUTATION_CEILING },
-        });
+        notes.push(worldNote('standing_out_of_range', subject, {
+            subject, value: reputation, floor: REPUTATION_FLOOR, ceiling: REPUTATION_CEILING,
+        }));
     }
 }
 
@@ -80,7 +74,7 @@ function assessWounds(character, subject, notes) {
         const needed = statedNumber(state.progressNeeded);
         if (progress === null || needed === null || needed <= 0) continue;
         if (progress >= needed) {
-            notes.push({ kind: 'wound_awaiting_transition', subject, params: { subject, progress, needed } });
+            notes.push(worldNote('wound_awaiting_transition', subject, { subject, progress, needed }));
             return;
         }
     }
@@ -96,7 +90,7 @@ function assessWounds(character, subject, notes) {
  * written by an older build. Effort and wound progress are written down as the game master states
  * them, and those two lines are the ones a player will actually meet.
  * @param {{ factions?: object[], npcs?: object[], threats?: object[] }} input
- * @returns {{ notes: Array<{ kind: string, subject: string, params: Record<string, string|number> }>, bySubject: Record<string, object[]> }}
+ * @returns {{ notes: StateNote[], bySubject: Record<string, StateNote[]> }}
  */
 export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
     const notes = [];
@@ -114,15 +108,16 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
         assessTracker(npc.currentActivity, subject, notes);
         assessStanding(npc.relationshipLevel, subject, notes);
         assessWounds(npc, subject, notes);
+        // A person's own effects are read by the same reader the character sheet uses, so a buff
+        // listed in the world and in the sheet cannot disagree about what it states.
+        notes.push(...assessEffects({
+            characters: [{ name: subject, effects: npc.activeEffects, wounds: npc.wounds }],
+        }).notes);
     }
     for (const threat of Array.isArray(threats) ? threats : []) {
         if (!threat || typeof threat !== 'object') continue;
         assessTracker(threat.currentActivity, threat.name || threat.threatId || '?', notes);
     }
 
-    const bySubject = {};
-    for (const note of notes) {
-        (bySubject[note.subject] = bySubject[note.subject] || []).push(note);
-    }
-    return { notes, bySubject };
+    return { notes, bySubject: groupNotesBySubject(notes) };
 }

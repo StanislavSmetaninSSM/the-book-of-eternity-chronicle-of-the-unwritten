@@ -5,6 +5,8 @@ import { useLocalization } from '../../context/LocalizationContext';
 import SectionHeader from './Shared/SectionHeader';
 import ConfirmationModal from '../ConfirmationModal';
 import StatBar from './Shared/StatBar';
+import WorldStateNotes from '../WorldStateNotes';
+import { assessEffects } from '../../utils/effectAssessment.js';
 import {
     SunIcon,
     CloudIcon,
@@ -54,6 +56,9 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
     // Unknown legacy states must remain visible rather than implying the character is unwounded.
     const activeWounds = (wounds ?? []).filter(w => w && w.healingState?.currentState !== 'Healed');
     const healedWounds = (wounds ?? []).filter(w => w.healingState && w.healingState.currentState === 'Healed');
+    // The same reader the NPC list uses, run over this sheet's own arrays: an effect the state keeps
+    // alive past its duration, or a wound reference nothing holds open, is named here where it hurts.
+    const effectNotes = assessEffects({ characters: [{ name: character.name, effects, wounds }] }).notes;
     
     const handleClearAllHealedWounds = () => {
         clearAllHealedWounds(isPlayer ? 'player' : 'npc', isPlayer ? null : (character as NPC).NPCId);
@@ -97,6 +102,7 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
             <div className="space-y-4">
                 <div className="mt-6">
                     <SectionHeader title={t('Active Effects')} icon={SunIcon} />
+                    <WorldStateNotes notes={effectNotes} titleKey="Effect State Check" className="mb-3" />
                     <div className="space-y-3 text-gray-300">
                         {(effects ?? []).length > 0 ? (effects ?? []).map((effect, index) => {
                             const isWoundRef = effect.effectType === 'WoundReference' && effect.sourceWoundId;

@@ -201,3 +201,44 @@ test('both combat views are given the log to re-check', async () => {
     assert.match(source, /gameLog=\{gameLog\}/, `${name} must pass the log into the combat view`);
   }
 });
+
+test('the fighters’ effect lists are read back by the same reader the sheets use', () => {
+  const assessment = assessCombat({
+    enemies: [
+      {
+        name: 'Frost Troll',
+        wounds: [{ woundId: 'w1', woundName: 'Old gash', healingState: { currentState: 'Stabilized' } }],
+        activeDebuffs: [{ effectType: 'WoundReference', sourceWoundId: 'w1', duration: 3 }],
+      },
+      {
+        name: 'Shadow',
+        wounds: [],
+        activeBuffs: [{ effectType: 'Buff', targetType: 'strength', duration: 2 }],
+      },
+    ],
+  });
+
+  assert.deepEqual(assessment.effectNotes.map(note => note.kind), ['wound_reference_duration'], 'a well-formed list says nothing');
+  assert.equal(assessment.effectNotes[0].subject, 'Frost Troll');
+});
+
+test('the player keeps their wounds under the field the player uses', () => {
+  const assessment = assessCombat({
+    player: {
+      name: 'Aria',
+      playerWounds: [
+        { healingState: { currentState: 'Untreated' } },
+        { healingState: { currentState: 'Healed' } },
+      ],
+    },
+  });
+
+  assert.equal(assessment.player.wounds, 1, 'the closed wound is history, and the open one has to be counted');
+});
+
+test('the combat view shows the effect notes inside its own summary', async () => {
+  const tracker = await read('../components/CombatTracker.tsx');
+  assert.match(tracker, /data-testid="combat-effect-notes"/, 'the notes have a hook of their own');
+  assert.match(tracker, /assessment\.effectNotes\.slice\(0, 3\)/, 'and stay short, the rest is in the sheets');
+  assert.match(tracker, /t\('Effect State Check'\)/, 'under the same heading the sheet uses');
+});
