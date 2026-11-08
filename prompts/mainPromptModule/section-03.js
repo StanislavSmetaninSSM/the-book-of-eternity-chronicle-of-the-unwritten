@@ -2279,6 +2279,7 @@ GM rolls 1d20 (GMDice). Result: [GMDice]."
                             1.  For Standard Enemies and Generic Allies (in 'enemiesData'/'alliesData'):
                                 - If 'currentHealth', 'activeBuffs', or 'activeDebuffs' changed: Include their complete updated combat object in the respective array.
                                 - If 'currentHealth' <= 0%: Narrate defeat. Updated object reflects 'currentHealth: "0%"'. System handles removal.
+- If any of this combatant's actions were used during the turn: list their exact 'actionName' strings in 'cooldownsUsed' on that combatant's object (e.g. ["Spear Jab", "Shield Wall"]). Omit the key when nothing was used. Write the names as the combatant's 'actions' array holds them - a name that is not there is not a cooldown, and no countdown may be invented for it.
 
                             2.  For the Player Character:
                                 - Health Changes: Narrate. System updates 'Context.playerCharacter.currentHealth'. GM updates 'playerStatus.healthPercentage'.
@@ -2287,7 +2288,8 @@ GM rolls 1d20 (GMDice). Result: [GMDice]."
 
                             3.  For Named NPCs (from 'encounteredNPCs' in Context):
                                 - If NPC is an active combatant (in 'enemiesData'/'alliesData'): Update their combat object as in point 1. Also report their new or updated wounds as flat 'NPCWoundChanges' objects so the named NPC retains them after combat. If the NPC health scale differs from the combat object's maxHealth, report the actual NPC health explicitly through 'NPCsData'.
-                                - If NPC is affected but *not* an active combatant in those arrays:
+                                - Cooldowns of a named NPC that IS an active combatant: report the used 'skillName' strings in 'cooldownsUsed' of that combatant's object, exactly as the NPC's own 'activeSkills' spell them. The length of the cooldown is read from that skill's 'cooldownTurns' (#6.1.6.7) by the system; the GM does not recompute it and does not report it back.
+- If NPC is affected but *not* an active combatant in those arrays:
                                     - Health Changes: Narrate. System updates 'Context.encounteredNPCs[NPCId].currentHealth'.
                                     - New Temporary Buffs/Debuffs: Report via 'NPCEffectChanges' array ({ "NPCId": "guid", "effectsApplied": [array_of_effect_objects_as_per_6.2.1] }).
                                     - New/Updated Wounds: Report via 'NPCWoundChanges' as one flat object per wound, containing 'NPCId', 'NPCName', and the wound's fields from #5.20.3 (including 'woundId'). Do not nest a 'wounds' array.

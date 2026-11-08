@@ -140,6 +140,9 @@ export const common = {
     "world_notes_event_turn_from_the_future": "This event claims turn {turn}, while the world is on turn {current}. #30.4.2 takes the number from the Context, and the timeline below groups events by it - so a future turn has nothing to report yet.",
     "world_notes_event_date_missing": "The date of a world event is MANDATORY in #30.4.2, and this entry carries no date object at all.",
     "world_notes_event_clock_missing": "The time of day reads \"{value}\" instead of the HH:MM the schema names, and the timeline orders one turn by comparing exactly that string.",
+    // #6.1.6.7 makes the wait of an NPC action strict and #12.9.3 has the client count it; the panel
+    // only names the two numbers that cannot both be true.
+    "cooldown_notes_early_use": "{subject}: \"{action}\" is reported used on turn {used}, while its earlier use keeps it waiting until turn {ready}.",
     ...ui_overrides.en
   },
   ru: {
@@ -276,6 +279,7 @@ export const common = {
     "world_notes_event_turn_from_the_future": "Событие заявляет ход {turn}, хотя мир идёт по ходу {current}. #30.4.2 берёт номер из Контекста, а таймлайн группирует события по нему — у будущего хода ещё нечего сообщать.",
     "world_notes_event_date_missing": "Дата мирового события обязательна по #30.4.2, а у этой записи объекта даты нет вовсе.",
     "world_notes_event_clock_missing": "Время дня записано как «{value}» вместо указанных схемой HH:ММ, а таймлайн и сортирует ход именно по этой строке.",
+    "cooldown_notes_early_use": "{subject}: «{action}» заявлен применённым на ходу {used}, хотя прежнее его применение держит в ожидании до хода {ready}.",
     ...ui_overrides.ru
   }
 }

@@ -30,7 +30,9 @@ test('the entire guide is invariant across different turn contexts', () => {
   // power example lost three terms that did not add up once exponentiation became readable.
   // The auditor's rule now states the two shapes the client re-computes: a chain of substitutions
   // that reads step by step, and a threshold written with its verdict - outside combat as well.
-  assert.equal(sha256(guide), '538dbed96e01523825cc89b5c753d1df6f5770b790bb4031c874bb08cd5d1f99');
+  // #6.1.6.7 now names the owner of the cooldown count - the system, not the GM - and #12.9.3 gives
+  // the channel for it: the names used this turn, in 'cooldownsUsed' on that combatant's object.
+  assert.equal(sha256(guide), '7d3a8a40bfbc86f91a9dc53b2ac417a37ff20740de883d57fbf244be8310c7d0');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);

@@ -11,6 +11,7 @@ import { isEncumbered } from '../utils/carryWeight.js';
 import { assessCombat, auditCombatLog } from '../utils/combatAssessment.js';
 import { assessEffects } from '../utils/effectAssessment.js';
 import { assessWoundProgress } from '../utils/worldAssessment.js';
+import { assessCooldowns } from '../utils/combatCooldowns.js';
 import WorldStateNotes from './WorldStateNotes';
 
 type Combatant = EnemyCombatObject | AllyCombatObject;
@@ -187,6 +188,8 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
             ],
         }).notes,
         ...assessWoundProgress(woundsToDisplay, combatant.name || '?').notes,
+        // The cooldown the client counts belongs to this fighter, so this card is where it is read.
+        ...assessCooldowns(combatant.cooldowns, combatant.name || '?').notes,
     ];
 
     const TABS = useMemo(() => {

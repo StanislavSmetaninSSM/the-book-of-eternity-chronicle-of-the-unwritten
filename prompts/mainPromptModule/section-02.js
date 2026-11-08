@@ -1966,6 +1966,11 @@ export const section = `    <InstructionBlock id="5.A">
                                         The 'cooldownTurns' field on an NPC's skills MUST be respected. 
                                         It is the primary mechanical tool for pacing an NPC's use of powerful abilities. 
                                         An ability with a 'cooldownTurns' of 3 cannot be used again for 3 turns after its use, regardless of the NPC's "energy".
+                                        
+                                        -   Who Counts the Turns:
+                                        The countdown is kept by the system, not by the GM. The GM reports only WHAT it used: for each combatant whose action or skill was used this turn, its exact name is listed in that combatant's 'cooldownsUsed' array (see #12.9.3). The GM never maintains a counter and never writes a number of remaining turns.
+                                        The system stamps the turn of that use, takes the length from the 'cooldownTurns' of the NPC skill whose 'skillName' equals the reported name, and reads the pair back in the combat panel - so a use that lands inside the cooldown is visible as a contradiction between two recorded facts, not silently accepted.
+                                        The system does not block a use and does not repair a number: the author of the fight remains the GM. An action that no skill of that name matches, or a skill with no 'cooldownTurns', is left untracked - nothing is inferred.
 
                                     3.  Summary: 
                                     The 'energyCost' value for NPC skills serves as a guideline for the GM's narrative and tactical decisions, not for mechanical calculation. 'cooldownTurns' is a strict mechanical rule.

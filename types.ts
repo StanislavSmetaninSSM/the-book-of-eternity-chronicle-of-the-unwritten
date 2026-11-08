@@ -1464,6 +1464,22 @@ export interface CombatAction {
     ammoType?: string;
 }
 
+/**
+ * One action of a combatant whose wait the client counts (#6.1.6.7, #12.9.3). The turn of the use
+ * and the length of the wait are both read out of the state; `earlyUse*` is recorded when a use
+ * arrived before the wait its own earlier use opened, and it is what the combat panel reads back.
+ */
+export interface ActionCooldown {
+    actionName: string;
+    lastUsedTurnNumber: number;
+    cooldownTurns: number;
+    /** The first turn a reuse contradicts nothing. */
+    readyFromTurn: number;
+    /** The use that landed inside the wait, and the turn that wait asked for. */
+    earlyUseTurnNumber?: number;
+    earlyUseAgainstReadyFrom?: number;
+}
+
 export interface Combatant {
     NPCId: string | null;
     name: string;
@@ -1481,6 +1497,10 @@ export interface Combatant {
     activeBuffs?: Effect[];
     activeDebuffs?: Effect[];
     wounds?: Wound[];
+    /** The names the response reported as used this turn (#12.9.3); consumed by the client, never stored. */
+    cooldownsUsed?: string[];
+    /** The countdown the client keeps, one entry per action name the NPC's own skills state a wait for. */
+    cooldowns?: ActionCooldown[];
 }
 
 export type EnemyCombatObject = Combatant;

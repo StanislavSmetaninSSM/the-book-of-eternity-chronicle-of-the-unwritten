@@ -7,6 +7,7 @@ import { CurrentActivity, CompleteFactionProject, CompleteNPCActivity, CustomSta
 import { recalculateAllWeights } from './inventoryManager';
 import { recalculateDerivedStats } from './gameContext';
 import { experienceForLevelTransition } from './derivedStats.js';
+import { applyCooldownUses } from './combatCooldowns.js';
 import { asRecord } from './typeGuards';
 import { generateFactionColor } from './colorUtils';
 
@@ -1452,6 +1453,25 @@ export const processAndApplyResponse = (
             newState.alliesData = mergeById(newState.alliesData || [], changes.alliesData, 'NPCId', 'name');
         }
     }
+
+    // #6.1.6.7 makes 'cooldownTurns' strict, and #12.9.3 lets the GM say only which actions it used:
+    // the count itself is kept here, from the turn being applied and from the length the NPC's own
+    // skill states. A use that arrived inside a wait is recorded as the pair of numbers it
+    // contradicts - nothing is blocked, nothing is repaired, and a name no skill carries stays untracked.
+    (['enemiesData', 'alliesData'] as const).forEach(listKey => {
+        const mergedCombatants = newState[listKey];
+        if (!Array.isArray(mergedCombatants)) return;
+        const previousCombatants = baseState[listKey] || [];
+        for (const combatant of mergedCombatants) {
+            applyCooldownUses({
+                combatant,
+                previousCombatant: previousCombatants.find(entry =>
+                    (combatant.NPCId && entry?.NPCId === combatant.NPCId) || (combatant.name && entry?.name === combatant.name)),
+                npcs: newState.encounteredNPCs || [],
+                currentTurnNumber,
+            });
+        }
+    });
 
     // Generic combatants store wounds on the combat object rather than in
     // NPCWoundChanges. Normalize explicitly healed updates just as for PCs and
