@@ -1370,6 +1370,7 @@ export default function GameHost({ request, onSettled }: GameHostProps): React.R
                             enemies={gameState.enemiesData}
                             allies={gameState.alliesData}
                             combatLog={combatLog}
+                            gameLog={gameLog}
                             allNpcs={gameState.encounteredNPCs}
                             playerCharacter={gameState.playerCharacter}
                             setAutoCombatSkill={setAutoCombatSkill}

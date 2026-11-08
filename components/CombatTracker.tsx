@@ -8,6 +8,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import { generateEffectDescription } from './DetailRenderer/utils';
 import { isEncumbered } from '../utils/carryWeight.js';
+import { assessCombat } from '../utils/combatAssessment.js';
 
 type Combatant = EnemyCombatObject | AllyCombatObject;
 
@@ -380,6 +381,7 @@ interface CombatTrackerProps {
     enemies: EnemyCombatObject[];
     allies: AllyCombatObject[];
     combatLog: string[];
+    gameLog: string[];
     allNpcs: NPC[];
     playerCharacter: PlayerCharacter;
     setAutoCombatSkill: (skillName: string | null) => void;
@@ -397,11 +399,31 @@ interface CombatTrackerProps {
     editNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
 }
 
-export default function CombatTracker({ enemies, allies, combatLog, allNpcs, playerCharacter, setAutoCombatSkill, onOpenDetailModal, onViewCharacterSheet, onSendMessage, isLoading, imageCache, onImageGenerated, onOpenImageModal, gameSettings, onExpand, isFullScreen, onCollapse, editNpcData }: CombatTrackerProps): React.ReactNode {
+export default function CombatTracker({ enemies, allies, combatLog, gameLog, allNpcs, playerCharacter, setAutoCombatSkill, onOpenDetailModal, onViewCharacterSheet, onSendMessage, isLoading, imageCache, onImageGenerated, onOpenImageModal, gameSettings, onExpand, isFullScreen, onCollapse, editNpcData }: CombatTrackerProps): React.ReactNode {
     const { t } = useLocalization();
     const hasCombatants = (enemies && enemies.length > 0) || (allies && allies.length > 0);
     const hasLog = combatLog && combatLog.length > 0;
     const hasContent = hasCombatants || hasLog;
+
+    // Read back from the state: who of the listed participants can still stand, how much of them
+    // is left, and whether the numbers of the turn fit together. Nothing here decides anything -
+    // a line is shown only when a stated number contradicts another stated number.
+    const assessment = useMemo(() => assessCombat({
+        enemies: enemies || [], allies: allies || [], npcs: allNpcs || [], player: playerCharacter || null,
+        // The rules make the game master log its arithmetic into the game log; only the tail of it
+        // belongs to the fight the panel is describing.
+        calculationLines: (gameLog || []).slice(-40),
+    }), [enemies, allies, allNpcs, playerCharacter, gameLog]);
+    const healthOf = (percent: number | null) => (percent === null ? t('combat_summary_unknown_health') : `${percent}%`);
+    const sideOf = (label: string, side: { total: number; standing: number; wounds: number; effects: number; healthPercent: number | null }) => (
+        <p>
+            <span className="text-gray-400">{label}</span>{' '}
+            {t('combat_summary_side', {
+                alive: side.standing, total: side.total, health: healthOf(side.healthPercent),
+                wounds: side.wounds, effects: side.effects,
+            })}
+        </p>
+    );
 
     const combatSkills = useMemo(() => {
         if (!playerCharacter) return [];
@@ -466,6 +488,54 @@ export default function CombatTracker({ enemies, allies, combatLog, allNpcs, pla
                                 </option>
                             ))}
                         </select>
+                    </div>
+                </div>
+            )}
+            {(hasCombatants || assessment.issues.length > 0) && (
+                <div className="bg-gray-900/40 p-3 rounded-lg border border-gray-700/50">
+                    <h4 className="text-sm font-semibold text-cyan-300/80 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <ShieldCheckIcon className="w-4 h-4" />
+                        {t('Combat Summary')}
+                        {!isFullScreen && onExpand && (
+                            <button onClick={onExpand} className="ml-auto p-1 text-gray-400 rounded-full hover:bg-gray-700 hover:text-white" title={t('Expand Combat View')}>
+                                <ArrowsPointingOutIcon className="w-4 h-4" />
+                            </button>
+                        )}
+                    </h4>
+                    <div className="space-y-1 text-sm text-gray-300">
+                        {assessment.enemies.total > 0 && sideOf(`${t('Enemies')}:`, assessment.enemies)}
+                        {assessment.allies.total > 0 && sideOf(`${t('Allies')}:`, assessment.allies)}
+                        {assessment.player && (
+                            <p>
+                                {t('combat_summary_you', {
+                                    health: healthOf(assessment.player.healthPercent),
+                                    wounds: assessment.player.wounds,
+                                    effects: assessment.player.effects,
+                                })}
+                                {assessment.player.overloaded && <span className="text-red-400"> · {t('combat_summary_overloaded')}</span>}
+                            </p>
+                        )}
+                        {assessment.issues.map((issue, index) => (
+                            <p key={`${issue.subject}-${issue.kind}-${index}`} className="text-amber-300">
+                                {t(`combat_summary_issue_${issue.kind}`, {
+                                    subject: issue.subject,
+                                    health: issue.health, max: issue.max,
+                                    count: issue.count, units: issue.units,
+                                })}
+                            </p>
+                        ))}
+                        <p className={assessment.calculations.failures.length > 0 ? 'text-amber-300' : 'text-gray-400'}>
+                            {assessment.calculations.checked > 0
+                                ? (assessment.calculations.failures.length > 0
+                                    ? t('combat_summary_checks_failed', { failed: assessment.calculations.failures.length, checked: assessment.calculations.checked })
+                                    : t('combat_summary_checks', { checked: assessment.calculations.checked }))
+                                : t('combat_summary_checks_none')}
+                        </p>
+                        {assessment.calculations.failures.slice(0, 3).map((failure, index) => (
+                            <p key={`${failure.line}-${index}`} className="text-amber-300/90 font-mono text-xs leading-snug">
+                                {failure.line} · {failure.claimed} ≠ {failure.computed}
+                            </p>
+                        ))}
                     </div>
                 </div>
             )}
