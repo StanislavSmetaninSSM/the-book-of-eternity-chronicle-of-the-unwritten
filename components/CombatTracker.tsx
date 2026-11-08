@@ -8,7 +8,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import { generateEffectDescription } from './DetailRenderer/utils';
 import { isEncumbered } from '../utils/carryWeight.js';
-import { assessCombat } from '../utils/combatAssessment.js';
+import { assessCombat, auditCombatLog } from '../utils/combatAssessment.js';
 import { assessEffects } from '../utils/effectAssessment.js';
 import { assessWoundProgress } from '../utils/worldAssessment.js';
 import WorldStateNotes from './WorldStateNotes';
@@ -421,6 +421,10 @@ export default function CombatTracker({ enemies, allies, combatLog, gameLog, all
     const { t } = useLocalization();
     const hasCombatants = (enemies && enemies.length > 0) || (allies && allies.length > 0);
     const hasLog = combatLog && combatLog.length > 0;
+
+    // #28.1.3 forbids calculations and dice rolls in these entries, so each one is read back for
+    // exactly those two shapes - the wording of an entry is nobody's business here.
+    const logNotes = useMemo(() => auditCombatLog(combatLog || []), [combatLog]);
     const hasContent = hasCombatants || hasLog;
 
     // Read back from the state: who of the listed participants can still stand, how much of them
@@ -621,6 +625,10 @@ export default function CombatTracker({ enemies, allies, combatLog, gameLog, all
                         {(combatLog ?? []).map((entry, index) => (
                             <div key={index} className="text-sm text-gray-300 font-mono leading-snug">
                                 <MarkdownRenderer content={entry} className="prose-sm" />
+                                {/* The verdict sits under the entry it is about, never in a bar above the list. */}
+                                {logNotes.byIndex[index]?.length ? (
+                                    <WorldStateNotes notes={logNotes.byIndex[index]} compact className="mt-1" />
+                                ) : null}
                             </div>
                         ))}
                     </div>

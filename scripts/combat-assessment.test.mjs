@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { assessCombat, auditCalculationLines, auditComparisonLines, evaluateArithmetic } from '../utils/combatAssessment.js';
+import { assessCombat, auditCalculationLines, auditComparisonLines, auditCombatLog, evaluateArithmetic } from '../utils/combatAssessment.js';
 import { getGameMasterGuideRules } from '../prompts/mainPromptModule.js';
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
@@ -194,7 +194,8 @@ test('both combat views are given the log to re-check', async () => {
     read('../components/SidePanel.tsx'),
     read('../components/GameHost.tsx'),
   ]);
-  assert.match(tracker, /import \{ assessCombat \} from '\.\.\/utils\/combatAssessment\.js';/);
+  // The import list may grow with other readers of the panel, so only this reader is pinned here.
+  assert.match(tracker, /import \{[^}]*assessCombat[^}]*\} from '\.\.\/utils\/combatAssessment\.js';/);
   assert.match(tracker, /calculationLines: \(gameLog \|\| \[\]\)\.slice\(-40\)/);
   assert.match(tracker, /t\('Combat Summary'\)/);
   for (const [name, source] of [['the side panel', panel], ['the full-screen view', host]]) {
@@ -245,4 +246,59 @@ test('the sheet keeps the heading its boxed reading needs', async () => {
 
   const sheet = await read('../components/CharacterSheet/ConditionsView.tsx');
   assert.match(sheet, /t\('Active Effects'\)/, 'and the player’s own effects stay where they are listed');
+});
+test('the log is read back for what #28.1.3 keeps out of it', () => {
+  const { notes, byIndex } = auditCombatLog([
+    'Anya strikes the Wild Boar with Frost Shard for 47 cold damage!',
+    'Valerius hits the guard: 12 + 44 = 56 damage!',
+    'Kaelen rolls 1d20+5 against the ogre.',
+  ]);
+
+  assert.deepEqual(Object.keys(byIndex), ['1', '2'], 'only the two entries that wrote what they were told not to write');
+  assert.equal(byIndex[1][0].kind, 'calculation');
+  assert.equal(byIndex[2][0].kind, 'dice');
+  assert.equal(notes.length, 2);
+  // The note arrives with its own key, because the panel must not know which namespace its strings live in.
+  assert.equal(notes[0].key, 'combat_log_notes_calculation');
+  // An entry that both rolled and summed is accused once, of the calculation it computed.
+  assert.equal(auditCombatLog(['Damage: 1d6 + 2 = 5']).notes[0].kind, 'calculation');
+});
+
+test('an outcome, a range and a year are not calculations', () => {
+  // The entries below are the ones the guide itself shows, plus the shapes a reader must not mistake for math.
+  const clean = [
+    'Anya critically strikes the Wild Boar with Frost Shard for 47 cold damage!',
+    "Anya's Frost Shard Chills the Wild Boar.",
+    'Town Guard strikes the Wild Boar with Spear Jab for 8 piercing damage.',
+    "The Wild Boar's attack misses Anya.",
+    'The Bandit takes 5-10 poison damage from Serpent Kiss.',
+    'Ronan regenerates 10 health from the Regeneration Potion.',
+    '1024 г., [14:30]: Бой у переправы, отряд потерял 2 человек.',
+    'Змеиный укус: урон 5-10 ед., яд 3 раунда.',
+    'The Ogre enters a Battle Rage!',
+  ];
+
+  assert.equal(auditCombatLog(clean).notes.length, 0, 'none of these states a calculation');
+  assert.equal(auditCombatLog([]).notes.length, 0);
+  assert.equal(auditCombatLog([null, '', {}, 'a = b']).notes.length, 0, 'a broken entry is not an accusation');
+});
+
+test('the mark sits under the entry it is about', async () => {
+  const [tracker, strings] = await Promise.all([
+    read('../components/CombatTracker.tsx'),
+    read('../utils/translations/ui/common.ts'),
+  ]);
+
+  assert.match(tracker, /auditCombatLog\(combatLog \|\| \[\]\)/, 'the log the panel shows is the log that is read');
+  assert.match(tracker, /logNotes\.byIndex\[index\]\?\.length/, 'and the note is looked up by the entry it marks');
+
+  const start = tracker.indexOf('{(combatLog ?? []).map(');
+  assert.ok(start > -1, 'the entries are rendered in one place');
+  const block = tracker.slice(start, start + 900);
+  assert.match(block, /<WorldStateNotes notes=\{logNotes\.byIndex\[index\]\} compact/, 'as a compact line under the entry');
+  assert.doesNotMatch(tracker, /notes=\{logNotes\.notes\}/, 'never the whole list of them above the log');
+
+  for (const key of ['combat_log_notes_calculation', 'combat_log_notes_dice']) {
+    assert.equal((strings.match(new RegExp(`"${key}"`, 'g')) || []).length, 2, `${key} has to be answered in both locales`);
+  }
 });

@@ -447,3 +447,42 @@ export function assessCombat({ enemies = [], allies = [], npcs = [], player = nu
         calculations,
     };
 }
+
+/**
+ * The combat log is the player's view of the fight, and #28.1.3 states what may not be in it:
+ * "No Math: Do NOT include calculations, formulas, or dice rolls. Only the final, impactful
+ * numbers (like damage dealt)." So this reader looks for exactly those two shapes and nothing
+ * else - it never judges the wording of an entry, only whether an expression was written where
+ * the rules ask for the outcome alone.
+ */
+
+/** A number, an operator, a number - the arithmetic itself, not a magnitude stated as a number. */
+const ARITHMETIC_SPAN = /\d\s*[-+*/^]\s*\d/;
+/** A written roll: 1d20, 2 d 6, d100. */
+const DICE_SPAN = /(?:^|[^\w.])\d{0,3}\s*[dD]\s*\d{1,4}(?![\w.])/;
+
+/** The lines of the combat log read-back have their own namespace of the UI strings. */
+const logNote = (kind, subject, params = {}) => ({ key: `combat_log_notes_${kind}`, kind, subject, params });
+
+/**
+ * @param {string[]} entries - the combat log as the panel shows it, in its own order
+ * @returns {{ notes: Array<object>, byIndex: Record<number, object[]> }}
+ */
+export function auditCombatLog(entries = []) {
+    const notes = [];
+    const byIndex = {};
+    const list = Array.isArray(entries) ? entries : [];
+    list.forEach((entry, index) => {
+        if (typeof entry !== 'string' || !entry.trim()) return;
+        // An equality is only a calculation when something is being computed for it, so both shapes
+        // have to be present; "Damage = 21" states an outcome and is left alone.
+        let kind = null;
+        if (entry.includes('=') && ARITHMETIC_SPAN.test(entry)) kind = 'calculation';
+        else if (DICE_SPAN.test(entry)) kind = 'dice';
+        if (!kind) return;
+        const note = logNote(kind, `#${index + 1}`);
+        notes.push(note);
+        (byIndex[index] = byIndex[index] || []).push(note);
+    });
+    return { notes, byIndex };
+}

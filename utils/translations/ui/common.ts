@@ -127,6 +127,11 @@ export const common = {
     "effect_notes_wound_reference_wound_missing": "{subject}: a 'WoundReference' effect points at wound '{wound}', which is not in the record.",
     "effect_notes_wound_reference_wound_healed": "{subject}: the wound '{wound}' behind a 'WoundReference' effect is healed, so the effect tied to it should have ended.",
     "effect_notes_duplicate_effect_id": "{subject}: the effect id '{effectId}' appears {times} times; the id exists so that one effect is not listed twice.",
+    // The combat log is the player's view of the fight, and rule #28.1.3 states what may not be in it:
+    // "Do NOT include calculations, formulas, or dice rolls." The mark is placed under the entry it is about,
+    // so these strings say what was written there, not what it means.
+    "combat_log_notes_calculation": "This entry writes the calculation itself; #28.1.3 keeps arithmetic out of the combat log.",
+    "combat_log_notes_dice": "This entry names a dice roll; #28.1.3 keeps dice out of the combat log.",
     ...ui_overrides.en
   },
   ru: {
@@ -254,6 +259,9 @@ export const common = {
     "effect_notes_wound_reference_wound_missing": "{subject}: эффект WoundReference ссылается на рану «{wound}», которой нет в записи.",
     "effect_notes_wound_reference_wound_healed": "{subject}: рана «{wound}», на которую ссылается эффект WoundReference, исцелена — привязанный к ней эффект должен был завершиться.",
     "effect_notes_duplicate_effect_id": "{subject}: id эффекта «{effectId}» встречается {times} раза; id и нужен, чтобы один эффект не попадал в список дважды.",
+    // Ответ читателя боевого журнала - строка под самой записью, и она описывает, что в ней написано.
+    "combat_log_notes_calculation": "Запись приводит расчёт сама; #28.1.3 держит арифметику вне боевого журнала.",
+    "combat_log_notes_dice": "Запись называет бросок кубика; #28.1.3 держит кубики вне боевого журнала.",
     ...ui_overrides.ru
   }
 }
