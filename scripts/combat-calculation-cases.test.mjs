@@ -31,7 +31,9 @@ test('fixed combat cases retain full calculation rules and apply the recorded ou
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const { getStep3Logs, getStep3 } = await import('../prompts/mainPromptSteps.js');
     assert.match(getStep3(), /14\.2\.2.*Luck bonus/s);
-    const rules = await readFile(new URL('../prompts/mainPromptModule.js', import.meta.url), 'utf8');
+    // The guide ships as one file per section, so check the assembled text rather than a source file.
+    const { getGameMasterGuideRules } = await import('../prompts/mainPromptModule.js');
+    const rules = getGameMasterGuideRules();
     assert.match(rules, /FinalCritMultiplier = 1\.5 \+ \(CritDamageLuckBonus% \/ 100\)/);
     assert.match(rules, /Threshold 1 \(>25% of maxHealth\)/);
     assert.match(rules, /Threshold 2 \(>45% of maxHealth\)/);

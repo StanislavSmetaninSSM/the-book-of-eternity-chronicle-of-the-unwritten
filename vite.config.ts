@@ -390,6 +390,20 @@ function arenaGmFilesystemRelay(): Plugin {
 
 export default defineConfig({
   plugins: [arenaGmFilesystemRelay()],
+  build: {
+    rollupOptions: {
+      output: {
+        // The rulebook is megabytes of prose every stage needs verbatim, and it is loaded
+        // lazily on top of that. Keeping one file per section lets the browser fetch the
+        // rulebook in parallel and means a reviewed rules edit invalidates only the section
+        // it touched, not the whole guide.
+        manualChunks: (id) => {
+          const section = /[\\/]prompts[\\/]mainPromptModule[\\/]section-(\d+)\.js$/.exec(id);
+          return section ? `game-master-guide-section-${section[1]}` : undefined;
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     allowedHosts: true,
