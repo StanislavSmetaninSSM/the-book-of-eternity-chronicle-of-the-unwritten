@@ -5,6 +5,7 @@ import Modal from './Modal';
 import { UNKNOWN_AUTOSAVE_TIMESTAMP, prepareConfigurationFile, releasePreparedSaveFile, loadConfigurationFromFile, loadStartScreenDraft, saveStartScreenFormDraft, saveStartScreenWorldDraft, clearStartScreenDraft, type PreparedSaveFile } from '../utils/fileManager';
 import ConfirmationModal from './ConfirmationModal';
 import { useLocalization } from '../context/LocalizationContext';
+import { nextLanguage } from '../utils/localization';
 import { useWorldTranslations } from '../hooks/useWorldTranslations';
 import { gameData } from '../utils/localizationGameData';
 import { getUniverseWorld, resolveWorldFor, type WorldData, type WorldSource } from '../utils/worldData';
@@ -841,7 +842,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
 
 
     const handleLanguageToggle = () => {
-        const newLang = language === 'ru' ? 'en' : 'ru';
+        const newLang = nextLanguage(language);
         setLanguage(newLang);
     };
 

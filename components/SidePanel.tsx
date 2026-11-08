@@ -6,6 +6,7 @@
 
 import React, { useState, useMemo } from 'react';
 import CharacterSheet from './CharacterSheet';
+import { nextLanguage } from '../utils/localization';
 import QuestLog from './QuestLog';
 import { GameState, Location, WorldState, GameSettings, PlayerCharacter, Faction, Item, DBSaveSlotInfo, WorldStateFlag, UnlockedMemory, NPC, Quest, CompletedActivity, LocationStorage, Cinematic, ImageCacheEntry, CharacterCreationData, DetailData} from '../types';
 import { UserCircleIcon, BookOpenIcon, CodeBracketIcon, DocumentTextIcon, UsersIcon, ShieldExclamationIcon, Cog6ToothIcon, MapIcon, MapPinIcon, QuestionMarkCircleIcon, UserGroupIcon, GlobeAltIcon, ArchiveBoxXMarkIcon, BeakerIcon, TrashIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ArrowsPointingOutIcon, FilmIcon, PhotoIcon } from '@heroicons/react/24/outline';
@@ -390,7 +391,7 @@ export default function SidePanel(props: SidePanelProps): React.ReactNode {
   const { language, t } = useLocalization();
 
   const handleLanguageToggle = () => {
-    const newLang = language === 'ru' ? 'en' : 'ru';
+    const newLang = nextLanguage(language);
     updateGameSettings({ language: newLang });
   };
 
