@@ -376,6 +376,48 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: Connect
   });
 }
 
+/**
+ * A prompt module request in dev. Every one of them is prose plus small arrow
+ * functions, addressed by a relative path with its extension.
+ */
+const isPromptSourceUrl = (pathname: string): boolean => pathname.startsWith('/prompts/') && pathname.endsWith('.js');
+
+/**
+ * The rulebook and the step guides are megabytes of template literals. Vite can do
+ * nothing useful with them in dev: the transform pipeline leaves the code as it is and
+ * still inlines a sourcemap that repeats the whole text, so the 697 kB first rulebook
+ * section arrived as 4.2 MB and the guide as a whole as 20 MB — on the first turn of
+ * every session, which is the documented way of running this game.
+ *
+ * These modules are therefore answered straight from disk. They can be: each one is
+ * plain JavaScript whose only specifiers are relative paths with extensions, so the
+ * browser resolves them without help. `scripts/prompt-sources-are-plain-js.test.mjs`
+ * enforces exactly that. A prompt edit still reloads the page: Vite keeps the module as
+ * a dependency of the game code that imports it, it just has nothing to transform.
+ */
+function servePromptSourcesVerbatim(): Plugin {
+  return {
+    name: 'serve-prompt-sources-verbatim',
+    apply: 'serve',
+    configureServer(server) {
+      const promptDirectory = path.join(server.config.root, 'prompts');
+      server.middlewares.use((req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
+        const pathname = req.method === 'GET' && req.url ? decodeURIComponent(req.url.split('?')[0]) : '';
+        if (!isPromptSourceUrl(pathname)) return next();
+        // Normalising first is what rejects a `../` request: it no longer starts with the directory.
+        const file = path.normalize(path.join(server.config.root, pathname));
+        if (!file.startsWith(promptDirectory + path.sep)) return next();
+        readFile(file, 'utf8').then((source) => {
+          // No immutable cache and no version query: the text is the file, and it changes.
+          res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.end(source);
+        }, () => next());
+      });
+    },
+  };
+}
+
 function arenaGmFilesystemRelay(): Plugin {
   return {
     name: 'arena-gm-filesystem-relay',
@@ -389,7 +431,7 @@ function arenaGmFilesystemRelay(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [arenaGmFilesystemRelay()],
+  plugins: [servePromptSourcesVerbatim(), arenaGmFilesystemRelay()],
   build: {
     rollupOptions: {
       output: {
