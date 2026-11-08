@@ -7,6 +7,7 @@ import ConfirmationModal from '../ConfirmationModal';
 import StatBar from './Shared/StatBar';
 import WorldStateNotes from '../WorldStateNotes';
 import { assessEffects } from '../../utils/effectAssessment.js';
+import { assessWoundProgress } from '../../utils/worldAssessment.js';
 import {
     SunIcon,
     CloudIcon,
@@ -59,6 +60,9 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
     // The same reader the NPC list uses, run over this sheet's own arrays: an effect the state keeps
     // alive past its duration, or a wound reference nothing holds open, is named here where it hurts.
     const effectNotes = assessEffects({ characters: [{ name: character.name, effects, wounds }] }).notes;
+    // The same reading the fighter's card got: a wound whose treatment reached `progressNeeded` has
+    // changed state rather than stopped at the threshold - and here both numbers are on screen.
+    const woundNotes = assessWoundProgress(wounds ?? [], character.name).notes;
     
     const handleClearAllHealedWounds = () => {
         clearAllHealedWounds(isPlayer ? 'player' : 'npc', isPlayer ? null : (character as NPC).NPCId);
@@ -164,6 +168,7 @@ const ConditionsView: React.FC<ConditionsViewProps> = ({
                 </div>
                 <div className="mt-6">
                     <SectionHeader title={t('Wounds')} icon={ShieldExclamationIcon} />
+                    <WorldStateNotes notes={woundNotes} titleKey="Wound State Check" className="mb-3" />
                     <div className="space-y-3 text-gray-300">
                         {(activeWounds.length > 0) ? (activeWounds.map((wound, index) => (
                             <div key={wound.woundId || index} className="relative group w-full bg-gray-900/60 rounded-md border border-red-800/50">

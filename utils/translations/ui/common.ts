@@ -132,6 +132,10 @@ export const common = {
     // so these strings say what was written there, not what it means.
     "combat_log_notes_calculation": "This entry writes the calculation itself; #28.1.3 keeps arithmetic out of the combat log.",
     "combat_log_notes_dice": "This entry names a dice roll; #28.1.3 keeps dice out of the combat log.",
+    // A chronicle entry the archive cannot place in time, and the wound list of the sheet.
+    "world_notes_chronicle_turn_unreadable": "This entry does not begin with the `#[turn] - date, HH:MM` stamp #18.A.0 makes mandatory; no turn can be read out of it, so the archive sorts it as -1 and the rule that keeps the latest entries prunes it first.",
+    "world_notes_chronicle_clock_missing": "The turn is written, the hour is not - and #18.A.0 asks for HH:MM. The archive sorts by turn alone, so nothing separates two events of the same day here.",
+    "Wound State Check": "Wound State Check",
     ...ui_overrides.en
   },
   ru: {
@@ -262,6 +266,9 @@ export const common = {
     // Ответ читателя боевого журнала - строка под самой записью, и она описывает, что в ней написано.
     "combat_log_notes_calculation": "Запись приводит расчёт сама; #28.1.3 держит арифметику вне боевого журнала.",
     "combat_log_notes_dice": "Запись называет бросок кубика; #28.1.3 держит кубики вне боевого журнала.",
+    "world_notes_chronicle_turn_unreadable": "Запись не начинается с обязательной по #18.A.0 метки `#[ход] - дата, ЧЧ:ММ`; ход в ней не читается, архив сортирует её как -1, и правило «хранить последние N» вычищает её первой.",
+    "world_notes_chronicle_clock_missing": "Номер хода указан, а час нет — хотя #18.A.0 требует ЧЧ:ММ. Архив сортирует только по ходу, поэтому два события одного дня здесь ничем не разделены.",
+    "Wound State Check": "Проверка состояния ран",
     ...ui_overrides.ru
   }
 }

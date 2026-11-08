@@ -1,6 +1,6 @@
 /**
  * The read-back over the living world: what the state says about its own projects, activities,
- * standings and wounds, and what the interface is allowed to conclude from it.
+ * standings, wounds and chronicle entries, and what the interface is allowed to conclude from it.
  *
  * Run from the repository root with: node --test scripts/world-assessment.test.mjs
  */
@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { assessTracker, assessWorld, assessWoundProgress, REPUTATION_CEILING, REPUTATION_FLOOR } from '../utils/worldAssessment.js';
+import { assessChronicle, assessTracker, assessWorld, assessWoundProgress, REPUTATION_CEILING, REPUTATION_FLOOR } from '../utils/worldAssessment.js';
 
 /** One faction with one active project, the shortest state that can contradict itself. */
 const factionWithProject = (project, extra = {}) => ({
@@ -193,4 +193,60 @@ test('the compact reading stays a line, not a second frame', () => {
     assert.match(renderer, /if \(compact\) \{/, 'and a branch of their own');
     const boxed = renderer.slice(renderer.indexOf('return ('));
     assert.match(boxed, /t\(titleKey\)/, 'while the boxed reading keeps its heading');
+});
+test('a chronicle entry is read back for the stamp its own archive sorts by', () => {
+    // The shapes below are the ones the guide itself prints (#18.A.0 and its examples), plus the one
+    // variant the location card accepts on its own: a single word of event type above the stamp.
+    const stamped = [
+        '#[10] - 15 Месяца Начал 1024 г., 14:00: A dragon was spotted over the mill.',
+        '#[150] - 21 Месяца Глубокого Сна 1024 г., 16:30: Группа путешественников вошла в лес.',
+        'Combat\n#[10] - 15 Месяца Начал 1024 г., 14:00: The bridge held.',
+    ];
+    assert.equal(assessChronicle(stamped).notes.length, 0, 'a stamp the archive can read is not an accusation');
+
+    const unreadable = assessChronicle([
+        'A dragon was spotted over the mill.',
+        '#12 - 3 Месяца Начал 1024 г., 14:00: без скобок',
+        '#[41] - 3 Месяца Начал 1024 г.: evening skirmish at the gate',
+    ]);
+    assert.deepEqual(Object.entries(unreadable.byIndex).map(([i, n]) => `${i}:${n[0].kind}`), [
+        '0:chronicle_turn_unreadable',
+        // The turn is there for a reader of prose, and the parser the archive sorts by (/^#\[(\d+)/)
+        // does not see it - which is the difference the entry has to be warned about.
+        '1:chronicle_turn_unreadable',
+        '2:chronicle_clock_missing',
+    ]);
+    assert.equal(unreadable.notes[0].key, 'world_notes_chronicle_turn_unreadable', 'the note brings its own string');
+    assert.equal(assessChronicle([null, '', {}, undefined]).notes.length, 0, 'a broken entry is not an accusation');
+    assert.equal(assessChronicle([]).byIndex[0], undefined, 'and an empty archive says nothing');
+});
+
+test('the mark sits under the entry the archive sorts', () => {
+    const card = readFileSync(new URL('../components/LocationLog.tsx', import.meta.url), 'utf8');
+    const modal = readFileSync(new URL('../components/DetailRenderer/LocationDetailsRenderer.tsx', import.meta.url), 'utf8');
+
+    assert.match(card, /assessChronicle\(eventText \? \[eventText\] : \[\]\)/, 'the card reads the event text it shows, not the whole archive');
+    assert.match(card, /<WorldStateNotes notes=\{chronicleNotes\} compact/, 'as a line under that text');
+
+    assert.match(modal, /assessChronicle\(events\)\.byIndex/, 'the modal reads the list it renders');
+    assert.match(modal, /<WorldStateNotes notes=\{chronicleNotes\[index\]\} compact/, 'entry by entry, under each one');
+    assert.doesNotMatch(modal, /notes=\{assessChronicle\(events\)\.notes\}/, 'and never as one bar above the chronicle');
+
+    const strings = readFileSync(new URL('../utils/translations/ui/common.ts', import.meta.url), 'utf8');
+    for (const key of ['world_notes_chronicle_turn_unreadable', 'world_notes_chronicle_clock_missing']) {
+        assert.equal((strings.match(new RegExp(`"${key}"`, 'g')) || []).length, 2, `${key} has to be answered in both locales`);
+    }
+});
+
+test('the sheet reads its wounds with the reader the fighter’s card uses', () => {
+    const sheet = readFileSync(new URL('../components/CharacterSheet/ConditionsView.tsx', import.meta.url), 'utf8');
+    const card = readFileSync(new URL('../components/CombatTracker.tsx', import.meta.url), 'utf8');
+
+    assert.match(sheet, /import \{ assessWoundProgress \} from '\.\.\/\.\.\/utils\/worldAssessment\.js';/, 'one module, two panels');
+    assert.match(card, /import \{ assessWoundProgress \} from '\.\.\/utils\/worldAssessment\.js';/);
+    assert.match(sheet, /assessWoundProgress\(wounds \?\? \[\], character\.name\)/, 'over the list the section prints');
+    assert.match(sheet, /<WorldStateNotes notes=\{woundNotes\} titleKey="Wound State Check"/, 'under a heading of its own');
+
+    const strings = readFileSync(new URL('../utils/translations/ui/common.ts', import.meta.url), 'utf8');
+    assert.equal((strings.match(/"Wound State Check":/g) || []).length, 2, 'and that heading is answered in both locales');
 });

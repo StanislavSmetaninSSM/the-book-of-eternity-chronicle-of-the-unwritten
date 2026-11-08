@@ -10,6 +10,8 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { Location, PlayerCharacter, AdjacencyMapEntry, LocationStorage, DifficultyProfile } from '../../types';
 import { DetailRendererProps } from './types';
 import { useLocalization } from '../../context/LocalizationContext';
+import WorldStateNotes from '../WorldStateNotes';
+import { assessChronicle } from '../../utils/worldAssessment.js';
 import Section from './Shared/Section';
 import EditableField from './Shared/EditableField';
 import IdDisplay from './Shared/IdDisplay';
@@ -137,6 +139,10 @@ const EventsView: React.FC<{
     const events = useMemo(() => {
         return location.eventDescriptions || [];
     }, [location.eventDescriptions]);
+
+    // The list this view shows is the list the archive sorts and prunes, so an entry whose turn
+    // cannot be read is marked right there, under that entry - never above the chronicle.
+    const chronicleNotes = useMemo(() => assessChronicle(events).byIndex, [events]);
     
     const handleSaveEvents = (newEvents: string[]) => {
       if (location?.locationId && onEditLocationData) {
@@ -234,6 +240,9 @@ const EventsView: React.FC<{
                                         as="textarea"
                                         className="narrative-text leading-relaxed whitespace-pre-wrap"
                                     />
+                                    {chronicleNotes[index]?.length ? (
+                                        <WorldStateNotes notes={chronicleNotes[index]} compact className="mt-1" />
+                                    ) : null}
                                 </div>
                                 <div className="flex flex-col gap-1">
                                     <button onClick={() => speak(strippedEntry)} className="p-1 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white opacity-40 group-hover:opacity-100 transition-opacity" title={isThisEntrySpeaking ? t("Stop speech") : t("Read aloud")}>
@@ -399,7 +408,7 @@ const LocationDetailsRenderer: React.FC<LocationDetailsProps> = (props) => {
     const isCurrentLocation = location.locationId === currentLocationId;
     const isRealLocation = location.locationId && !location.locationId.startsWith('undiscovered-');
     
-    const events = useMemo(() => location.eventDescriptions || [], [location.eventDescriptions]);    
+    const events = useMemo(() => location.eventDescriptions || [], [location.eventDescriptions]);
 
     const menuItems = useMemo(() => {
         const items = [

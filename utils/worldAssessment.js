@@ -6,7 +6,8 @@
  * themselves: effort written into a tracker cannot fall below zero, a task whose spent time reached its cost is a
  * finished task, the reputation scale runs from -400 to +400, and a wound whose treatment reached
  * `progressNeeded` has changed state rather than stopped at the threshold. Effects are read by
- * `./effectAssessment.js`, which the NPC lists below feed. A record that contradicts one of those
+ * `./effectAssessment.js`, which the NPC lists below feed, and every chronicle entry of a
+ * location is read for the stamp #18.A.0 puts at its head. A record that contradicts one of those
  * is not a disagreement about the fiction - it is a state no rule produces, and the panel says so
  * in one line.
  *
@@ -146,4 +147,61 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
     }
 
     return { notes, bySubject: groupNotesBySubject(notes) };
+}
+
+/**
+ * A chronicle entry of a location, read back for #18.A.0 - "The Timestamping Protocol: Anchoring
+ * Yourself in Time": "EVERY historical entry you write for 'lastEventsDescription' (and which will
+ * be archived in 'eventDescriptions') MUST begin with a precise timestamp in the following
+ * MANDATORY format", and the format is "#[Turn Number] - [DayOfMonth] [MonthName] [Year] г.,
+ * [HH:MM]: [Event Text]".
+ *
+ * A missing stamp is not only a broken convention: the location archive reads the turn out of that
+ * prefix (`getTurnNumber` in `components/DetailRenderer/LocationDetailsRenderer.tsx`), sorts by it,
+ * and the "keep the latest N entries" rule deletes from the bottom of that order. An entry whose
+ * turn cannot be read is sorted as -1, which makes it both the oldest event of the world and the
+ * first one to be thrown away.
+ *
+ * The reader asks two questions and nothing else - is a turn written where the rule puts it, and is
+ * the hour with it. Month names, the year suffix and the wording of an entry are nobody's business
+ * here: entries have to be translated into the player's language, and arguing with a word would be
+ * arguing with a language.
+ */
+
+/** The shape the archive itself parses, anchored at the very start of the line. */
+const CHRONICLE_TURN = /^#\[\d+/;
+/** The hour the stamp owes the reader. */
+const CHRONICLE_CLOCK = /\b\d{1,2}:\d{2}\b/;
+/** A one-word event type above the stamp is a shape the location card accepts, so the stamp may sit on line two. */
+const CHRONICLE_TYPE_LINE = /^(Exploration|Combat|Social|Quest|Travel|Crafting|Trade)$/;
+
+const stampedLineOf = (entry) => {
+    const [first, second] = entry.split('\n');
+    const head = (first || '').trim();
+    if (CHRONICLE_TURN.test(head)) return head;
+    const next = (second || '').trim();
+    return CHRONICLE_TYPE_LINE.test(head) && CHRONICLE_TURN.test(next) ? next : head;
+};
+
+/**
+ * @param {string[]} entries - chronicle strings as the panel shows them, in its own order
+ * @param {string} [subject] - unused in the lines themselves: a mark sits under the entry it is about
+ * @returns {{ notes: Array<object>, byIndex: Record<number, object[]> }}
+ */
+export function assessChronicle(entries = [], subject = '') {
+    const notes = [];
+    const byIndex = {};
+    const list = Array.isArray(entries) ? entries : [];
+    list.forEach((entry, index) => {
+        if (typeof entry !== 'string' || !entry.trim()) return;
+        const stamped = stampedLineOf(entry);
+        const kind = !CHRONICLE_TURN.test(stamped)
+            ? 'chronicle_turn_unreadable'
+            : (!CHRONICLE_CLOCK.test(stamped) ? 'chronicle_clock_missing' : null);
+        if (!kind) return;
+        const note = worldNote(kind, subject, {});
+        notes.push(note);
+        (byIndex[index] = byIndex[index] || []).push(note);
+    });
+    return { notes, byIndex };
 }

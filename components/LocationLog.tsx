@@ -6,7 +6,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import ImageRenderer from './ImageRenderer';
 import ConfirmationModal from './ConfirmationModal';
 import WorldStateNotes from './WorldStateNotes';
-import { assessWorld } from '../utils/worldAssessment.js';
+import { assessWorld, assessChronicle } from '../utils/worldAssessment.js';
 
 interface LocationLogProps {
   locations: Location[];
@@ -54,6 +54,10 @@ const LocationItem: React.FC<{
     
     return { eventType: null, eventText: fullEventText };
   }, [loc.eventDescriptions]);
+
+  // #18.A.0 makes the timestamp mandatory, and the turn the archive sorts by lives in that prefix.
+  // The mark goes under the event text itself, because it is about this one entry.
+  const chronicleNotes = useMemo(() => assessChronicle(eventText ? [eventText] : []).notes, [eventText]);
 
   const imagePrompt = loc.custom_image_prompt || loc.image_prompt || `A detailed fantasy art image of a ${loc.name}.`;
   
@@ -161,6 +165,9 @@ const LocationItem: React.FC<{
                 <div className="text-sm italic text-gray-400 line-clamp-2">
                     <MarkdownRenderer content={eventText} />
                 </div>
+                {chronicleNotes.length > 0 && (
+                    <WorldStateNotes notes={chronicleNotes} compact className="mt-1" />
+                )}
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
