@@ -1,5 +1,5 @@
 // Regenerates the deterministic save fixtures used by the Playwright specs:
-// a local full-party save and a legacy networked save that must load locally.
+// a local full-party save and a save that carries one cached image.
 // Run with: node scripts/make-e2e-fixtures.mjs
 import {mkdir, writeFile} from 'node:fs/promises';
 import {createServer} from 'vite';
@@ -8,7 +8,7 @@ const vite = await createServer({configFile:false, server:{middlewareMode:true},
 try {
   const {createInitialContext} = await vite.ssrLoadModule('/utils/gameContext.ts');
 
-  const buildSave = ({secondPlayerName, networkFields, activePlayerIndex}) => {
+  const buildSave = ({secondPlayerName, activePlayerIndex}) => {
     const context = createInitialContext({
       universe: 'fantasy',
       playerName: 'Aria',
@@ -48,7 +48,6 @@ try {
       imageCache: {},
       temporaryStash: [],
       cinematics: [],
-      ...networkFields,
     };
 
     return {
@@ -66,18 +65,7 @@ try {
     };
   };
 
-  const localSave = buildSave({secondPlayerName: 'Borin', networkFields: {}, activePlayerIndex: 0});
-  const legacySave = buildSave({
-    secondPlayerName: 'Cyra',
-    activePlayerIndex: 1,
-    networkFields: {
-      networkRole: 'host',
-      myPeerId: 'legacy-host',
-      hostPeerId: 'legacy-host',
-      peers: ['legacy-guest'],
-      isConnectedToHost: true,
-    },
-  });
+  const localSave = buildSave({secondPlayerName: 'Borin', activePlayerIndex: 0});
 
   // A one-pixel PNG: enough to prove that an image survives the store round trip.
   const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -96,7 +84,6 @@ try {
 
   await mkdir(new URL('../e2e/fixtures/', import.meta.url), {recursive: true});
   await writeFile(new URL('../e2e/fixtures/full-party-save.json', import.meta.url), JSON.stringify(localSave, null, 2));
-  await writeFile(new URL('../e2e/fixtures/legacy-network-save.json', import.meta.url), JSON.stringify(legacySave, null, 2));
   await writeFile(new URL('../e2e/fixtures/save-with-image.json', import.meta.url), JSON.stringify(imageSave, null, 2));
   console.log('Wrote e2e fixtures.');
 } finally {

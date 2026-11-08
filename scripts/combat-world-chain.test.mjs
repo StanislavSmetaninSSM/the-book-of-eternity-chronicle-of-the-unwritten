@@ -17,7 +17,7 @@ test('combat, cleanup, healing and world progression retain linked state across 
     const npc = { ...player, NPCId: 'guard', name: 'Guard', inventory: [], currentHealth: 100, wounds: [], activeEffects: [], goals: { shortTerm: '', longTerm: '' } };
     const faction = { factionId: 'guild', name: 'Guild', color: '#123456', resources: { metaResources: [{ resourceName: 'Wealth', currentStockpile: 10 }], strategicGoods: [] }, activeProjects: [], completedProjects: [] };
     context.currentLocation = here; context.worldMap = { here, outpost }; context.encounteredNPCs = [npc]; context.encounteredFactions = [faction];
-    let state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [faction], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    let state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [faction], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const step = response => { const r = processAndApplyResponse(response, state, context.gameSettings, k => k, true, context.currentTurnNumber, context.worldMap); state = r.newState; context = buildNextContext(context, r.processedResponse, state, [], true); };
     const pain = { effectId: 'pain', sourceWoundId: 'w1', effectType: 'Debuff', value: '-10%', targetType: 'strength', duration: 999, description: 'Wound pain' };
     const poison = { effectId: 'poison', effectType: 'Debuff', value: '-10%', targetType: 'strength', duration: 4, description: 'Poison' };
@@ -72,7 +72,7 @@ test('legacy save round-trips missing wound state and effect ID without migratio
     context.currentTurnNumber = 2;
     const p = { ...context.playerCharacter, playerWounds: [{ woundId: 'legacy', woundName: 'Old cut', severity: 'Light', descriptionOfEffects: 'Pain' }], activePlayerEffects: [{ effectType: 'Debuff', value: '-10%', targetType: 'strength', duration: 999, description: 'Old curse' }] };
     context.playerCharacter = p; context.players = [p];
-    const state = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     await saveToDBSlot(2, { gameContext: context, gameState: state, gameHistory: [], gameLog: [], combatLog: [], timestamp: '2026-10-31T00:00:00.000Z' });
     const loaded = await loadFromDBSlot(2);
     restorePlayerStats(loaded.gameState, k => k, false);

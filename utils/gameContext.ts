@@ -746,8 +746,7 @@ export function buildNextContext(
 
     if (advanceTurn) {
         const isManualPass = currentContext.message === '[System Action] Pass turn';
-        const isAutoPass = currentContext.gameSettings.autoPassTurn
-            ?? currentContext.gameSettings.autoPassTurnInCoop ?? true;
+        const isAutoPass = currentContext.gameSettings.autoPassTurn ?? true;
         const isCoop = currentContext.gameSettings.cooperativeGameType === 'FullParty' || currentContext.gameSettings.cooperativeGameType === 'MultiplePersonalities';
 
         if (isCoop && (isAutoPass || isManualPass)) {
@@ -996,7 +995,7 @@ export const createInitialContext = (creationData: CharacterCreationData, langua
         keepLatestNpcJournals: creationData.keepLatestNpcJournals,
         latestNpcJournalsCount: creationData.latestNpcJournalsCount,
         cooperativeGameType: creationData.cooperativeGameType,
-        autoPassTurn: creationData.autoPassTurn ?? creationData.autoPassTurnInCoop ?? true,
+        autoPassTurn: creationData.autoPassTurn ?? true,
         showPartyStatusPanel: creationData.showPartyStatusPanel,
         uiControlScale: creationData.uiControlScale ?? 1,
         uiFontScale: creationData.uiFontScale ?? 1,

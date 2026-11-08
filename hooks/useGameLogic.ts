@@ -1,4 +1,3 @@
-import { localizeLegacySave, localizeLegacyState } from '../utils/localizeLegacySave';
 import { sanitizeGameState } from '../utils/sanitizeGameState';
 import { isLocalPreferenceKey, sharedSettingsEqual } from '../utils/localGamePreferences';
 import { asRecord } from '../utils/typeGuards';
@@ -20,7 +19,6 @@ import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
 import { restorePlayerStats } from '../utils/restorePlayer';
 import { cloneGameStateForEdit } from '../utils/gameStateClone';
-import { migrateGameSettings } from '../utils/settingsMigration';
 import { withLiveActivePlayer } from '../utils/partyView';
 import { recalculateAllWeights } from '../utils/inventoryManager';
 import { recalculateDerivedStats, calculateDate, calculateJourneyDay, ensureThreatActivityIds } from '../utils/gameContext';
@@ -482,11 +480,10 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [gameState, gameSettings, superInstructions, worldState, turnNumber]);
 
     const restoreFromSaveData = useCallback((source: SaveFile) => {
-        const data = localizeLegacySave(source);
-        // Old saves keep the pre-single-player settings key; rename it before it is used.
-        if (data.gameContext?.gameSettings) {
-            data.gameContext.gameSettings = migrateGameSettings(data.gameContext.gameSettings);
-        }
+        // A save is taken as it is: the game writes this format itself and does not
+        // recognise older ones. The document is copied because the event-log migration
+        // below writes into it, and the caller keeps its own bytes for a retry.
+        const data: SaveFile = { ...source };
         syncRevisionRef.current += 1;
         clearPendingContextEdits();
         if (activeTurnRef.current) abortControllerRef.current?.abort();
@@ -1200,18 +1197,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     ]);
 
 
-    // The manager exposes a low-level recovery primitive for its own turn
-    // machinery. Do not expose it from the hook without checking the live
-    // session: the checkpoint's role is not the current connection's role.
+    // The manager exposes a low-level recovery primitive for its own turn machinery.
+    // Do not expose it from the hook without checking the live session first: a turn
+    // or a game edit in flight would be overwritten by the checkpoint.
     const resumeInterruptedTurnSafely = useCallback((recovery: Parameters<typeof allManagers.resumeInterruptedTurn>[0]) => {
-        if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none') || activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current) {
+        if (activeTurnRef.current || isTurnSubmitPendingRef.current || gameplayMutationPendingRef.current) {
             setError(t('interrupted_turn_recovery_needs_local_idle_game'));
             return;
         }
-        try {
-            const localized = localizeLegacyState(recovery.baseState, recovery.context);
-            return allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
-        } catch (error) { setError(formatError(error)); return; }
+        return allManagers.resumeInterruptedTurn(recovery);
     }, [allManagers, t, setError]);
 
     const resumeInterruptedGameTurn = useCallback(async () => {
@@ -1229,20 +1223,13 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         const recovery = interruptedTurnRecovery || await loadInterruptedTurnRecovery();
         if (blocked()) return reject();
         if (!recovery) return false;
-        if (((recovery.baseState as GameState & { networkRole?: string }).networkRole && (recovery.baseState as GameState & { networkRole?: string }).networkRole !== 'none')) {
-            setError(t('interrupted_turn_recovery_legacy_network_checkpoint'));
-            return false;
-        }
-        let localized: ReturnType<typeof localizeLegacyState>;
-        try { localized = localizeLegacyState(recovery.baseState, recovery.context); }
-        catch (error) { setError(formatError(error)); return false; }
         await cancelInterruptedArenaGmRequest();
         // Cancellation and checkpoint reads can both yield to a connection,
         // restore, turn, or local edit. Do not clear the recovery on refusal.
         if (blocked()) return reject();
         setInterruptedTurnRecovery(null);
         setError(null);
-        void allManagers.resumeInterruptedTurn({ ...recovery, baseState: localized.state, context: localized.context });
+        void allManagers.resumeInterruptedTurn(recovery);
         return true;
     }, [allManagers, interruptedTurnRecovery, t, setError]);
 

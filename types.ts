@@ -147,8 +147,6 @@ export interface GameSettings {
   cooperativeGameType: 'None' | 'MultiplePersonalities' | 'FullParty';
   /** Hand the turn to the next party member automatically. */
   autoPassTurn: boolean;
-  /** @deprecated Pre-single-player name, still read from old saves. */
-  autoPassTurnInCoop?: boolean;
   showPartyStatusPanel?: boolean;
   uiControlScale?: number;
   uiFontScale?: number;
@@ -201,7 +199,6 @@ export interface CharacterCreationData {
   latestNpcJournalsCount?: number;
   cooperativeGameType?: GameSettings['cooperativeGameType'];
   autoPassTurn?: boolean;
-  autoPassTurnInCoop?: boolean;
   showPartyStatusPanel?: boolean;
   uiControlScale?: number;
   uiFontScale?: number;

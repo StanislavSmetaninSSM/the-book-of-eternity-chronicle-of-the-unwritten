@@ -13,5 +13,6 @@ test('production has no peer transport or multiplayer managers and retains the A
  for (const text of [html,hook,turn]) assert.doesNotMatch(text,/peerjs|createMultiplayerManager|turn_result_from_player|new Peer\(/i);
  assert.match(app, /ArenaGmRelayPanel/);
  assert.match(turn, /acquireArenaGmTurnLease/);
- assert.match(hook, /localizeLegacySave\(source\)/);
+ // The loader knows nothing about the removed networking layer or its renamed settings key.
+ assert.doesNotMatch(hook, /localizeLegacy|migrateGameSettings|networkRole|myPeerId|hostPeerId|isConnectedToHost/);
 });

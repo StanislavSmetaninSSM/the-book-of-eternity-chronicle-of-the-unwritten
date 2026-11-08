@@ -35,7 +35,7 @@ test('healed player and NPC wounds normalize nextState without weakening null pr
     const unaffected = { ...wound('p-active', 'Untreated', 'Stabilized'), generatedEffects: [{ effectType: 'Debuff', value: '-10%', targetType: 'strength', duration: 3, description: 'pain' }] };
     const player = { ...context.playerCharacter, playerWounds: [wound('p-heal', 'Recovering'), unaffected] };
     const npc = { ...context.playerCharacter, name: 'NPC', NPCId: 'npc-1', wounds: [wound('n-heal', 'Recovering'), wound('n-active', 'Untreated', 'Stabilized')] };
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const changes = { playerWoundChanges: [wound('p-heal', 'Healed', null), wound('p-active', 'Untreated', null)], NPCWoundChanges: [{ ...wound('n-heal', 'Healed', null), NPCId: 'npc-1', NPCName: 'NPC' }, { ...wound('n-active', 'Untreated', null), NPCId: 'npc-1', NPCName: 'NPC' }] };
     const { newState } = processAndApplyResponse(changes, base, context.gameSettings, key => key, true, 1, context.worldMap);
     const pw = newState.playerCharacter.playerWounds;
@@ -90,7 +90,7 @@ test('legacy nested NPC wound updates are flattened into real wounds without cre
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = context.playerCharacter;
     const npc = { ...player, name: 'NPC', NPCId: 'npc-1', wounds: [wound('existing', 'Recovering')] };
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const a = wound('existing', 'Healed', null);
     const b = wound('fresh', 'Untreated', 'Stabilized');
     const input = { NPCWoundChanges: [{ NPCId: 'npc-1', NPCName: 'NPC', wounds: [a, b] }] };
@@ -128,7 +128,7 @@ test('named NPC combat health is retained in NPC state after combat ends', async
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = context.playerCharacter;
     const npc = { ...player, name: 'NPC', NPCId: 'npc-1', currentHealth: 100, wounds: [] };
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const changes = { enemiesData: [{ NPCId: 'npc-1', name: 'NPC', isGroup: false, currentHealth: '80%', maxHealth: '108%', actions: [] }] };
     const turn = processAndApplyResponse(changes, base, context.gameSettings, key => key, true, 1, context.worldMap).newState;
     assert.equal(turn.encounteredNPCs[0].currentHealth, 80);
@@ -159,7 +159,7 @@ test('generic combatant wounds receive distinct IDs and remain on the combatant'
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Fight', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = context.playerCharacter;
     const enemy = { NPCId: null, name: 'Wolf', isGroup: false, maxHealth: '100%', currentHealth: '100%', actions: [], wounds: [] };
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [enemy], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [enemy], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const wound = { woundId: null, woundName: 'Cut', severity: 'Light', descriptionOfEffects: 'Pain', generatedEffects: [{ effectType: 'Debuff', value: '-10%', targetType: 'speed', duration: 3 }], healingState: { currentState: 'Untreated', treatmentProgress: 0, progressNeeded: 20, nextState: 'Stabilized', canBeImprovedBy: [] } };
     const { newState, processedResponse } = processAndApplyResponse({ enemiesData: [{ ...enemy, currentHealth: '60%', wounds: [wound, { ...wound }] }] }, state, context.gameSettings, key => key, true, 2, context.worldMap);
     const wounds = newState.enemiesData[0].wounds;
@@ -191,7 +191,7 @@ test('named NPC wound and combat effect survive staged combat cleanup', async ()
     const player = context.playerCharacter;
     const npc = { ...player, NPCId: 'npc-1', name: 'Guard', inventory: [], wounds: [], activeEffects: [{ effectId: 'poison', effectType: 'Debuff', value: '-10%', targetType: 'strength', duration: 5, description: 'Poison' }] };
     context.encounteredNPCs = [npc];
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const effect = { effectId: 'poison', effectType: 'Debuff', value: '-10%', targetType: 'strength', duration: 2, description: 'Poison' };
     const injury = { ...wound('cut', 'Untreated', 'Stabilized'), NPCId: 'npc-1', NPCName: 'Guard', generatedEffects: [{ effectType: 'Debuff', value: '-5%', targetType: 'speed', duration: 3, description: 'Pain' }] };
     const combatant = { NPCId: 'npc-1', name: 'Guard', isGroup: false, currentHealth: '80%', maxHealth: `${npc.maxHealth}%`, activeDebuffs: [effect], actions: [] };
@@ -256,7 +256,7 @@ test('healing a wound removes only explicitly linked effects from its owner', as
     const player = { ...context.playerCharacter, playerWounds: [w1, w2], activePlayerEffects: effects };
     const npc = { ...context.playerCharacter, NPCId: 'npc-1', name: 'Guard', inventory: [], wounds: [w1, w2], activeEffects: effects };
     const enemy = { NPCId: null, name: 'Wolf', isGroup: false, maxHealth: '100%', currentHealth: '60%', actions: [], wounds: [w1, w2], activeDebuffs: effects };
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [enemy], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [enemy], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = { playerWoundChanges: [{ woundId: 'w1', healingState: { currentState: 'Healed' } }], NPCWoundChanges: [{ NPCId: 'npc-1', NPCName: 'Guard', woundId: 'w1', healingState: { currentState: 'Healed' } }], enemiesData: [{ NPCId: null, name: 'Wolf', wounds: [{ woundId: 'w1', healingState: { currentState: 'Healed' } }] }] };
     const saved = processAndApplyResponse(response, state, context.gameSettings, key => key, true, 3, context.worldMap).newState;
     for (const [actor, list, wounds] of [[saved.playerCharacter, saved.playerCharacter.activePlayerEffects, saved.playerCharacter.playerWounds], [saved.encounteredNPCs[0], saved.encounteredNPCs[0].activeEffects, saved.encounteredNPCs[0].wounds], [saved.enemiesData[0], saved.enemiesData[0].activeDebuffs, saved.enemiesData[0].wounds]]) {
@@ -278,7 +278,7 @@ test('ambiguous or conflicting NPC targets do not apply wound or effect updates 
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Heal', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = context.playerCharacter;
     const makeNpc = id => ({ ...player, NPCId: id, name: 'Guard', inventory: [], wounds: [wound('w1', 'Untreated')], activeEffects: [] });
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [makeNpc('n1'), makeNpc('n2')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [makeNpc('n1'), makeNpc('n2')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const change = (id) => ({ NPCWoundChanges: [{ NPCId: id, NPCName: 'Guard', woundId: 'w1', healingState: { currentState: 'Healed' } }], NPCEffectChanges: [{ NPCId: id, NPCName: 'Guard', effectsApplied: [{ effectId: 'e1', effectType: 'Debuff', value: '-10%', targetType: 'strength', duration: 3, description: 'poison' }] }] });
     for (const id of [null, 'unknown-id']) {
       const result = processAndApplyResponse(change(id), state, context.gameSettings, key => key, true, 2, context.worldMap).newState;
@@ -301,7 +301,7 @@ test('fresh unambiguous nameless-ID combat effect is assigned an ID before clean
     const player = ctx.playerCharacter;
     const npc = { ...player, NPCId: 'npc', name: 'Guard', activeEffects: [], inventory: [] };
     ctx.encounteredNPCs = [npc];
-    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const poison = { effectType: 'Debuff', value: '-10%', targetType: 'strength', duration: 3, description: 'Venom' };
     const actor = { NPCId: 'npc', name: 'Guard', isGroup: false, activeDebuffs: [poison] };
     const merged = mergeStageResponses({ enemiesData: [actor] }, { enemiesData: [] }, ctx);

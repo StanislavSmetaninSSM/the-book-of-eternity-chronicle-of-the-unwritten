@@ -11,7 +11,7 @@ test('new off-screen location and NPC share one resolved ID through the next con
     for (const explicitId of [undefined, 'location-provided-by-gm']) {
       const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
       const player = context.playerCharacter;
-      const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+      const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
       const location = { initialId: 'outpost-initial', ...(explicitId ? { locationId: explicitId } : {}), name: 'Outpost', coordinates: { x: 2, y: 0 }, locationType: 'outdoor', biome: 'Plains', description: 'An outpost.', internalDifficultyProfile: { combat: 1, environment: 1, social: 1, exploration: 1 }, externalDifficultyProfile: { combat: 1, environment: 1, social: 1, exploration: 1 } };
       const response = { worldMapUpdates: { newLocations: [location] }, NPCsData: [{ ...player, NPCId: null, initialId: 'guard-initial', initialLocationId: 'outpost-initial', name: 'Guard', inventory: [] }] };
       const { newState, processedResponse } = processAndApplyResponse(response, base, context.gameSettings, key => key, true, 1, context.worldMap);
@@ -41,7 +41,7 @@ test('implicit scene presence reflects NPC changes from the same turn', async ()
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = context.playerCharacter;
     const location = { ...context.currentLocation, locationId: 'here' };
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: location, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: location, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const npc = { ...player, NPCId: 'npc-1', name: 'Visitor', currentLocationId: 'here', inventory: [] };
     const arrived = processAndApplyResponse({ NPCsData: [npc] }, base, context.gameSettings, key => key, true, 1, context.worldMap).newState;
     assert.equal(arrived.NPCsInScene, true);
@@ -59,7 +59,7 @@ test('a temporary location tag cannot pull a departed NPC back on later turns', 
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = context.playerCharacter;
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = (response, state, turn) => processAndApplyResponse(response, state, context.gameSettings, key => key, true, turn, context.worldMap).newState;
     const created = apply({ currentLocationData: { initialId: 'temp-loc-camp', locationId: 'camp', name: 'Camp' }, NPCsData: [{ ...player, NPCId: 'visitor', name: 'Visitor', currentLocationId: null, initialLocationId: 'temp-loc-camp', inventory: [] }] }, base, 1);
     assert.equal(created.encounteredNPCs[0].currentLocationId, 'camp');
@@ -83,7 +83,7 @@ test('threat completion archives a real activity once and permits a later new ac
     const remote = { ...context.currentLocation, locationId: 'remote', name: 'Remote', coordinates: { x: 3, y: 0 }, activeThreats: [{ threatId: 'wolves', name: 'Wolves', intensity: 3, currentActivity: { activityId: 'raid-id', activityName: 'Raid', timeSpentMinutes: 20 }, completedActivities: [] }] };
     context.currentLocation = here;
     context.worldMap = { here, remote };
-    let state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    let state = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const step = response => {
       const result = processAndApplyResponse(response, state, context.gameSettings, key => key, true, context.currentTurnNumber, context.worldMap);
       state = result.newState;
@@ -137,7 +137,7 @@ test('turn manager preserves NPC location and applies item journal commands once
     context.currentLocation = location;
     context.worldMap = { camp: location };
     context.encounteredNPCs = [npc];
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: location, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'host', myPeerId: 'host', peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: location, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     let storedState = base, sync = null, error = null;
     const setGameState = value => { storedState = typeof value === 'function' ? value(storedState) : value; };
     const noop = () => {};
@@ -168,7 +168,7 @@ test('same-coordinate vertical location retains its own ID and NPC and threat li
     const here = { ...ctx.currentLocation, locationId: 'surface', coordinates: { x: 0, y: 0 } };
     ctx.currentLocation = here; ctx.worldMap = { surface: here };
     const player = ctx.playerCharacter;
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const underground = { ...here, locationId: 'underground', initialId: 'temp-underground', name: 'Lower cave', coordinates: { x: 0, y: 0 } };
     const response = { worldMapUpdates: { newLocations: [underground], threatsToAdd: [{ initialTargetLocationId: 'temp-underground', threat: { threatId: 'threat-1', name: 'Golem', currentActivity: null } }] }, NPCsData: [{ ...player, NPCId: 'npc-1', name: 'Guard', initialLocationId: 'temp-underground', currentLocationId: null, inventory: [] }] };
     const applied = processAndApplyResponse(response, base, ctx.gameSettings, key => key, true, 2, ctx.worldMap);
@@ -188,7 +188,7 @@ test('new location missing coordinates cannot silently commit dangling NPC links
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Explore', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const p = ctx.playerCharacter;
-    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = { worldMapUpdates: { newLocations: [{ initialId: 'bad', name: 'Broken', coordinates: null }] }, NPCsData: [{ ...p, NPCId: 'npc', name: 'Guard', initialLocationId: 'bad', inventory: [] }] };
     assert.throws(() => processAndApplyResponse(response, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap), /coordinates/i);
     const existingMap = { 'existing': { ...ctx.currentLocation, locationId: 'existing', name: 'Original' } };
@@ -320,7 +320,7 @@ test('turn warnings enter visible history and context together with unchanged wo
     context.currentTurnNumber = 2; const p = { ...context.playerCharacter, playerId: 'host' }; context.playerCharacter = p; context.players = [p];
     const home = { ...context.currentLocation, locationId: 'home', coordinates: { x: 1, y: 0 }, adjacencyMap: [{ name: 'Stairs', targetCoordinates: { x: 0, y: 0 } }], activeThreats: [{ threatId: 'wolves', currentActivity: { activityId: 'hunt', activityName: 'Hunt' } }] };
     context.currentLocation = home; context.worldMap = { home, upper: { ...home, locationId: 'upper', coordinates: { x: 0, y: 0 }, activeThreats: [] }, lower: { ...home, locationId: 'lower', coordinates: { x: 0, y: 0 }, activeThreats: [] } };
-    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'host', myPeerId: 'host', peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     let sync, history; const noop = () => {}; const contextRef = { current: context };
     const manager = createTurnManager({ gameState: base, setGameState: noop, gameHistory: [], setGameHistory: v => { history = v; }, isLoading: false, setIsLoading: noop, setError: noop, setLastJsonResponse: noop, setLastRequestJson: noop, setGameLog: noop, setCombatLog: noop, setSceneImagePrompt: noop, setSuggestedActions: noop, setWorldMap: noop, setVisitedLocations: noop, setWorldState: noop, setTurnNumber: noop, gameContextRef: contextRef, abortControllerRef: { current: null }, setSuperInstructions: noop, setGameSettings: noop, setLanguage: noop, t: (k, r) => translate('en', k, r), turnStartTimeRef: { current: null }, setTurnTime: noop, setCurrentStep: noop, setCurrentModel: noop, language: 'en', gameSettings: context.gameSettings, hostConnectionRef: { current: null }, gameStateRef: { current: base }, broadcastFullSync: value => { sync = value; }, combatLog: [], gameLog: [] });
     await manager.resumeInterruptedTurn({ context, baseState: base, history: [] });
@@ -377,7 +377,7 @@ test('temporary location and cross-entity ID collisions are rejected instead of 
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const c = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const p = c.playerCharacter, here = { ...c.currentLocation, locationId: 'here', initialId: 'same-tag', coordinates: { x: 0, y: 0 } };
-    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const location = { ...here, locationId: 'new-place', name: 'New', coordinates: { x: 4, y: 0 } };
     const npc = { ...p, NPCId: 'guard', name: 'Guard', initialLocationId: 'same-tag', inventory: [] };
     const response = { currentLocationData: { locationId: 'here', initialId: 'same-tag' }, worldMapUpdates: { newLocations: [location] }, NPCsData: [npc] };
@@ -458,7 +458,7 @@ test('entering a newly declared location preserves full declaration and current 
     const player = context.playerCharacter;
     const here = { ...context.currentLocation, locationId: 'here', coordinates: { x: 0, y: 0 } };
     context.currentLocation = here; context.worldMap = { here }; context.currentTurnNumber = 2;
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const location = { ...here, locationId: 'cave', initialId: 'cave-tag', name: 'Cave', description: 'A deep cave', coordinates: { x: 4, y: 0 }, locationStorages: [{ name: 'Chest', inventory: [] }], activeThreats: [{ name: 'Bats' }] };
     const response = { currentLocationData: { locationId: 'cave', initialId: 'cave-tag', description: 'A dark cave' }, worldMapUpdates: { newLocations: [location] } };
     const { newState, processedResponse } = processAndApplyResponse(response, base, context.gameSettings, k => k, true, 2, context.worldMap);
@@ -531,7 +531,7 @@ test('current location threat updates cannot bypass activity identity checks', a
     const player = context.playerCharacter;
     const here = { ...context.currentLocation, locationId: 'here', coordinates: { x: 0, y: 0 }, activeThreats: [{ threatId: 'wolf', name: 'Wolves', currentActivity: { activityId: 'new', activityName: 'Raid', timeSpentMinutes: 5 }, completedActivities: [] }] };
     context.currentLocation = here; context.worldMap = { here }; context.currentTurnNumber = 2;
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = { currentLocationData: { locationId: 'here', activeThreats: [{ threatId: 'wolf', currentActivity: { activityId: 'old', activityName: 'Raid', timeSpentMinutes: 80 } }] } };
     const { newState, processedResponse } = processAndApplyResponse(response, base, context.gameSettings, k => k, true, 2, context.worldMap);
     const warnings = [];
@@ -551,7 +551,7 @@ test('embedded threat updates reject conflicting IDs and ambiguous names', async
     const wolves = id => ({ threatId: id, name: 'Wolf', intensity: 1, currentActivity: { activityId: `activity-${id}`, activityName: 'Raid', timeSpentMinutes: 5 } });
     const here = { ...context.currentLocation, locationId: 'here', coordinates: { x: 0, y: 0 }, activeThreats: [wolves('one'), wolves('two')] };
     context.currentLocation = here; context.worldMap = { here }; context.currentTurnNumber = 2;
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const changes = [{ threatId: 'stale', name: 'Wolf', currentActivity: { activityId: 'old', activityName: 'Raid', timeSpentMinutes: 80 } }, { name: 'Wolf', intensity: 99, currentActivity: { activityId: 'old', activityName: 'Raid', timeSpentMinutes: 80 } }];
     for (const threat of changes) {
       let warnings = [];
@@ -583,7 +583,7 @@ test('stage merge preserves distinct same-name locations and their NPC reference
     const player = context.playerCharacter;
     const home = { ...context.currentLocation, locationId: 'home', coordinates: { x: 0, y: 0 } };
     context.currentLocation = home; context.worldMap = { home }; context.currentTurnNumber = 2;
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const first = { initialId: 'cave-a', name: 'Cave', coordinates: { x: 1, y: 0 } };
     const second = { initialId: 'cave-b', name: 'Cave', coordinates: { x: 2, y: 0 } };
     const previous = { worldMapUpdates: { newLocations: [first] }, NPCsData: [{ ...player, NPCId: 'guard', name: 'Guard', initialLocationId: 'cave-a', inventory: [] }] };
@@ -621,7 +621,7 @@ test('name-only updates of off-screen threats are resolved before assigning new 
     const home = { ...context.currentLocation, locationId: 'home', coordinates: { x: 0, y: 0 } };
     const remote = { ...home, locationId: 'remote', coordinates: { x: 2, y: 0 }, activeThreats: [{ threatId: 'wolf', name: 'Wolf', currentActivity: { activityId: 'raid', activityName: 'Raid', timeSpentMinutes: 5 } }] };
     context.currentLocation = home; context.worldMap = { home, remote }; context.currentTurnNumber = 2;
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = { worldMapUpdates: { locationUpdates: [{ locationId: 'remote', activeThreats: [{ name: 'Wolf', currentActivity: { activityName: 'Raid', timeSpentMinutes: 20 } }, { name: 'Bear', currentActivity: { activityName: 'Hunt', timeSpentMinutes: 1 } }] }] } };
     const { newState, processedResponse } = processAndApplyResponse(response, base, context.gameSettings, k => k, true, 2, context.worldMap);
     const warnings = [];
@@ -644,7 +644,7 @@ test('same-name threats in one location remain distinct through updates and save
     const home = { ...context.currentLocation, locationId: 'home', coordinates: { x: 0, y: 0 } };
     const remote = { ...home, locationId: 'remote', coordinates: { x: 2, y: 0 }, activeThreats: [] };
     context.currentLocation = home; context.worldMap = { home, remote }; context.currentTurnNumber = 2;
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     for (const withIds of [true, false]) {
       const first = { ...(withIds ? { threatId: 'one' } : {}), name: 'Wolf', intensity: 1, currentActivity: { activityName: 'Hunt', timeSpentMinutes: 5 } };
       const second = { ...(withIds ? { threatId: 'two' } : {}), name: 'Wolf', intensity: 5, currentActivity: { activityName: 'Raid', timeSpentMinutes: 10 } };
@@ -681,7 +681,7 @@ test('temporary references reject tags of the wrong entity type before changing 
     const player = context.playerCharacter;
     const home = { ...context.currentLocation, locationId: 'home', coordinates: { x: 0, y: 0 } };
     const guard = { ...player, NPCId: 'guard', name: 'Guard', currentLocationId: 'home', inventory: [] };
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [guard], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [guard], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const declared = {
       factionDataChanges: [{ factionId: 'faction-id', initialId: 'faction-tag', name: 'Guild' }],
       NPCsData: [{ ...player, NPCId: 'npc-id', initialId: 'npc-tag', name: 'Scout', inventory: [] }],
@@ -731,7 +731,7 @@ test('turn-local tags cannot redirect resolved NPC relationships or old factions
     const home = { ...context.currentLocation, locationId: 'home', coordinates: { x: 0, y: 0 } };
     const guard = { ...player, NPCId: 'guard', name: 'Guard', inventory: [], currentLocationId: 'home', npcRelationships: [] };
     const oldFaction = { factionId: 'old-faction', name: 'Guild', initialId: 'temp-guild', resources: { metaResources: [{ resourceName: 'Gold', currentStockpile: 10 }], strategicGoods: [] } };
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [guard], encounteredFactions: [oldFaction], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: home, activeQuests: [], completedQuests: [], encounteredNPCs: [guard], encounteredFactions: [oldFaction], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const first = { NPCsData: [{ NPCId: 'guard', npcRelationships: [{ targetNpcId: null, initialTargetNpcId: 'temp-friend', targetNpcName: 'Friend' }] }, { ...player, NPCId: 'friend', initialId: 'temp-friend', name: 'Friend', inventory: [] }] };
     const firstState = processAndApplyResponse(first, base, context.gameSettings, k => k, true, 2, { home }).newState;
     const relation = firstState.encounteredNPCs.find(n => n.NPCId === 'guard').npcRelationships[0];
@@ -789,13 +789,13 @@ test('mixed, invalid and repeated transfers reject the whole turn, preserve hist
   try {
     const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
     const { createTurnManager } = await server.ssrLoadModule('/hooks/logic/turn.ts');
-    for (const role of ['host', 'player']) for (scenario of ['mixed', 'invalid', 'replay']) {
+    for (scenario of ['mixed', 'invalid', 'replay']) {
       const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
       context.currentTurnNumber = 2;
       const p = { ...context.playerCharacter, playerId: 'p', currentHealth: 40, inventory: [{ existedId: 'potion', name: 'Potion', count: 1, weight: 1, resource: 1 }] };
       const npc = { ...p, NPCId: 'n', name: 'NPC', inventory: [{ existedId: 'gift', name: 'Gift', count: 1, weight: 1 }] };
       context.playerCharacter = p; context.players = [p]; context.encounteredNPCs = [npc];
-      const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, temporaryStash: [{ existedId: 'stash', name: 'Saved', count: 1, weight: 1 }], worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: role, myPeerId: 'p', peers: [], isConnectedToHost: true };
+      const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, temporaryStash: [{ existedId: 'stash', name: 'Saved', count: 1, weight: 1 }], worldStateFlags: [], worldEventsLog: [], imageCache: {}};
       if (scenario === 'replay') base.completedInventoryTransfers = { t: JSON.stringify(['npc', 'n', 'gift', 'player', 'p', 1]) };
       const snapshot = structuredClone(base); let state = base, error = null, loading = null, image = null, sync = null, sent = null, history = [];
       const contextRef = { current: context };

@@ -1,6 +1,6 @@
 # The Book of Eternity: Chronicle of the Unwritten
 
-A persistent, text-driven fantasy role-playing game. Players explore a reactive world, meet characters and factions, pursue quests, manage inventory and character progression, and build a story through consequential choices. The app includes a staged game-master pipeline, save/load support, world simulation, and local party or multiple-personality play. Network multiplayer is no longer supported; legacy multiplayer saves are converted to local games on load.
+A persistent, text-driven fantasy role-playing game. Players explore a reactive world, meet characters and factions, pursue quests, manage inventory and character progression, and build a story through consequential choices. The app includes a staged game-master pipeline, save/load support, world simulation, and local party or multiple-personality play. It is a single-player game: there is no networking layer, and files are read in the current save format only.
 
 This fork is adapted to use the **Arena conversation agent as the game master** through a workspace-backed relay. It does not require a separate LLM provider for the default game-master path. Image generation can also be requested from the Arena agent. See [Arena deployment and relay guide](docs/ARENA-DEPLOYMENT.md) before running it in a fresh Arena workspace.
 
@@ -56,4 +56,4 @@ npm run preview -- --host 0.0.0.0
 - Run `npm test`, `npm run typecheck`, and `npm run build` to validate changes. Automated tests do not replace a real browser/game-master playthrough.
 - `npm test` also fails when the source reintroduces `as any` or a `: any` annotation (`scripts/no-any-casts.test.mjs`, `scripts/no-any-annotations.test.mjs`). Reach for a real entity type, a named shape in `types.ts`, or `unknown` narrowed through `utils/typeGuards.ts` (`isRecord` / `asRecord`) instead.
 
-Legacy network saves retain their character IDs, party, story and inventory. The active character becomes the locally controlled character. Unfinished collective/simultaneous actions are kept as inert `legacyNetworkActions` in the save rather than executed. An interrupted network-turn checkpoint cannot safely be replayed because its delivery was not known; load a normal or crash-recovery save instead. Local interrupted turns remain resumable.
+A save is loaded as written: the game does not convert, repair or reject files from other formats, and it does not carry a migration for each renamed setting. Interrupted-turn recovery resumes a local checkpoint, and a crash-recovery point stores only the party name, location, turn number and timestamp.

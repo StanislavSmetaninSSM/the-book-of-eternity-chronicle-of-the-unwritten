@@ -265,7 +265,7 @@ export default function GameMenuView({
         )
     }
 
-    const { adultMode, allowHistoryManipulation, keepLatestNpcJournals, latestNpcJournalsCount, cooperativeGameType, multiplePersonalitiesSettings, autoPassTurn: autoPassTurnSetting, autoPassTurnInCoop: legacyAutoPassTurn, showPartyStatusPanel, doNotUseWorldEvents, hardMode, impossibleMode } = gameSettings;
+    const { adultMode, allowHistoryManipulation, keepLatestNpcJournals, latestNpcJournalsCount, cooperativeGameType, multiplePersonalitiesSettings, autoPassTurn: autoPassTurnSetting, showPartyStatusPanel, doNotUseWorldEvents, hardMode, impossibleMode } = gameSettings;
 
     const handleDifficultyChange = (difficulty: 'normal' | 'hard' | 'impossible') => {
         updateGameSettings({
@@ -561,7 +561,7 @@ export default function GameMenuView({
                                     type="checkbox"
                                     id="autoPassTurn"
                                     name="autoPassTurn"
-                                    checked={autoPassTurnSetting ?? legacyAutoPassTurn ?? true}
+                                    checked={autoPassTurnSetting ?? true}
                                     onChange={(e) => updateGameSettings({ autoPassTurn: e.target.checked })}
                                     className="sr-only peer"
                                 />

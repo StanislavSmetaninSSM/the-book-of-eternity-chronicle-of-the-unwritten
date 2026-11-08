@@ -3,7 +3,7 @@ test('conditional checkpoint discard cannot delete a newer interrupted turn',asy
  const server=await createServer({configFile:false,server:{middlewareMode:true},appType:'custom',logLevel:'silent'});
  try{
   const {saveInterruptedTurnRecovery,loadInterruptedTurnRecovery,clearInterruptedTurnRecovery,clearInterruptedTurnRecoveryIfUnchanged}=await server.ssrLoadModule('/utils/fileManager.ts');
-  await clearInterruptedTurnRecovery();const recovery={context:{message:'first'},baseState:{networkRole:'none'},history:[]};
+  await clearInterruptedTurnRecovery();const recovery={context:{message:'first'},baseState:{},history:[]};
   await saveInterruptedTurnRecovery(recovery);const first=await loadInterruptedTurnRecovery();assert.ok(first.checkpointId);
   await saveInterruptedTurnRecovery(recovery);const second=await loadInterruptedTurnRecovery();assert.notEqual(first.checkpointId,second.checkpointId);
   assert.equal(await clearInterruptedTurnRecoveryIfUnchanged(first),false);assert.equal((await loadInterruptedTurnRecovery()).checkpointId,second.checkpointId);

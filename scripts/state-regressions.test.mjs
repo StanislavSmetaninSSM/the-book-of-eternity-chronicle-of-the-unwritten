@@ -15,7 +15,7 @@ test('item journal updates survive player state synchronization', async () => {
     const item = { existedId: 'sword', name: 'Sword', count: 1, weight: 1, contentsPath: null, journalEntries: ['old'] };
     const player = { ...context.playerCharacter, inventory: [item] };
     const other = { ...context.playerCharacter, playerId: 'other', inventory: [{ ...item, existedId: 'other-sword' }] };
-    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = { itemJournalUpdates: [{ itemId: 'sword', itemName: 'Sword', entryToAppend: 'new' }, { itemId: 'other-sword', itemName: 'Sword', entryToAppend: 'other-new' }] };
     const { newState } = processAndApplyResponse(response, base, context.gameSettings, key => key, true, 1, context.worldMap);
     assert.deepEqual(newState.playerCharacter.inventory[0].journalEntries, ['new', 'old']);
@@ -57,7 +57,7 @@ test('interrupted NPC activity is archived before its replacement is initialized
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = context.playerCharacter;
     const npc = { ...player, NPCId: 'miles', name: 'Miles', inventory: [], currentActivity: { activityName: 'Investigation', description: 'Find clues', totalTimeCostMinutes: 500, timeSpentMinutes: 240 }, completedActivities: [] };
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = { completeNPCActivities: [{ NPCId: 'miles', activityName: 'Investigation', finalState: 'Abandoned', narrativeSummary: 'Interrupted by a riot.' }], NPCsData: [{ NPCId: 'miles', name: 'Miles', currentActivity: { activityName: 'Restoring order', description: 'Coordinate guards', timeSpentMinutes: 0 } }] };
     const { newState, processedResponse } = processAndApplyResponse(response, base, context.gameSettings, key => key, true, 4, context.worldMap);
     const saved = newState.encounteredNPCs[0];
@@ -80,7 +80,7 @@ test('faction project commands honor project IDs when projects share a name', as
     const player = context.playerCharacter;
     const project = (id, time) => ({ projectId: id, projectName: 'Repair road', description: '', totalTimeCostMinutes: 100, timeSpentMinutes: time, currentStep: 1, totalSteps: 2, activeState: 'Active' });
     const faction = { factionId: 'guild', name: 'Guild', color: '#123456', activeProjects: [project('east', 10), project('west', 20)], completedProjects: [{ projectId: 'old', projectName: 'Repair road', completionTurn: 1, finalState: 'Completed' }] };
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [faction], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [faction], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = response => processAndApplyResponse(response, base, context.gameSettings, key => key, true, 4, context.worldMap);
     const updated = apply({ factionProjectUpdates: [{ factionId: 'guild', projectUpdate: { projectId: 'west', projectName: 'Repair road', timeSpentMinutes: 35 } }] }).newState.encounteredFactions[0];
     assert.deepEqual(updated.activeProjects.map(p => [p.projectId, p.timeSpentMinutes]), [['east', 10], ['west', 35]]);
@@ -125,7 +125,7 @@ test('staged empty combatant arrays end combat while null and unrelated empty ar
     assert.deepEqual(merged.alliesData, []);
     assert.deepEqual(merged.worldEventsLog, prior.worldEventsLog);
     const npc = { ...player, NPCId: 'npc-1', name: 'Bandit leader', currentHealth: 100, inventory: [] };
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [enemy], alliesData: [ally], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [enemy], alliesData: [ally], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const { newState, processedResponse } = processAndApplyResponse(merged, base, context.gameSettings, key => key, true, 2, context.worldMap);
     assert.deepEqual(newState.enemiesData, []);
     assert.deepEqual(newState.alliesData, []);
@@ -146,7 +146,7 @@ test('stage combat cleanup retains safe named NPC health without overriding expl
     const player = context.playerCharacter;
     const npc = { ...player, NPCId: 'npc-1', name: 'Leader', currentHealth: 100, inventory: [] };
     context.encounteredNPCs = [npc];
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const combatant = { NPCId: 'npc-1', name: 'Leader', isGroup: false, currentHealth: '80%', maxHealth: `${npc.maxHealth}%`, actions: [] };
     const previous = { enemiesData: [combatant], alliesData: [] };
     const merged = mergeStageResponses(previous, { enemiesData: [], alliesData: [] }, context);
@@ -181,7 +181,7 @@ test('NPCsData identity does not merge distinct IDs or guess an ambiguous name',
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Wait', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = context.playerCharacter;
     const npc = id => ({ ...player, NPCId: id, name: 'Guard', inventory: [], currentHealth: 100 });
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('n1'), npc('n2')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('n1'), npc('n2')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = response => processAndApplyResponse(response, base, context.gameSettings, key => key, true, 2, context.worldMap).newState.encounteredNPCs;
     const ambiguous = apply({ NPCsData: [{ name: 'Guard', currentHealth: 50 }] });
     assert.deepEqual(ambiguous.map(n => [n.NPCId, n.currentHealth]), [['n1', 100], ['n2', 100]]);
@@ -202,7 +202,7 @@ test('item journals require unique identity and never fall back from a stale ID'
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const sword = (id, extra = {}) => ({ existedId: id, name: 'Sword', count: 1, weight: 1, contentsPath: null, journalEntries: [], ...extra });
     const player = { ...context.playerCharacter, inventory: [sword('sword-a', { initialId: 'stale-tag' }), sword('sword-b'), { ...sword('relic'), name: 'Relic' }] };
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const changes = { itemJournalUpdates: [
       { itemId: 'old-sword', itemName: 'Sword', entryToAppend: 'wrong id' },
       { itemId: null, itemName: 'Sword', entryToAppend: 'ambiguous name' },
@@ -233,7 +233,7 @@ test('inter-NPC relationship updates use IDs and reject ambiguous or stale ident
     const npc = (id, name, extra = {}) => ({ ...p, NPCId: id, name, inventory: [], ...extra });
     const friend = { targetNpcId: 'old', targetNpcName: 'Wolf', relationshipStatus: 'Friend', statusReason: 'Trust' };
     const guard = npc('guard', 'Guard', { npcRelationships: [friend] });
-    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [guard, npc('old', 'Wolf'), npc('new', 'Wolf')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [guard, npc('old', 'Wolf'), npc('new', 'Wolf')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const change = { sourceNpcId: 'guard', sourceNpcName: 'Guard', targetNpcId: 'new', targetNpcName: 'Wolf', newRelationshipStatus: 'Rival', newStatusReason: 'Stranger' };
     const created = processAndApplyResponse({ interNPCRelationshipChanges: [change] }, base, context.gameSettings, key => key, true, 2, context.worldMap);
     const rels = created.newState.encounteredNPCs.find(n => n.NPCId === 'guard').npcRelationships;
@@ -263,7 +263,7 @@ test('new same-name items keep distinct IDs, journals, and subsequent updates', 
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const item = { existedId: 'old', initialId: 'reused-tag', name: 'Sword', count: 1, weight: 1, contentsPath: null, journalEntries: ['old journal'] };
     const player = { ...context.playerCharacter, inventory: [item] };
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     for (const explicitId of ['new', null]) {
       const response = { inventoryItemsData: [fullItem({ existedId: explicitId, initialId: 'reused-tag', name: 'Sword' })], itemJournalUpdates: [{ itemId: null, initialItemId: 'reused-tag', itemName: 'Sword', entryToAppend: 'new journal' }] };
       const { newState, logsToAdd } = processAndApplyResponse(response, base, context.gameSettings, k => k, true, 2, context.worldMap);
@@ -297,7 +297,7 @@ test('unknown NPC target cannot hijack a unique name-only legacy relationship', 
     const npc = (id, name, extra = {}) => ({ ...p, NPCId: id, name, inventory: [], ...extra });
     const legacy = { targetNpcId: null, targetNpcName: 'Wolf', relationshipStatus: 'Friend', statusReason: 'Trust' };
     const guard = npc('guard', 'Guard', { npcRelationships: [legacy] });
-    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [guard, npc('real-wolf', 'Wolf')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [p], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [guard, npc('real-wolf', 'Wolf')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const change = { sourceNpcId: 'guard', sourceNpcName: 'Guard', targetNpcId: 'stale-wolf', targetNpcName: 'Wolf', newRelationshipStatus: 'Enemy', newStatusReason: 'Stranger' };
     const rejected = processAndApplyResponse({ interNPCRelationshipChanges: [change] }, base, context.gameSettings, k => k, true, 2, context.worldMap);
     assert.deepEqual(rejected.newState.encounteredNPCs.find(n => n.NPCId === 'guard').npcRelationships, [legacy]);
@@ -322,7 +322,7 @@ test('name-only relationship changes do not modify a different historical namesa
     const npc = (id, name, extra = {}) => ({ ...player, NPCId: id, name, inventory: [], ...extra });
     const oldRel = { targetNpcId: 'old', targetNpcName: 'Wolf', relationshipStatus: 'Friend', statusReason: 'Trust' };
     const guard = npc('guard', 'Guard', { npcRelationships: [oldRel] });
-    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [guard, npc('new', 'Wolf')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [guard, npc('new', 'Wolf')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const change = { sourceNpcId: 'guard', sourceNpcName: 'Guard', targetNpcId: null, targetNpcName: 'Wolf', newRelationshipStatus: 'Enemy', newStatusReason: 'New wolf is hostile' };
     const rejected = processAndApplyResponse({ interNPCRelationshipChanges: [change] }, base, context.gameSettings, k => k, true, 2, context.worldMap);
     assert.deepEqual(rejected.newState.encounteredNPCs.find(n => n.NPCId === 'guard').npcRelationships, [oldRel]);
@@ -346,7 +346,7 @@ test('incomplete unknown inventory updates cannot create ghost items', async () 
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const item = { existedId: 'real', name: 'Sword', count: 1, weight: 1, contentsPath: null };
     const player = { ...context.playerCharacter, inventory: [item] };
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = { inventoryItemsData: [{ existedId: 'stale', name: 'Sword', count: 99 }, { existedId: 'real', count: 2 }, fullItem({ existedId: 'new', name: 'Sword', weight: 0 })], currentHealthChange: -1 };
     const { newState, logsToAdd } = processAndApplyResponse(response, base, context.gameSettings, k => k, true, 2, context.worldMap);
     assert.deepEqual(newState.playerCharacter.inventory.map(i => [i.existedId, i.count]), [['real', 2], ['new', 1]]);
@@ -430,7 +430,7 @@ test('turn-local item fragments merge before IDs are assigned, without matching 
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const old = fullItem({ existedId: 'old', initialId: 'tag', name: 'Old' });
     const player = { ...context.playerCharacter, inventory: [old] };
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const { durability, ...full } = fullItem({ existedId: null, initialId: 'tag', name: 'New' });
     const fragment = { existedId: null, initialId: 'tag', durability: '50%' };
     for (const fragments of [[full, fragment], [fragment, full]]) {
@@ -459,7 +459,7 @@ test('legacy null item IDs do not intercept the image of a new item', async () =
     const legacy = fullItem({ existedId: null, name: 'Legacy', image_prompt: 'old image' });
     const player = { ...context.playerCharacter, inventory: [legacy] };
     const npc = { ...context.playerCharacter, NPCId: 'npc', name: 'NPC', inventory: [structuredClone(legacy)] };
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     for (const source of [base, { ...base, playerCharacter: { ...player, inventory: [] } }]) {
       const response = { inventoryItemsData: [fullItem({ existedId: null, name: 'New', image_prompt: 'new image' })] };
       const result = processAndApplyResponse(response, source, context.gameSettings, k => k, true, 2, context.worldMap);
@@ -487,7 +487,7 @@ test('repeated other-player commands are preserved and applied once per turn', a
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = { ...context.playerCharacter, inventory: [] };
     const second = { ...structuredClone(player), playerId: 'second', inventory: [], currentHealth: 50 };
-    const base = { playerCharacter: player, players: [structuredClone(player), second], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player), second], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const { durability, ...fresh } = fullItem({ initialId: 'tag', name: 'A' });
     const commands = [
       { inventoryItemsData: [{ initialId: 'tag', durability: '65%' }] },
@@ -521,7 +521,7 @@ test('conflicting item tags reject ambiguous fragments regardless of order and s
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const p = { ...context.playerCharacter, inventory: [fullItem({ existedId: 'a', name: 'A' }), fullItem({ existedId: 'b', name: 'B' })] };
     const other = { ...structuredClone(p), playerId: 'other' };
-    const base = { playerCharacter: p, players: [structuredClone(p), other], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [structuredClone(p), other], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const a = { existedId: 'a', initialId: 'clash', durability: '80%' };
     const b = { existedId: 'b', initialId: 'clash', durability: '70%' };
     const ambiguous = { existedId: null, initialId: 'clash', count: 99 };
@@ -552,7 +552,7 @@ test('other-player effect durations and journal commands are scoped to their pla
     const context = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const p = { ...context.playerCharacter, inventory: [fullItem({ existedId: 'active-item', name: 'Sword', journalEntries: ['active old'] })], activePlayerEffects: [{ effectId: 'same', duration: 3 }] };
     const other = { ...structuredClone(p), playerId: 'other', inventory: [fullItem({ existedId: 'other-item', name: 'Sword', journalEntries: ['old'] })], activePlayerEffects: [{ effectId: 'same', duration: 3 }, { effectId: 'old-eff', duration: 3 }] };
-    const base = { playerCharacter: p, players: [structuredClone(p), other], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [structuredClone(p), other], activePlayerIndex: 0, currentLocationData: context.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = { otherPlayersInteractions: { other: [
       { playerActiveEffectsChanges: [{ effectId: 'same', duration: 1 }, { effectId: 'expired', duration: 0 }] },
       { inventoryItemsData: [fullItem({ initialId: 'new-tag', name: 'New book' })] },
@@ -583,7 +583,7 @@ test('conflicting full new item declarations with the same temporary tag are not
     const { processAndApplyResponse, mergeStageResponses } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = { ...ctx.playerCharacter, inventory: [] };
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const first = fullItem({ existedId: null, initialId: 'dup', name: 'Sword' });
     const second = fullItem({ existedId: null, initialId: 'dup', name: 'Shield' });
     for (const updates of [[first, second], [second, first]]) {
@@ -610,7 +610,7 @@ test('rejected player-side item does not destroy a possible NPC transfer source'
     const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = { ...ctx.playerCharacter, inventory: [] };
     const npc = { ...ctx.playerCharacter, NPCId: 'npc', name: 'Trader', progressionType: 'Standard', inventory: [fullItem({ existedId: 'potion', name: 'Potion', count: 5 }), fullItem({ existedId: 'rope', name: 'Rope' })] };
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = response => processAndApplyResponse(response, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
     const missing = { existedId: null, name: 'Potion', count: 1, weight: 1 };
     const failed = apply({ inventoryItemsData: [missing], NPCInventoryRemovals: [{ NPCId: 'npc', itemId: 'potion' }, { NPCId: 'npc', itemId: 'rope' }] });
@@ -645,7 +645,7 @@ test('effect duration updates do not suppress ticking on other actors with colli
     const player = { ...ctx.playerCharacter, activePlayerEffects: [{ effectId: 'shared', duration: 4 }] };
     const other = { ...structuredClone(player), playerId: 'other' };
     const npc = { ...structuredClone(player), NPCId: 'npc', name: 'NPC', activeEffects: [{ effectId: 'shared', duration: 4 }], inventory: [] };
-    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = response => processAndApplyResponse(response, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap).newState;
     const active = apply({ playerActiveEffectsChanges: [{ effectId: 'shared', duration: 1 }] });
     assert.equal(active.players[0].activePlayerEffects[0].duration, 1);
@@ -667,7 +667,7 @@ test('companion transfer does not duplicate items into the stash and failed rena
     const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const player = { ...ctx.playerCharacter, inventory: [] };
     const npc = { ...ctx.playerCharacter, NPCId: 'companion', name: 'Companion', progressionType: 'Companion', inventory: [fullItem({ existedId: 'potion', name: 'Potion', count: 5 })] };
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = response => processAndApplyResponse(response, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
     const removal = { NPCId: 'companion', itemId: 'potion' };
     const success = apply({ inventoryItemsData: [fullItem({ existedId: null, name: 'Potion', count: 5 })], NPCInventoryRemovals: [removal] });
@@ -698,7 +698,7 @@ test('NPC effect duration updates are scoped to the matching actor and its comba
     const player = ctx.playerCharacter;
     const npc = (id) => ({ ...player, NPCId: id, name: id, inventory: [], activeEffects: [{ effectId: 'shared', duration: 4 }] });
     const combatant = id => ({ NPCId: id, name: id, activeBuffs: [{ effectId: 'shared', duration: 4 }], activeDebuffs: [] });
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('a'), npc('b')], encounteredFactions: [], enemiesData: [combatant('a'), combatant('b')], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('a'), npc('b')], encounteredFactions: [], enemiesData: [combatant('a'), combatant('b')], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const response = { NPCEffectChanges: [{ NPCId: 'a', NPCName: 'a', effectsApplied: [{ effectId: 'shared', duration: 1 }] }], enemiesData: [{ NPCId: 'a', name: 'a', activeBuffs: [{ effectId: 'shared', duration: 1 }] }] };
     const { newState } = processAndApplyResponse(response, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
     assert.deepEqual(newState.encounteredNPCs.map(n => n.activeEffects[0].duration), [1, 3]);
@@ -717,7 +717,7 @@ test('a rejected item defers both sides of player and NPC transfers without roll
     const player = { ...ctx.playerCharacter, inventory: [potion], equippedItems: { ...ctx.playerCharacter.equippedItems, MainHand: 'owned' } };
     const other = { ...structuredClone(player), playerId: 'other', inventory: [] };
     const npc = (id, inventory) => ({ ...ctx.playerCharacter, NPCId: id, name: id, progressionType: 'Standard', inventory });
-    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('A', [fullItem({ existedId: 'potion', name: 'Potion', count: 2 })]), npc('B', [])], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('A', [fullItem({ existedId: 'potion', name: 'Potion', count: 2 })]), npc('B', [])], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const invalid = { existedId: null, name: 'Sword', count: 1 };
     const valid = fullItem({ existedId: null, name: 'Potion', count: 2 });
     const removal = { NPCId: 'A', itemId: 'potion' };
@@ -763,7 +763,7 @@ test('new NPC name-only effect updates retain their duration on creation turn', 
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const p = ctx.playerCharacter;
-    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     for (const id of ['new-npc', null]) {
       const npc = { ...p, NPCId: id, initialId: 'npc-tag', name: 'New NPC', inventory: [], activeEffects: [] };
       const response = { NPCsData: [npc], NPCEffectChanges: [{ NPCId: null, NPCName: 'New NPC', effectsApplied: [{ effectId: 'fresh-effect', duration: 1 }] }] };
@@ -787,7 +787,7 @@ test('ambiguous receiving stack IDs defer transfers instead of deleting NPC item
     const player = { ...ctx.playerCharacter, inventory: [item, structuredClone(item)] };
     const other = { ...structuredClone(player), playerId: 'other' };
     const npc = { ...ctx.playerCharacter, NPCId: 'source', name: 'Source', progressionType: 'Standard', inventory: [fullItem({ existedId: 'from', name: 'Potion' })] };
-    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = response => processAndApplyResponse(response, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
     const update = { existedId: 'dup', count: 2 };
     const removal = { NPCId: 'source', itemId: 'from' };
@@ -816,7 +816,7 @@ test('companion transfer into an existing player stack does not also create a st
     const player = { ...ctx.playerCharacter, inventory: [stack] };
     const other = { ...structuredClone(player), playerId: 'other' };
     const npc = { ...ctx.playerCharacter, NPCId: 'source', name: 'Companion', progressionType: 'Companion', inventory: [fullItem({ existedId: 'from', name: 'Potion', count: 1 })] };
-    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player), other], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const removal = { NPCId: 'source', itemId: 'from' };
     for (const response of [
       { inventoryItemsData: [{ existedId: 'stack', count: 3 }], NPCInventoryRemovals: [removal] },
@@ -842,7 +842,7 @@ test('deferred transfer batch also withholds a new NPC inline inventory and its 
     const player = { ...ctx.playerCharacter, inventory: [] };
     const source = { ...ctx.playerCharacter, NPCId: 'source', name: 'Source', progressionType: 'Standard', inventory: [fullItem({ existedId: 'from', name: 'Potion' })] };
     const recipient = { ...ctx.playerCharacter, NPCId: 'new', name: 'New NPC', inventory: [fullItem({ existedId: 'gift', name: 'Potion' })], equippedItems: { MainHand: 'gift' } };
-    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [source], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: player, players: [structuredClone(player)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [source], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const removal = { NPCId: 'source', itemId: 'from' };
     const input = { inventoryItemsData: [{ name: 'Sword', count: 1 }], NPCsData: [recipient], NPCInventoryRemovals: [removal] };
     const failed = processAndApplyResponse(input, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
@@ -868,7 +868,7 @@ test('NPC transfer endpoints are validated before applying either side', async (
     const p = { ...ctx.playerCharacter, inventory: [fullItem({ existedId: 'owned', count: 3 })] };
     const npc = (id, name, inventory = []) => ({ ...ctx.playerCharacter, NPCId: id, name, inventory, progressionType: 'Standard' });
     const sourceItem = fullItem({ existedId: 'from', name: 'Potion', count: 2 });
-    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('a', 'Source', [sourceItem]), npc('b', 'Recipient'), npc('c', 'Namesake'), npc('d', 'Namesake')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('a', 'Source', [sourceItem]), npc('b', 'Recipient'), npc('c', 'Namesake'), npc('d', 'Namesake')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const original = structuredClone(base);
     const apply = response => processAndApplyResponse(response, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap);
     const added = fullItem({ existedId: 'to', name: 'Potion', count: 2 });
@@ -924,7 +924,7 @@ test('companion to NPC transfer does not also stash the transferred stack', asyn
     const p = { ...ctx.playerCharacter, inventory: [] };
     const source = { ...p, NPCId: 'a', name: 'Companion', progressionType: 'Companion', inventory: [fullItem({ existedId: 'from', name: 'Potion', count: 2 })] };
     const recipient = { ...p, NPCId: 'b', name: 'Recipient', progressionType: 'Standard', inventory: [] };
-    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [source, recipient], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [source, recipient], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const apply = r => processAndApplyResponse(r, base, ctx.gameSettings, k => k, true, 2, ctx.worldMap).newState;
     const removal = { NPCId: 'a', itemId: 'from' };
     const gift = fullItem({ existedId: 'to', name: 'Potion', count: 2 });
@@ -950,7 +950,7 @@ test('inline effects on new NPCs persist for their first turn while old effects 
     const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Start', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     const p = ctx.playerCharacter;
     const old = { ...p, NPCId: 'old', name: 'Old', inventory: [], activeEffects: [{ effectId: 'shared', duration: 3 }] };
-    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [old], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [structuredClone(p)], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [old], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     for (const id of ['new', null]) {
       const input = { NPCsData: [{ ...p, NPCId: id, initialId: 'new-tag', name: 'New', inventory: [], activeEffects: [{ effectId: 'shared', duration: 1 }] }] };
       const snapshot = structuredClone(input);
@@ -973,7 +973,7 @@ test('explicit inventory transfers are atomic, actor-addressed and idempotent ac
     const second = { ...structuredClone(p), playerId: 'p2' };
     const item = fullItem({ existedId: 'potion', name: 'Potion', count: 4 });
     const npc = (id, inv = []) => ({ ...ctx.playerCharacter, NPCId: id, name: id, inventory: inv, progressionType: id === 'a' ? 'Companion' : 'Standard', equippedItems: {} });
-    const base = { playerCharacter: p, players: [structuredClone(p), second], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('a', [item]), npc('b')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}, networkRole: 'none', myPeerId: null, peers: [], isConnectedToHost: true };
+    const base = { playerCharacter: p, players: [structuredClone(p), second], activePlayerIndex: 0, currentLocationData: ctx.currentLocation, activeQuests: [], completedQuests: [], encounteredNPCs: [npc('a', [item]), npc('b')], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
     const before = structuredClone(base);
     const transfer = { transferId: 't1', source: { type: 'npc', id: 'a', itemId: 'potion' }, destination: { type: 'player', id: 'p2' }, quantity: 2 };
     const apply = (response, state = base) => processAndApplyResponse(response, state, ctx.gameSettings, k => k, true, 2, ctx.worldMap);

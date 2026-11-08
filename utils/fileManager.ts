@@ -292,7 +292,6 @@ export interface CrashRecoveryMetadata {
   playerName: string;
   locationName: string;
   turnNumber: number | null;
-  networkRole: string;
 }
 
 export interface InterruptedTurnRecovery {
@@ -364,7 +363,6 @@ function buildCrashRecoveryMetadata(saveData: SaveFile, reason: CrashRecoveryRea
     playerName: saveData.gameState?.playerCharacter?.name || 'Unknown',
     locationName: saveData.gameState?.currentLocationData?.name || 'Unknown',
     turnNumber: typeof saveData.gameContext?.currentTurnNumber === 'number' ? saveData.gameContext.currentTurnNumber : null,
-    networkRole: 'none',
   };
 }
 
@@ -380,8 +378,7 @@ function readCrashRecoveryMetadataFromStorage(): CrashRecoveryMetadata | null {
       typeof parsed.reason === 'string' &&
       typeof parsed.playerName === 'string' &&
       typeof parsed.locationName === 'string' &&
-      (typeof parsed.turnNumber === 'number' || parsed.turnNumber === null) &&
-      typeof parsed.networkRole === 'string'
+      (typeof parsed.turnNumber === 'number' || parsed.turnNumber === null)
     ) {
       return parsed as CrashRecoveryMetadata;
     }

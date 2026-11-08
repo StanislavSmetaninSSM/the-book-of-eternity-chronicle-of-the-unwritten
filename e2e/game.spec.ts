@@ -47,20 +47,11 @@ test.describe('single-player chronicle', () => {
     await expect(page.getByTestId('pass-turn-0')).toBeEnabled();
     await expect(page.getByTestId('chat-window')).toContainText('Borin');
 
-    expect(pageErrors.filter(message => !/favicon/i.test(message))).toEqual([]);
-  });
-
-  test('a legacy networked save opens as a local party without network controls', async ({ page }) => {
-    await page.goto('/');
-    await importSave(page, 'legacy-network-save.json');
-
-    await expect(page.getByTestId('chat-window')).toBeVisible();
-    await page.getByTestId('side-tab-Characters').click();
-    await expect(page.getByTestId('players-panel')).toContainText('Cyra');
-
     // The removed networking UI must not come back in any form.
     await expect(page.getByRole('button', { name: /host|join|connect|sync|peer/i })).toHaveCount(0);
     await expect(page.getByText(/waiting for the host|connected to host|sync/i)).toHaveCount(0);
+
+    expect(pageErrors.filter(message => !/favicon/i.test(message))).toEqual([]);
   });
 
   test('a save with an image exports the save and its images as two files', async ({ page }) => {
