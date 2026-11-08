@@ -204,7 +204,7 @@ export async function loadSaveBundleFromFiles(t: TFunction): Promise<SaveBundleI
   return result;
 }
 
-export function loadConfigurationFromFile(t: TFunction): Promise<any | null> {
+export function loadConfigurationFromFile(t: TFunction): Promise<Record<string, unknown> | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -512,17 +512,17 @@ export async function loadStartScreenDraft(): Promise<StartScreenDraft> {
     const formRequest = store.get(START_SCREEN_FORM_DRAFT_ID);
     const worldRequest = store.get(START_SCREEN_WORLD_DRAFT_ID);
     const [formRecord, worldRecord] = await Promise.all([
-      new Promise<any>((resolve, reject) => {
-        formRequest.onsuccess = () => resolve(formRequest.result);
+      new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
+        formRequest.onsuccess = () => resolve(formRequest.result as Record<string, unknown> | undefined);
         formRequest.onerror = () => reject(formRequest.error);
       }),
-      new Promise<any>((resolve, reject) => {
-        worldRequest.onsuccess = () => resolve(worldRequest.result);
+      new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
+        worldRequest.onsuccess = () => resolve(worldRequest.result as Record<string, unknown> | undefined);
         worldRequest.onerror = () => reject(worldRequest.error);
       }),
     ]);
     return {
-      formData: formRecord?.data && typeof formRecord.data === 'object' ? formRecord.data : null,
+      formData: formRecord?.data && typeof formRecord.data === 'object' ? formRecord.data as Record<string, unknown> : null,
       customGameData: worldRecord?.data ?? null,
     };
   } catch (error) {

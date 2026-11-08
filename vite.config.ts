@@ -19,10 +19,27 @@ const ACTIVE_REQUEST_LEASE_MS = Math.max(30_000, Number(process.env.ARENA_GM_REL
 const IMAGE_REQUEST_LEASE_MS = Math.max(5_000, Number(process.env.ARENA_GM_RELAY_IMAGE_LEASE_MS) || 30_000);
 const CORRELATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
+/** A packet as the browser posts it; which fields are set depends on `kind`. */
+interface RelayPacket {
+  kind?: string;
+  protocolVersion?: number;
+  correlationId?: string;
+  createdAt?: string;
+  stepName?: string;
+  modelName?: string;
+  attempt?: number;
+  prompt?: string;
+  ruleBundleId?: string;
+  width?: number;
+  height?: number;
+  turn?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 interface QueuedRelayRequest {
   queuedAt: number;
   lastHeartbeatAt?: number;
-  packet: Record<string, any>;
+  packet: RelayPacket;
 }
 
 let relayOperations: Promise<unknown> = Promise.resolve();
@@ -52,7 +69,7 @@ async function writeJsonAtomically(filePath: string, value: unknown): Promise<vo
   }
 }
 
-function requestPriority(packet: Record<string, any>): number {
+function requestPriority(packet: RelayPacket): number {
   return packet.kind === 'arena-gm-image' ? 1 : 0;
 }
 
@@ -69,7 +86,7 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
       const staleId = active.packet.correlationId;
       console.warn(`Expiring stale Arena GM request ${staleId}: no browser heartbeat for ${Date.now() - heartbeatAt}ms (lease ${activeLeaseMs}ms).`);
       await rm(activeRequestPath, { force: true });
-      const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
+      const visiblePending = await readJsonIfPresent<RelayPacket>(pendingPath);
       if (visiblePending?.correlationId === staleId) await rm(pendingPath, { force: true });
       await removeResponseForCorrelation(staleId);
       if (active.packet.kind === 'arena-gm-image') {
@@ -77,7 +94,7 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
       }
       active = null;
     } else {
-      const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
+      const visiblePending = await readJsonIfPresent<RelayPacket>(pendingPath);
       if (visiblePending?.correlationId !== active.packet.correlationId) {
         await writeJsonAtomically(pendingPath, active.packet);
       }
@@ -111,7 +128,7 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
   }
   queued.sort((a, b) => requestPriority(a.entry.packet) - requestPriority(b.entry.packet)
     || a.entry.queuedAt - b.entry.queuedAt
-    || a.entry.packet.correlationId.localeCompare(b.entry.packet.correlationId));
+    || (a.entry.packet.correlationId ?? '').localeCompare(b.entry.packet.correlationId ?? ''));
 
   const next = queued[0];
   if (!next) return null;
@@ -130,7 +147,7 @@ async function dispatchNextRequest(): Promise<QueuedRelayRequest | null> {
 
 async function removeResponseForCorrelation(correlationId: string): Promise<void> {
   await rm(path.join(responseDirectory, `${correlationId}.json`), { force: true });
-  const legacy = await readJsonIfPresent<Record<string, any>>(legacyResponsePath).catch(() => null);
+  const legacy = await readJsonIfPresent<RelayPacket>(legacyResponsePath).catch(() => null);
   if (legacy?.correlationId === correlationId) await rm(legacyResponsePath, { force: true });
 }
 
@@ -144,7 +161,7 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: Connect
           res.statusCode = status;
           res.end(payload === null ? '' : JSON.stringify(payload));
         };
-        const readBody = async (): Promise<any> => {
+        const readBody = async (): Promise<RelayPacket> => {
           let raw = '';
           for await (const chunk of req) {
             raw += chunk.toString();
@@ -160,7 +177,8 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: Connect
           }
           if (url.pathname === '/__arena_gm/turn' && req.method === 'POST') {
             const packet = await readBody();
-            if (!['arena-gm-turn', 'arena-gm-step', 'arena-gm-image'].includes(packet?.kind) || packet?.protocolVersion !== 1 || typeof packet?.correlationId !== 'string' || !CORRELATION_ID_PATTERN.test(packet.correlationId)) {
+            const correlationId = packet?.correlationId;
+            if (!['arena-gm-turn', 'arena-gm-step', 'arena-gm-image'].includes(packet?.kind ?? '') || packet?.protocolVersion !== 1 || typeof correlationId !== 'string' || !CORRELATION_ID_PATTERN.test(correlationId)) {
               send(400, { error: 'Invalid Arena GM relay packet.' });
               return;
             }
@@ -177,7 +195,8 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: Connect
               send(400, { error: 'Arena GM turn packet is missing its turn data.' });
               return;
             }
-            if (packet.kind === 'arena-gm-image' && (typeof packet.prompt !== 'string' || !Number.isInteger(packet.width) || !Number.isInteger(packet.height) || packet.width < 1 || packet.height < 1 || packet.width > 4096 || packet.height > 4096)) {
+            const { width, height } = packet;
+            if (packet.kind === 'arena-gm-image' && (typeof packet.prompt !== 'string' || typeof width !== 'number' || typeof height !== 'number' || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 4096 || height > 4096)) {
               send(400, { error: 'Arena GM image packet is missing a valid prompt or dimensions.' });
               return;
             }
@@ -217,7 +236,7 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: Connect
                 }
                 if (alreadyQueuedImage) await rm(activeRequestPath, { force: true });
                 else await rename(activeRequestPath, imageQueuePath);
-                const visiblePending = await readJsonIfPresent<Record<string, any>>(pendingPath);
+                const visiblePending = await readJsonIfPresent<RelayPacket>(pendingPath);
                 if (visiblePending?.correlationId === imageId) await rm(pendingPath, { force: true });
               }
 
@@ -289,10 +308,10 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: Connect
               active.lastHeartbeatAt = Date.now();
               await writeJsonAtomically(activeRequestPath, active);
 
-              let response = await readJsonIfPresent<Record<string, any>>(path.join(responseDirectory, `${correlationId}.json`));
+              let response = await readJsonIfPresent<RelayPacket>(path.join(responseDirectory, `${correlationId}.json`));
               let responseSource: 'correlated' | 'legacy' | null = response ? 'correlated' : null;
               if (!response) {
-                const legacy = await readJsonIfPresent<Record<string, any>>(legacyResponsePath);
+                const legacy = await readJsonIfPresent<RelayPacket>(legacyResponsePath);
                 if (legacy?.correlationId === correlationId) {
                   response = legacy;
                   responseSource = 'legacy';

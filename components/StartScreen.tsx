@@ -330,14 +330,14 @@ const CreationForm: React.FC<CreationFormProps> = ({
                 <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">{t('Choose Your Custom Universe')}</label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {Object.entries(customGameData.custom || {}).map(([key, world]: [string, any]) => (
+                        {Object.entries(customGameData.custom || {}).map(([key, world]) => (
                             <button
                                 key={key}
                                 type="button"
                                 onClick={() => applyFieldChange('selectedEra', key)}
                                 className={`p-3 rounded-md transition-all border flex items-center justify-center whitespace-normal min-h-[4rem] ${formData.selectedEra === key ? 'bg-purple-500/30 border-purple-400 text-white' : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'}`}
                             >
-                                {world.name}
+                                {(world as WorldData).name}
                             </button>
                         ))}
                         <button
@@ -900,7 +900,7 @@ export default function StartScreen({ onStartLocal, onLoadGame, onLoadAutosave, 
             addDefaultCalendarRecursively(newGameData, defaultCalendar);
 
             setCustomGameData(newGameData);
-            const loadedFormData = { ...loadedData.formData } as typeof initialFormData & Record<string, unknown>;
+            const loadedFormData: typeof initialFormData & Record<string, unknown> = { ...(loadedData.formData as Record<string, unknown>) } as typeof initialFormData & Record<string, unknown>;
             [
                 'aiProvider', 'modelName', 'correctionModelName', 'isCustomModel', 'customModelName',
                 'openRouterModelName', 'geminiThinkingBudget', 'geminiThinkingLevel', 'useDynamicThinkingBudget',

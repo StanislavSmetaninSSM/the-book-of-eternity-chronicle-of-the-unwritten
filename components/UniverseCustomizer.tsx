@@ -754,7 +754,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
     const customUniverses = useMemo(() => {
         const currentKey = universe === 'custom' ? selectedEra : universe;
         return Object.entries(localData.custom || {})
-            .map(([key, world]: [string, any]) => ({ key, name: world.name }))
+            .map(([key, world]) => ({ key, name: (world as WorldData).name }))
             .filter(uni => uni.key !== currentKey);
     }, [localData.custom, universe, selectedEra]);
 
@@ -775,7 +775,7 @@ export const UniverseCustomizer: React.FC<UniverseCustomizerProps> = ({ isOpen, 
         };
 
         const newLocalData = JSON.parse(JSON.stringify(localData));
-        const targetWorld = (newLocalData.custom as Record<string, any>)[targetUniverseKey];
+        const targetWorld = (newLocalData.custom as Record<string, WorldData>)[targetUniverseKey];
         if (!targetWorld) {
             notifyError(t('Target universe not found.'));
             return;

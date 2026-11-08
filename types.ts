@@ -1277,6 +1277,19 @@ export type DetailData =
     | WorldEvent
     | UnlockedMemory;
 
+/** A journal line the turn wants appended to one of the player's items. */
+export interface ItemJournalUpdate {
+    itemId: string;
+    initialItemId?: string;
+    itemName: string;
+    entryToAppend: string;
+}
+
+/** One per-turn command aimed at another party member; keys depend on the command. */
+export type PlayerCommand = Record<string, unknown> & {
+    itemJournalUpdates?: ItemJournalUpdate[];
+};
+
 export interface GameResponse {
     response?: string;
     thoughtSignature?: string; // Opaque token for preserving reasoning context
@@ -1284,6 +1297,9 @@ export interface GameResponse {
     _internal_flags_?: InternalTurnFlags;
     /** Set by the relay when the step asked for a rule bundle it could not read. */
     _arenaRuleBundleUnavailable?: boolean;
+    /** Set on a correction response that refuses to repair the JSON and asks for a fresh step. */
+    regenerationRequired?: boolean;
+    reason?: string;
     image_prompt?: string;
     items_and_stat_calculations?: string[];
     inventoryItemsData?: Partial<Item>[];
@@ -1333,7 +1349,7 @@ export interface GameResponse {
     addOrUpdateRecipes?: Recipe[];
     removeRecipes?: string[];
     calculatedWeightData?: { additionalEnergyExpenditure: number };
-    otherPlayersInteractions?: Record<string, any>;
+    otherPlayersInteractions?: Record<string, PlayerCommand[]>;
     customStateChanges?: Partial<CustomState>[];
     playerCharacterNameChange?: string | null;
     playerImagePromptChange?: string | null;
@@ -1360,7 +1376,7 @@ export interface GameResponse {
     NPCEquipmentChanges?: NPCEquipmentChange[];
     itemFateCardUnlocks?: { itemId: string; cardId: string; cardName: string }[];
     itemBondLevelChanges?: { itemId: string; itemName: string; newBondLevel: number; changeReason: string }[];
-    itemJournalUpdates?: { itemId: string | null; initialItemId?: string; itemName: string; entryToAppend: string }[];
+    itemJournalUpdates?: (Omit<ItemJournalUpdate, 'itemId'> & { itemId: string | null })[];
     playerAppearanceChange?: string | null;
     playerRaceChange?: string | null;
     playerRaceDescriptionChange?: string | null;

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { GameState, Item, PlayerCharacter, NPC, Wound, Effect } from '../../types';
+import { GameState, GameContext, Item, PlayerCharacter, NPC, Wound, Effect } from '../../types';
 import { 
     equipItem as equipItemUtil, 
     unequipItem as unequipItemUtil, 
@@ -31,7 +31,7 @@ export const createInventoryActions = (
         gameState
     }: {
         setGameState: React.Dispatch<React.SetStateAction<GameState | null>>,
-        gameContextRef: React.MutableRefObject<any>,
+        gameContextRef: React.MutableRefObject<GameContext | null>,
         t: TFunction,
         gameState: GameState | null
     }

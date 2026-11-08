@@ -22,7 +22,7 @@ const readAutosave = (page: Page) => page.evaluate(async () => {
     request.onerror = () => reject(request.error);
   });
   const saves = await openDb('gemini-rpg-db');
-  const record = await new Promise<any>((resolve, reject) => {
+  const record = await new Promise<{ saveData?: { gameState?: { imageCache?: Record<string, unknown> } } } | undefined>((resolve, reject) => {
     const request = saves.transaction('autosaves', 'readonly').objectStore('autosaves').get('current_autosave');
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -37,7 +37,7 @@ const readSlotImages = (page: Page) => page.evaluate(async () => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
-  const records = await new Promise<any[]>((resolve, reject) => {
+  const records = await new Promise<Array<{ saveData?: { gameState?: { imageCache?: Record<string, unknown> } } }>>((resolve, reject) => {
     const request = database.transaction('save_slots', 'readonly').objectStore('save_slots').getAll();
     request.onsuccess = () => resolve(request.result || []);
     request.onerror = () => reject(request.error);

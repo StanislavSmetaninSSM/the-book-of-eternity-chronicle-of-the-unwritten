@@ -1,5 +1,5 @@
 import React from 'react';
-import { GameState, GameContext, ChatMessage, GameResponse, Location, GameSettings, SaveFile, Language, CharacterCreationData } from '../../types';
+import { GameState, GameContext, ChatMessage, GameResponse, Location, GameSettings, WorldState, SaveFile, Language, CharacterCreationData } from '../../types';
 import { executeTurn, askGmQuestion as executeGmQuestion, getModelForStep, executeWorldProgression } from '../../utils/gemini';
 import { createInitialContext, buildNextContext, WorldMapWarning } from '../../utils/gameContext';
 import { formatError, isAbortError } from '../../utils/errorUtils';
@@ -58,7 +58,7 @@ export const createTurnManager = (
         setSuggestedActions: React.Dispatch<React.SetStateAction<string[]>>,
         setWorldMap: React.Dispatch<React.SetStateAction<Record<string, Location>>>,
         setVisitedLocations: React.Dispatch<React.SetStateAction<Location[]>>,
-        setWorldState: React.Dispatch<React.SetStateAction<any>>,
+        setWorldState: React.Dispatch<React.SetStateAction<WorldState | null>>,
         setTurnNumber: React.Dispatch<React.SetStateAction<number | null>>,
         gameContextRef: React.MutableRefObject<GameContext | null>,
         abortControllerRef: React.MutableRefObject<AbortController | null>,
@@ -68,7 +68,7 @@ export const createTurnManager = (
         gameplayMutationRevisionRef?: React.MutableRefObject<number>,
         gameplayMutationPendingRef?: React.MutableRefObject<boolean>,
         setSuperInstructions: React.Dispatch<React.SetStateAction<string>>,
-        setGameSettings: React.Dispatch<React.SetStateAction<any>>,
+        setGameSettings: React.Dispatch<React.SetStateAction<GameSettings | null>>,
         setLanguage: (lang: Language) => void,
         t: (key: string, replacements?: Record<string, string | number>) => string,
         turnStartTimeRef: React.MutableRefObject<number | null>,

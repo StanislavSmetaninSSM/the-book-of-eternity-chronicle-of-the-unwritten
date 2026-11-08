@@ -13,7 +13,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 interface QuestDetailsProps extends Omit<DetailRendererProps, 'data'> {
-  quest: Quest | (Omit<Quest, 'rewards'> & { rewards?: string | any }); // Relax type to allow string rewards
+  quest: Quest | (Omit<Quest, 'rewards'> & { rewards?: string }); // Old saves carry a plain string reward
   onOpenForgetConfirm: () => void;
   gameSettings: GameSettings | null;
 }

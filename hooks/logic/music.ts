@@ -2,6 +2,7 @@
 import React from 'react';
 import { getMusicSuggestionFromAi, generateSurpriseMusicPrompt as generateSurpriseMusicPromptUtil } from '../../utils/gemini';
 import { formatError } from '../../utils/errorUtils';
+import type { GameContext } from '../../types';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -16,7 +17,7 @@ export const createMusicManager = (
         setIsMusicPlayerVisible,
         previousMusicQueries
     }: {
-        gameContextRef: React.MutableRefObject<any>,
+        gameContextRef: React.MutableRefObject<GameContext | null>,
         setError: React.Dispatch<React.SetStateAction<string | null>>,
         t: TFunction,
         setGameLog: React.Dispatch<React.SetStateAction<string[]>>,

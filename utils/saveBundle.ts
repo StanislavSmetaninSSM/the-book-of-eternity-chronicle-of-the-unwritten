@@ -1,4 +1,4 @@
-import type { SaveFile } from '../types';
+import type { ImageCacheEntry, SaveFile } from '../types';
 import { collectImageRefs, dehydrateSaveImages, hydrateImageCache } from './saveImageRefs';
 import { isImageRef, readImageDataUrl, storeImageDataUrl } from './imageBlobStore';
 
@@ -119,7 +119,7 @@ export async function applySaveBundleDocuments(documents: unknown[]): Promise<Sa
     }
 
     const rewritten = rewriteImageRefs(saveDocument, aliases);
-    const cache = (rewritten.gameState as { imageCache?: Record<string, any> }).imageCache;
+    const cache = (rewritten.gameState as { imageCache?: Record<string, ImageCacheEntry> }).imageCache;
     const { cache: hydratedCache, restored, dropped } = await hydrateImageCache(cache);
     if (typeof cache !== 'object' || cache === null || (restored === 0 && dropped === 0)) {
         return { saveData: rewritten, imagesImported, missingImages: 0 };

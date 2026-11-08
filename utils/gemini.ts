@@ -2,7 +2,7 @@ import { ensureThreatActivityIds } from './gameContext';
 import { errorMessage } from './errorUtils';
 import { asRecord } from './typeGuards';
 
-import { GameContext, GameResponse } from '../types';
+import { GameContext, GameResponse, Cinematic } from '../types';
 // @ts-ignore
 import { getMusicPrompt } from '../prompts/musicPrompt.js';
 // @ts-ignore
@@ -145,7 +145,7 @@ async function attemptCorrection(
     context: GameContext,
     error: Error,
     abortSignal: AbortSignal,
-): Promise<any> {
+): Promise<Partial<GameResponse>> {
     const correctionContext = {
         ...context,
         image: null,
@@ -562,7 +562,7 @@ export async function executeCancellableJsonGeneration(
     abortSignal: AbortSignal,
     onStreamingChunk: (text: string) => void,
     systemInstruction?: string
-): Promise<any> {
+): Promise<Partial<Cinematic>> {
     const prompt = typeof input === 'string' ? input : input.promptContent;
     const effectiveSystemInstruction = systemInstruction || (typeof input === 'string' ? undefined : input.systemInstruction);
     const result = await requestArenaGmStep(
