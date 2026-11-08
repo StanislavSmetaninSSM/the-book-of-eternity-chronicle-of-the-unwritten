@@ -20,6 +20,21 @@ test('the reader computes what the logged line claims, and refuses the rest', ()
   assert.equal(evaluateArithmetic(undefined), null);
 });
 
+test('a power is arithmetic the reader can follow', () => {
+  assert.equal(evaluateArithmetic('5 ^ 2.5'), Math.pow(5, 2.5));
+  assert.equal(evaluateArithmetic('floor(100 * (5 ^ 2.5))'), 5590);
+  assert.equal(evaluateArithmetic('2 ** 3 ** 2'), 512, 'powers bind tighter than multiplication and group to the right');
+  assert.equal(evaluateArithmetic('15 + pow(100, 0.8) * 1.2'), 15 + Math.pow(100, 0.8) * 1.2);
+  assert.equal(evaluateArithmetic('2 ^'), null, 'an unreadable exponent is skipped, not accused');
+
+  // The party-power example in the rules is written in this shape. Three of its terms did not add
+  // up as long as the reader could not multiply a level by itself a fractional number of times.
+  const guide = getGameMasterGuideRules().split('\n').map(line => line.trim());
+  assert.ok(guide.includes('- Sir Kaelen: (25 ^ 1.2) = 47.6'), 'the rulebook states each term to one decimal');
+  assert.equal(auditCalculationLines(guide.filter(line => line.includes('^ 1.2'))).checked, 3,
+    'and each of those three lines is one the reader recomputes');
+});
+
 test('a calculation is re-checked only when the line states one', () => {
   const clean = auditCalculationLines([
     '- CriticalCarryWeight = 30kg + 15kg = 45kg',

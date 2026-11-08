@@ -28,8 +28,9 @@ const countEffects = (character) => {
 };
 
 /**
- * Reads one arithmetic expression: the four operations, parentheses and the five functions the
- * rulebook uses (round, floor, ceil, min, max). Units such as `kg` or `%` are dropped, because
+ * Reads one arithmetic expression: the operations, parentheses and the six functions the rulebook
+ * uses (round, floor, ceil, min, max, pow), with powers written as `^` or `**`. Units such as `kg`
+ * or `%` are dropped, because
  * the logged claim keeps them. Anything the reader cannot follow yields null, which the caller
  * treats as "not audited", never as "wrong".
  * @param {string} text
@@ -57,13 +58,13 @@ export function evaluateArithmetic(text) {
     };
 
     const product = () => {
-        let value = atom();
+        let value = power();
         for (;;) {
             skipSpace();
             const operator = source[at];
             if (operator !== '*' && operator !== '/' && operator !== '×' && operator !== '÷') return value;
             at += 1;
-            const right = atom();
+            const right = power();
             if (right === null) return null;
             if (operator === '/' || operator === '÷') {
                 if (right === 0) return null;
@@ -72,10 +73,26 @@ export function evaluateArithmetic(text) {
         }
     };
 
+    /**
+     * A power, written the way a log writes it: '5 ^ 2.5' or '5 ** 2.5'. It binds tighter than
+     * multiplication and is right associative, so 2 ^ 3 ^ 2 is 2 ^ 9 and not 8 ^ 2.
+     */
+    const power = () => {
+        const base = atom();
+        if (base === null) return null;
+        skipSpace();
+        const starred = source[at] === '*' && source[at + 1] === '*';
+        if (!starred && source[at] !== '^') return base;
+        at += starred ? 2 : 1;
+        const exponent = power();
+        if (exponent === null) return null;
+        return Math.pow(base, exponent);
+    };
+
     const atom = () => {
         skipSpace();
         if (source[at] === '-') { at += 1; const value = atom(); return value === null ? null : -value; }
-        const call = source.slice(at).match(/^(round|floor|ceil|min|max)\s*\(/i);
+        const call = source.slice(at).match(/^(round|floor|ceil|min|max|pow)\s*\(/i);
         if (call) {
             at += call[0].length;
             const args = [];
@@ -93,6 +110,7 @@ export function evaluateArithmetic(text) {
                 case 'round': return Math.round(args[0]);
                 case 'floor': return Math.floor(args[0]);
                 case 'ceil': return Math.ceil(args[0]);
+                case 'pow': return Math.pow(args[0], args[1]);
                 case 'min': return Math.min(...args);
                 default: return Math.max(...args);
             }
@@ -133,7 +151,7 @@ const cleanExpression = (text) => {
     const colon = expression.lastIndexOf(':');
     if (colon !== -1) expression = expression.slice(colon + 1);
     expression = expression
-        .replace(/\bround\b|\bfloor\b|\bceil\b|\bmin\b|\bmax\b/gi, match => match)
+        .replace(/\bround\b|\bfloor\b|\bceil\b|\bmin\b|\bmax\b|\bpow\b/gi, match => match)
         .replace(/[\u00A0\u2009\u202F]/g, ' ')
         .replace(/\s*[%\u2070]\s*/g, ' ')
         .replace(/kg|кг/gi, ' ')
@@ -142,8 +160,8 @@ const cleanExpression = (text) => {
         .replace(/÷/g, '/')
         .replace(/^\s*[-+*•]+\s*/, '')
         .trim();
-    if (/[A-Za-zА-Яа-яЁё\u0400-\u04FF']/.test(expression.replace(/\b(round|floor|ceil|min|max)\b/gi, ''))) return null;
-    if (!/[+\-*/]/.test(expression)) return null;
+    if (/[A-Za-zА-Яа-яЁё\u0400-\u04FF']/.test(expression.replace(/\b(round|floor|ceil|min|max|pow)\b/gi, ''))) return null;
+    if (!/[+\-*/^]/.test(expression)) return null;
     return expression;
 };
 

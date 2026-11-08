@@ -30,6 +30,12 @@ export const MINIMUM_CRITICAL_HIT_THRESHOLD = 1;
 /** The roll a critical hit needs without any luck at all. */
 export const NATURAL_TWENTY_CRITICAL_THRESHOLD = 20;
 
+/** The constant the progression rule starts from (#5.10.A.1). */
+export const BASE_EXPERIENCE = 100;
+
+/** How steeply the requirement grows with the level (#5.10.A.1). */
+export const EXPERIENCE_LEVEL_EXPONENT = 2.5;
+
 const value = (characteristic) => Number.isFinite(characteristic) ? characteristic : 1;
 
 /**
@@ -92,3 +98,22 @@ export function criticalHitThreshold(luck) {
     const threshold = NATURAL_TWENTY_CRITICAL_THRESHOLD - critChanceBuffFromLuck(luck);
     return Math.min(NATURAL_TWENTY_CRITICAL_THRESHOLD, Math.max(MINIMUM_CRITICAL_HIT_THRESHOLD, threshold));
 }
+
+/**
+ * The experience a character of this level needs in order to advance (#5.10.A.1):
+ * 'TotalXPForLevel(L) = floor(BaseXP * (L ^ 2.5))'.
+ *
+ * Two places computed it - the sheet built at character creation and the pass that applies a
+ * level-up after a turn - and the sheet also quoted it to the player as a string, so a change had
+ * to be remembered in three. The rule is the one owner now; the number the level-up pass compares
+ * 'experience' against and the figure printed under it come from here.
+ * @param {number} level
+ * @returns {number}
+ */
+export function experienceForLevelTransition(level) {
+    if (level < 1) return BASE_EXPERIENCE; // The rule's own table starts at level 1.
+    return Math.floor(BASE_EXPERIENCE * Math.pow(level, EXPERIENCE_LEVEL_EXPONENT));
+}
+
+/** The formula as the character sheet states it, written from the constants it describes. */
+export const experienceFormulaLabel = `floor(${BASE_EXPERIENCE} * (Lvl ^ ${EXPERIENCE_LEVEL_EXPONENT}))`;

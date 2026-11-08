@@ -702,11 +702,11 @@ export const section = `    <InstructionBlock id="5.A">
                                                - Sir Kaelen: MemberLevel = 25
                                                - Hired Sellsword: MemberLevel = 18
                                             3. Individual Power Contributions:
-                                               - Player: (20 ^ 1.2) = 36.3
-                                               - Sir Kaelen: (25 ^ 1.2) = 48.1
-                                               - Hired Sellsword: (18 ^ 1.2) = 31.8
-                                            4. TotalPowerContribution = 36.3 + 48.1 + 31.8 = 116.2
-                                            5. PPL = round(116.2 / 3) = round(38.73) = 39.
+                                               - Player: (20 ^ 1.2) = 36.4
+                                               - Sir Kaelen: (25 ^ 1.2) = 47.6
+                                               - Hired Sellsword: (18 ^ 1.2) = 32.1
+                                            4. TotalPowerContribution = 36.4 + 47.6 + 32.1 = 116.1
+                                            5. PPL = round(116.1 / 3) = round(38.7) = 39.
 
                                             ## Step d: Calculate Effective Level (EL)
                                             - PPL = 39

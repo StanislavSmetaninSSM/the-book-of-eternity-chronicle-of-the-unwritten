@@ -6658,6 +6658,9 @@ Each command is {"transferId":"unique-per-transfer-never-reused", "source":{"typ
                             3.  Formula for Total XP Required for a Level (TotalXPForLevel):
                                 'TotalXPForLevel(L) = floor(BaseXP * (L ^ 2.5))'
                                 Where 'L' is the character's CURRENT level.
+                                - Example: TotalXPForLevel(5) = floor(100 * (5 ^ 2.5)) = 5590
+                                Write the substitution, not the answer alone: the interface re-computes a line of this shape and shows the player any line whose result does not follow from the
+                                numbers on it. The value you put in 'experienceForNextLevel' and the one the character sheet prints are this same number.
 
                             4.  System Integration Note:
                                 The game system will use this formula to calculate the total XP requirement for the player's current level and provide this value in the Context as 'Context.playerCharacter.totalExperienceForCurrentLevel'. 

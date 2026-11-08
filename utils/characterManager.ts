@@ -2,7 +2,7 @@ import { PlayerCharacter, Characteristics, GameSettings, CharacterCreationData }
 import { recalculateDerivedStats } from './gameContext';
 import { asWorld } from './worldData';
 import { DEFAULT_CRITICAL_EXCESS_WEIGHT, isEncumbered } from './carryWeight.js';
-import { critChanceBuffFromLuck, criticalHitThreshold, maxCarryWeight, maxEnergyPercent, maxHealthPercent } from './derivedStats.js';
+import { critChanceBuffFromLuck, criticalHitThreshold, experienceForLevelTransition, maxCarryWeight, maxEnergyPercent, maxHealthPercent } from './derivedStats.js';
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -17,14 +17,6 @@ export function createNewPlayerCharacter(
     }
 ): PlayerCharacter {
     const { templatePlayer, shareCharacteristics, partyLevel } = options;
-
-    const experienceForLevelTransition = (level: number): number => {
-        if (level < 1) return 100; // Fallback for safety
-        const baseXP = 100;
-        // New formula: TotalXPForLevel(L) = floor(BaseXP * (L ^ 2.5))
-        // This is interpreted as the XP required to go from level L to L+1.
-        return Math.floor(baseXP * Math.pow(level, 2.5));
-    };
 
     if (templatePlayer) {
         // --- CREATING FROM TEMPLATE ---

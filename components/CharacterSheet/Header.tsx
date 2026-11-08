@@ -7,7 +7,7 @@ import ImageRenderer from '../ImageRenderer';
 import EditableField from '../DetailRenderer/Shared/EditableField';
 import StatBar from './Shared/StatBar';
 import { criticalCarryWeight } from '../../utils/carryWeight.js';
-import { CARRY_CAPACITY_BASE_WEIGHT } from '../../utils/derivedStats.js';
+import { BASE_ENERGY_PERCENT, BASE_HEALTH_PERCENT, CARRY_CAPACITY_BASE_WEIGHT, experienceFormulaLabel } from '../../utils/derivedStats.js';
 import { isEncumbered } from '../../utils/carryWeight.js';
 import { CharacterSheetProps } from '../CharacterSheet'; // Добавьте этот импорт
 
@@ -127,9 +127,13 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
             name: t('Health'),
             value: `${character.currentHealth} / ${character.maxHealth}`,
             breakdown: [
-                { label: t('Base Health'), value: '100' },
-                { label: t('Constitution Bonus'), value: `+${Math.floor(character.characteristics.standardConstitution * 2.0)}` },
-                { label: t('Strength Bonus'), value: `+${Math.floor(character.characteristics.standardStrength * 1.0)}` }
+                { label: t('Base Health'), value: `${BASE_HEALTH_PERCENT}` },
+                // Health is that base plus the two characteristics the formula weighs, and the total
+                // the sheet shows is built from the permanently modified values, gear included. A
+                // view recomputing the terms from the standard values would disagree with the number
+                // it is explaining - and print NaN for a character whose sheet has no characteristics
+                // at all - so it states the difference the total leaves instead.
+                { label: t('Strength and Constitution Bonus'), value: `+${Math.max(0, (character.maxHealth ?? BASE_HEALTH_PERCENT) - BASE_HEALTH_PERCENT)}` },
             ],
             description: t('primary_stat_description_health')
         });
@@ -142,11 +146,11 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                 name: t('Energy'),
                 value: `${character.currentEnergy} / ${character.maxEnergy}`,
                 breakdown: [
-                    { label: t('Base Energy'), value: '100' },
-                    { label: t('Constitution Bonus'), value: `+${Math.floor(character.characteristics.standardConstitution * 0.75)}` },
-                    { label: t('Intelligence Bonus'), value: `+${Math.floor(character.characteristics.standardIntelligence * 0.75)}` },
-                    { label: t('Wisdom Bonus'), value: `+${Math.floor(character.characteristics.standardWisdom * 0.75)}` },
-                    { label: t('Faith Bonus'), value: `+${Math.floor(character.characteristics.standardFaith * 0.75)}` }
+                    { label: t('Base Energy'), value: `${BASE_ENERGY_PERCENT}` },
+                    // Four characteristics weigh in here, three quarters each, and the rule rounds
+                    // every term apart. Only their sum is published on the character, so the sheet
+                    // gives that sum rather than four numbers it cannot derive.
+                    { label: t('Characteristics Bonus'), value: `+${Math.max(0, (character.maxEnergy ?? BASE_ENERGY_PERCENT) - BASE_ENERGY_PERCENT)}` },
                 ],
                 description: t('primary_stat_description_energy')
             });
@@ -160,7 +164,7 @@ const CharacterSheetHeader: React.FC<CharacterSheetHeaderProps> = ({
                 name: t('Experience'),
                 value: `${(character as PlayerCharacter).experience} / ${(character as PlayerCharacter).experienceForNextLevel}`,
                 breakdown: [
-                    { label: t('Formula for Next Level'), value: 'floor(100 * (Lvl ^ 2.5))' }
+                    { label: t('Formula for Next Level'), value: experienceFormulaLabel }
                 ],
                 description: t('primary_stat_description_experience')
             });

@@ -6,6 +6,7 @@
 import { CurrentActivity, CompleteFactionProject, CompleteNPCActivity, CustomState, InventoryTransfer, GameState, GameResponse, PlayerCharacter, Characteristics, GameSettings, Quest, Location, Item, NPC, Faction, ActiveSkill, PassiveSkill, Wound, QuestUpdate, UnlockedMemory, ActiveThreat, Project, CompletedProject, NPCSkillChange, FactionRank, Effect, EnemyCombatObject, AllyCombatObject, Combatant, NpcRelationship } from '../types';
 import { recalculateAllWeights } from './inventoryManager';
 import { recalculateDerivedStats } from './gameContext';
+import { experienceForLevelTransition } from './derivedStats.js';
 import { asRecord } from './typeGuards';
 import { generateFactionColor } from './colorUtils';
 
@@ -381,12 +382,6 @@ export const deepMergeResponses = <T>(target: T, source: unknown): T => {
     }
 
     return output as T;
-};
-
-const experienceForLevelTransition = (level: number): number => {
-    if (level < 1) return 100;
-    const baseXP = 100;
-    return Math.floor(baseXP * Math.pow(level, 2.5));
 };
 
 export function checkAndApplyLevelUp(pc: PlayerCharacter, t: TFunction): { pc: PlayerCharacter, logs: string[] } {

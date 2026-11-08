@@ -2,9 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
+  BASE_EXPERIENCE,
+  BASE_HEALTH_PERCENT,
   CARRY_CAPACITY_BASE_WEIGHT,
+  EXPERIENCE_LEVEL_EXPONENT,
   critChanceBuffFromLuck,
   criticalHitThreshold,
+  experienceFormulaLabel,
+  experienceForLevelTransition,
   maxCarryWeight,
   maxEnergyPercent,
   maxHealthPercent,
@@ -64,5 +69,46 @@ test('both places that build a character ask the same module', async () => {
     assert.match(source, /criticalHitThreshold\(/, `${name} must derive the critical threshold from the rules module`);
     assert.doesNotMatch(source, /100 \+ Math\.floor/, `${name} must not keep a copy of the health formula`);
     assert.doesNotMatch(source, /20 - (?:newPc\.)?critChanceBuffFromLuck|20 - Math\.floor/, `${name} must not keep a copy of the critical formula`);
+  }
+});
+
+test('the experience a level costs has one owner, including the number printed on the sheet', async () => {
+  const rules = getGameMasterGuideRules();
+  assert.match(rules, /'TotalXPForLevel\(L\) = floor\(BaseXP \* \(L \^ 2\.5\)\)'/, 'the rule states the formula the code implements');
+  assert.match(rules, /- Example: TotalXPForLevel\(5\) = floor\(100 \* \(5 \^ 2\.5\)\) = 5590/, 'and works one level out to a number');
+
+  assert.equal(BASE_EXPERIENCE, 100);
+  assert.equal(EXPERIENCE_LEVEL_EXPONENT, 2.5);
+  assert.equal(experienceForLevelTransition(1), 100);
+  assert.equal(experienceForLevelTransition(5), 5590, 'the guide states 5590 XP for the fifth level');
+  assert.equal(experienceForLevelTransition(0), 100, 'a level below the table still costs the base');
+  assert.equal(experienceFormulaLabel, 'floor(100 * (Lvl ^ 2.5))', 'the sheet quotes the constants it actually uses');
+
+  const [levelUp, creation] = await Promise.all([
+    read('../utils/responseProcessor.ts'),
+    read('../utils/characterManager.ts'),
+  ]);
+  for (const [name, source] of [['the level-up pass', levelUp], ['character creation', creation]]) {
+    assert.match(source, /experienceForLevelTransition\(/, `${name} must ask the rules module what a level costs`);
+    assert.doesNotMatch(source, /Math\.pow\(level, 2\.5\)|Math\.pow\((?:newPc|newPlayer)\.level, 2\.5\)/, `${name} must not keep a copy of the progression formula`);
+  }
+});
+
+test('the sheet explains a total rather than recomputing one', async () => {
+  const header = await read('../components/CharacterSheet/Header.tsx');
+  // Health and energy are built from the permanently modified characteristics - gear folded in -
+  // which the sheet does not carry. Breaking the total into terms from the standard values made
+  // the parts disagree with the number beside them, and printed NaN for a character whose sheet
+  // states no characteristics at all.
+  assert.doesNotMatch(header, /Math\.floor\(character\.characteristics\.standard/, 'the breakdown must not re-derive a formula');
+  assert.match(header, /value: `\$\{BASE_HEALTH_PERCENT\}`/, 'the base row quotes the constant the formula starts from');
+  assert.match(header, /experienceFormulaLabel/, 'the quoted formula comes from the module that applies it');
+
+  const details = await read('../utils/translations/ui/details.ts');
+  for (const pair of [
+    'Characteristics Bonus": "Characteristics Bonus',
+    'Characteristics Bonus": "Бонус характеристик',
+  ]) {
+    assert.ok(details.includes(pair), `the details dictionary needs: ${pair}`);
   }
 });
