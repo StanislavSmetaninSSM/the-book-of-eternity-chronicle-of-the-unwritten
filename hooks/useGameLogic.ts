@@ -11,7 +11,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { getCinemaPrompt, getContinueCinemaPrompt } from '../prompts/cinemaPrompt';
 import narrativeStyleGuide from '../prompts/narrativeStyleGuide.js';
 
-import { formatError } from '../utils/errorUtils';
+import { formatError, isAbortError } from '../utils/errorUtils';
 
 import { createTurnManager } from './logic/turn';
 import { createSaveLoadManager } from './logic/saveLoad';
@@ -55,8 +55,8 @@ interface UseGameLogicProps {
     setLanguage: (lang: Language) => void;
 }
 
-const isObject = (item: any): item is object => {
-    return (item && typeof item === 'object' && !Array.isArray(item));
+const isObject = (item: unknown): item is Record<string, unknown> => {
+    return !!item && typeof item === 'object' && !Array.isArray(item);
 };
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => {
@@ -491,11 +491,12 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         clearPendingContextEdits();
         if (activeTurnRef.current) abortControllerRef.current?.abort();
         // --- BACKWARD COMPATIBILITY MIGRATION FOR EVENT LOGS ---
-        const migrateLocationEvents = (loc: any) => {
-            if (loc && loc.lastEventsDescription && typeof loc.lastEventsDescription === 'string' && !loc.eventDescriptions) {
-                console.warn(`Migrating old 'lastEventsDescription' for location: ${loc.name || loc.locationId}`);
-                loc.eventDescriptions = loc.lastEventsDescription.split('\n\n').filter((e: string) => e.trim()).reverse();
-                delete loc.lastEventsDescription;
+        const migrateLocationEvents = (loc: unknown) => {
+            const record = asRecord(loc);
+            if (record && typeof record.lastEventsDescription === 'string' && !record.eventDescriptions) {
+                console.warn(`Migrating old 'lastEventsDescription' for location: ${String(record.name ?? record.locationId)}`);
+                record.eventDescriptions = record.lastEventsDescription.split('\n\n').filter(e => e.trim()).reverse();
+                delete record.lastEventsDescription;
             }
         };
 
@@ -512,22 +513,23 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         // --- END EVENT LOG MIGRATION ---
 
         // --- BACKWARD COMPATIBILITY MIGRATION FOR DIFFICULTY PROFILES ---
-        const migrateDifficultyProfile = (obj: any) => {
-            if (obj && obj.difficultyProfile && !obj.internalDifficultyProfile) {
-                console.warn(`Migrating old 'difficultyProfile' for: ${obj.name || obj.locationId}`);
-                obj.internalDifficultyProfile = JSON.parse(JSON.stringify(obj.difficultyProfile));
-                obj.externalDifficultyProfile = JSON.parse(JSON.stringify(obj.difficultyProfile));
-                delete obj.difficultyProfile;
+        const migrateDifficultyProfile = (obj: unknown) => {
+            const record = asRecord(obj);
+            if (record && record.difficultyProfile && !record.internalDifficultyProfile) {
+                console.warn(`Migrating old 'difficultyProfile' for: ${String(record.name ?? record.locationId)}`);
+                record.internalDifficultyProfile = JSON.parse(JSON.stringify(record.difficultyProfile));
+                record.externalDifficultyProfile = JSON.parse(JSON.stringify(record.difficultyProfile));
+                delete record.difficultyProfile;
             }
         };
-        const migrateAdjacencyMap = (adjMap: any[] | undefined) => {
-            if (!adjMap) return;
-            adjMap.forEach((link: any) => {
-                if (link && link.estimatedDifficultyProfile && !link.estimatedInternalDifficultyProfile) {
-                    console.warn(`Migrating old 'estimatedDifficultyProfile' for link: ${link.name}`);
-                    link.estimatedInternalDifficultyProfile = JSON.parse(JSON.stringify(link.estimatedDifficultyProfile));
-                    link.estimatedExternalDifficultyProfile = JSON.parse(JSON.stringify(link.estimatedDifficultyProfile));
-                    delete link.estimatedDifficultyProfile;
+        const migrateAdjacencyMap = (adjMap: unknown) => {
+            asArray(adjMap).forEach(link => {
+                const record = asRecord(link);
+                if (record && record.estimatedDifficultyProfile && !record.estimatedInternalDifficultyProfile) {
+                    console.warn(`Migrating old 'estimatedDifficultyProfile' for link: ${String(record.name)}`);
+                    record.estimatedInternalDifficultyProfile = JSON.parse(JSON.stringify(record.estimatedDifficultyProfile));
+                    record.estimatedExternalDifficultyProfile = JSON.parse(JSON.stringify(record.estimatedDifficultyProfile));
+                    delete record.estimatedDifficultyProfile;
                 }
             });
         };
@@ -547,14 +549,15 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         // Migrate worldMapUpdates in previousTurnResponse
         const worldMapUpdates = data.gameContext?.previousTurnResponse?.worldMapUpdates;
         if (worldMapUpdates) {
-            asArray(worldMapUpdates.locationUpdates).forEach((update: any) => {
-                if (update && update.newDifficultyProfile && !update.newInternalDifficultyProfile) {
-                    update.newInternalDifficultyProfile = JSON.parse(JSON.stringify(update.newDifficultyProfile));
-                    update.newExternalDifficultyProfile = JSON.parse(JSON.stringify(update.newDifficultyProfile));
-                    delete update.newDifficultyProfile;
+            asArray(worldMapUpdates.locationUpdates).forEach(update => {
+                const record = asRecord(update);
+                if (record && record.newDifficultyProfile && !record.newInternalDifficultyProfile) {
+                    record.newInternalDifficultyProfile = JSON.parse(JSON.stringify(record.newDifficultyProfile));
+                    record.newExternalDifficultyProfile = JSON.parse(JSON.stringify(record.newDifficultyProfile));
+                    delete record.newDifficultyProfile;
                 }
             });
-            asArray(worldMapUpdates.newLocations).forEach((newLoc: any) => {
+            asArray(worldMapUpdates.newLocations).forEach(newLoc => {
                 migrateDifficultyProfile(newLoc);
             });
         }
@@ -1345,7 +1348,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             }
             restoreFromSaveData(data);
             return true;
-        } catch (e: any) {
+        } catch (e: unknown) {
             setError(formatError(e));
             return false;
         }
@@ -1388,7 +1391,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         setSuperInstructions(() => applied(newInstructions));
     }, [userGameplayActionBlocked, beginSharedContextEdit]);
 
-    const editLocationData = (locationId: string, field: keyof Location, value: any) => {
+    const editLocationData = (locationId: string, field: keyof Location, value: unknown) => {
         if (!gameSettings?.allowHistoryManipulation || userGameplayActionBlocked()) return;
 
         setUserWorldMap(prevMap => {
@@ -1581,7 +1584,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         try {
             restoreFromSaveData(turnSaveToUse);
             return true;
-        } catch (e: any) {
+        } catch (e: unknown) {
             setError(formatError(e));
             return false;
         }
@@ -2166,8 +2169,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             setCinemaGenerationProgress({ current: newCinematic.frames.length, total: newCinematic.frames.length, message: t('TrailerReady') });
 
-        } catch (e: any) {
-            if (e.name !== 'AbortError') {
+        } catch (e: unknown) {
+            if (!isAbortError(e)) {
                 setError(formatError(e));
                 console.error("Failed to generate film trailer:", e);
             }
@@ -2242,8 +2245,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
             setCinemaGenerationProgress({ current: newFrames.length, total: newFrames.length, message: t('TrailerReady') });
 
-        } catch (e: any) {
-             if (e.name !== 'AbortError') {
+        } catch (e: unknown) {
+             if (!isAbortError(e)) {
                 setError(formatError(e));
                 console.error("Failed to continue film trailer:", e);
             }
@@ -2371,7 +2374,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
                 return true;
             }
             return false;
-        } catch (e: any) {
+        } catch (e: unknown) {
             setError(formatError(e));
             return false;
         }
@@ -2407,7 +2410,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             } else {
                 throw new Error("No audio data returned");
             }
-        } catch (e: any) {
+        } catch (e: unknown) {
             setError(formatError(e));
         } finally {
             setIsGeneratingCinema(false);

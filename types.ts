@@ -51,7 +51,8 @@ export interface ClassDefinition {
 export interface WorldData {
     name: string;
     description: string;
-    currencyName: string;
+    /** Some shipped worlds leave the currency to the default, so it is optional. */
+    currencyName?: string;
     currencyOptions?: string[];
     races: Record<string, RaceDefinition>;
     classes: Record<string, ClassDefinition>;
@@ -114,6 +115,15 @@ export interface PlayerStatus {
     activeConditions?: string[];
 }
 
+/** What a multi-personality party shares between its members. */
+export interface MultiplePersonalitiesSettings {
+  shareCharacteristics: boolean;
+  shareSkills: boolean;
+  shareNpcReputation: boolean;
+  shareFactionReputation: boolean;
+  shareInventory: boolean;
+}
+
 export interface GameSettings {
   nonMagicMode: boolean;
   language: Language;
@@ -142,17 +152,64 @@ export interface GameSettings {
   showPartyStatusPanel?: boolean;
   uiControlScale?: number;
   uiFontScale?: number;
-  multiplePersonalitiesSettings?: {
-    shareCharacteristics: boolean;
-    shareSkills: boolean;
-    shareNpcReputation: boolean;
-    shareFactionReputation: boolean;
-    shareInventory: boolean;
-  };
+  multiplePersonalitiesSettings?: MultiplePersonalitiesSettings;
   doNotUseWorldEvents: boolean;
   showImageSourceInfo?: boolean;
   generateWorldEventImages?: boolean;
   disableImageGeneration?: boolean;
+}
+
+/**
+ * What the start screen hands to the game: the universe choice, the toggles and
+ * the new character. Every field is optional because old shells and old saves
+ * only carry some of them.
+ */
+export interface CharacterCreationData {
+  universe?: string;
+  selectedEra?: string;
+  worldInformation?: string;
+  superInstructions?: string;
+  initialPrompt?: string;
+  customGameData?: unknown;
+  playerName?: string;
+  characterDescription?: string;
+  age?: number;
+  race?: string;
+  charClass?: string;
+  isCustomRace?: boolean;
+  customRaceName?: string;
+  customRaceDescription?: string;
+  customAttributes?: Record<string, number>;
+  isCustomClass?: boolean;
+  customClassName?: string;
+  customClassDescription?: string;
+  customClassAttributes?: Record<string, number>;
+  startingYear?: number;
+  startingMonth?: string;
+  startingDay?: number;
+  startTime?: string;
+  weather?: string;
+  currencyName?: string;
+  nonMagicMode?: boolean;
+  adultMode?: boolean;
+  youtubeApiKey?: string;
+  allowHistoryManipulation?: boolean;
+  hardMode?: boolean;
+  impossibleMode?: boolean;
+  notificationSound?: boolean;
+  keepLatestNpcJournals?: boolean;
+  latestNpcJournalsCount?: number;
+  cooperativeGameType?: GameSettings['cooperativeGameType'];
+  autoPassTurn?: boolean;
+  autoPassTurnInCoop?: boolean;
+  showPartyStatusPanel?: boolean;
+  uiControlScale?: number;
+  uiFontScale?: number;
+  multiplePersonalitiesSettings?: MultiplePersonalitiesSettings;
+  doNotUseWorldEvents?: boolean;
+  generateWorldEventImages?: boolean;
+  disableImageGeneration?: boolean;
+  [key: string]: unknown;
 }
 
 export interface WorldState {

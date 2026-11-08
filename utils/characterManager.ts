@@ -1,4 +1,4 @@
-import { PlayerCharacter, Characteristics, GameSettings } from '../types';
+import { PlayerCharacter, Characteristics, GameSettings, CharacterCreationData } from '../types';
 import { recalculateDerivedStats } from './gameContext';
 import { asWorld } from './worldData';
 
@@ -6,7 +6,7 @@ const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intellig
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 export function createNewPlayerCharacter(
-    creationData: any, 
+    creationData: CharacterCreationData, 
     gameSettings: GameSettings, 
     options: { 
         partyLevel: number, 

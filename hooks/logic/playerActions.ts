@@ -5,12 +5,13 @@ import { resolveLinkTarget } from '../../utils/locationLinks.js';
 
 
 import React from 'react';
-import { GameState, ChatMessage, NPC, Faction, PlayerCharacter, Location, Quest, WorldState, WorldStateFlag, UnlockedMemory, LocationStorage, Item } from '../../types';
+import { GameState, GameContext, GameSettings, ChatMessage, NPC, Faction, PlayerCharacter, Location, Quest, WorldState, WorldStateFlag, UnlockedMemory, LocationStorage, Item } from '../../types';
 import { deleteMessage as deleteMessageUtil, clearHalfHistory as clearHalfHistoryUtil, deleteLogs as deleteLogsUtil, forgetNpc as forgetNpcUtil, forgetFaction as forgetFactionUtil } from '../../utils/uiManager';
 import { recalculateDerivedStats, calculateDate, calculateTotalMinutes, calculateJourneyDay } from '../../utils/gameContext';
 import { recalculateAllWeights } from '../../utils/inventoryManager';
 import { cloneGameStateForEdit } from '../../utils/gameStateClone';
 import { notifyWarning } from '../../utils/notifications';
+import { asRecord } from '../../utils/typeGuards';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -36,9 +37,9 @@ export const createPlayerActionsManager = (
         setVisitedLocations: React.Dispatch<React.SetStateAction<Location[]>>,
         setWorldMap: React.Dispatch<React.SetStateAction<Record<string, Location>>>,
         setWorldState: React.Dispatch<React.SetStateAction<WorldState | null>>,
-        gameSettings: any,
-        gameContextRef: React.MutableRefObject<any>,
-        t: (key: string, replacements?: any) => string,
+        gameSettings: GameSettings | null,
+        gameContextRef: React.MutableRefObject<GameContext | null>,
+        t: (key: string, replacements?: Record<string, string | number>) => string,
     }
 ) => {
     const spendAttributePoint = (characteristic: string) => {
@@ -88,7 +89,7 @@ export const createPlayerActionsManager = (
         });
     };
 
-    const editNpcData = (npcId: string, field: keyof NPC, value: any) => {
+    const editNpcData = (npcId: string, field: keyof NPC, value: unknown) => {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
@@ -98,7 +99,7 @@ export const createPlayerActionsManager = (
         });
     };
 
-    const editQuestData = (questId: string, field: keyof Quest, value: any) => {
+    const editQuestData = (questId: string, field: keyof Quest, value: unknown) => {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
@@ -112,7 +113,7 @@ export const createPlayerActionsManager = (
         });
     };
 
-    const editItemData = (itemId: string, field: keyof Item, value: any) => {
+    const editItemData = (itemId: string, field: keyof Item, value: unknown) => {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
@@ -123,7 +124,7 @@ export const createPlayerActionsManager = (
         });
     };
 
-    const editFactionData = (factionId: string, field: keyof Faction, value: any) => {
+    const editFactionData = (factionId: string, field: keyof Faction, value: unknown) => {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
@@ -135,7 +136,7 @@ export const createPlayerActionsManager = (
         });
     };
 
-    const editLocationData = (locationId: string, field: keyof Location, value: any) => {
+    const editLocationData = (locationId: string, field: keyof Location, value: unknown) => {
         if (!gameSettings?.allowHistoryManipulation) return;
         setVisitedLocations(prev => {
             const newLocations = prev.map(loc => loc.locationId === locationId ? { ...loc, [field]: value } : loc);
@@ -153,7 +154,7 @@ export const createPlayerActionsManager = (
         });
     };
 
-    const editPlayerData = (field: keyof PlayerCharacter, value: any) => {
+    const editPlayerData = (field: keyof PlayerCharacter, value: unknown) => {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState) return null;
@@ -222,7 +223,7 @@ export const createPlayerActionsManager = (
         });
     };
     
-    const editWorldStateFlagData = (flagId: string, field: keyof WorldStateFlag, value: any) => {
+    const editWorldStateFlagData = (flagId: string, field: keyof WorldStateFlag, value: unknown) => {
         if (!gameSettings?.allowHistoryManipulation) return;
         setGameState(prevState => {
             if (!prevState || !Array.isArray(prevState.worldStateFlags)) return prevState;
@@ -470,8 +471,9 @@ export const createPlayerActionsManager = (
         });
     };
     
-    const onRegenerateId = (entity: any, entityType: string) => {
+    const onRegenerateId = (entity: unknown, entityType: string) => {
         if (!gameSettings?.allowHistoryManipulation) return;
+        const target = asRecord(entity);
         const newId = generateId(entityType.toLowerCase());
 
         const updateLogic = (prevState: GameState | null) => {
@@ -480,14 +482,19 @@ export const createPlayerActionsManager = (
             const newState = cloneGameStateForEdit(prevState);
             let wasUpdated = false;
 
-            const findAndUpdateByIdOrName = (items: any[], idField: string, nameField: string) => {
-                const index = items.findIndex(item => 
-                    (entity[idField] && item[idField] === entity[idField]) ||
-                    (!entity[idField] && item[nameField] === entity[nameField] && !item[idField])
-                );
+            const findAndUpdateByIdOrName = (items: unknown[], idField: string, nameField: string): string | undefined => {
+                const targetId = target?.[idField];
+                const index = items.findIndex(item => {
+                    const record = asRecord(item);
+                    if (!record) return false;
+                    return (!!targetId && record[idField] === targetId) ||
+                        (!targetId && record[nameField] === target?.[nameField] && !record[idField]);
+                });
                 if (index > -1) {
-                    const oldId = items[index][idField];
-                    items[index][idField] = newId;
+                    const record = asRecord(items[index]);
+                    if (!record) return undefined;
+                    const oldId = typeof record[idField] === 'string' ? record[idField] : undefined;
+                    record[idField] = newId;
                     wasUpdated = true;
                     return oldId;
                 }
@@ -539,8 +546,8 @@ export const createPlayerActionsManager = (
             const updateLocationState = (prev: Location[]) => {
                 let wasUpdated = false;
                 const newLocations = prev.map(loc => {
-                    const match = (entity.locationId && loc.locationId === entity.locationId) || 
-                                  (!entity.locationId && loc.name === entity.name && !loc.locationId);
+                    const match = (target?.locationId && loc.locationId === target.locationId) || 
+                                  (!target?.locationId && loc.name === target?.name && !loc.locationId);
                     if (match) {
                         wasUpdated = true;
                         const newLoc = { ...loc, locationId: newId };
@@ -564,8 +571,8 @@ export const createPlayerActionsManager = (
 
             setGameState(prev => {
                 if (!prev) return null;
-                const match = (entity.locationId && prev.currentLocationData.locationId === entity.locationId) || 
-                            (!entity.locationId && prev.currentLocationData.name === entity.name && !prev.currentLocationData.locationId);
+                const match = (target?.locationId && prev.currentLocationData.locationId === target.locationId) || 
+                            (!target?.locationId && prev.currentLocationData.name === target?.name && !prev.currentLocationData.locationId);
                 if (match) {
                     const newCurrent = { ...prev.currentLocationData, locationId: newId };
                     if (gameContextRef.current) {

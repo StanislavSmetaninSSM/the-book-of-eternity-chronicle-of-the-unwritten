@@ -8,6 +8,12 @@ export function errorMessage(error: unknown): string {
   return String(error);
 }
 
+/** True when the thrown value is the browser's abort signal reaching a catch. */
+export function isAbortError(error: unknown): boolean {
+  const record = asRecord(error);
+  return record?.name === 'AbortError';
+}
+
 export function formatError(error: unknown): string {
   const record = asRecord(error);
   if (!record) {

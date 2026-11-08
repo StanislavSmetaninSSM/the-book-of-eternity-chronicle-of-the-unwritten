@@ -1,7 +1,7 @@
 // @ts-ignore -- shared JS helpers
 import { coordinateKey, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
 import { withLiveActivePlayer } from './partyView';
-import { GameState, GameResponse, PlayerCharacter, Location, Language, Item, GameSettings, WorldState, NPC, Effect, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Calendar, Month, DayInfo, GameContext, ChatMessage, Characteristics, ItemResourceChange, NPCInventoryResourceChange } from '../types';
+import { GameState, GameResponse, PlayerCharacter, Location, Language, Item, GameSettings, WorldState, NPC, WorldData, CharacterCreationData, Effect, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Calendar, Month, DayInfo, GameContext, ChatMessage, Characteristics, ItemResourceChange, NPCInventoryResourceChange } from '../types';
 import { gameData } from './localizationGameData';
 import { generateLootTemplates } from './lootGenerator';
 import { translate } from './localization';
@@ -938,24 +938,25 @@ export function buildNextContext(
   return nextContext;
 }
 
-export const createInitialContext = (creationData: any, language: Language): GameContext => {
+export const createInitialContext = (creationData: CharacterCreationData, language: Language): GameContext => {
     const { universe, selectedEra, worldInformation, superInstructions, initialPrompt, ...characterCreationData } = creationData;
-    const t = (key: string, replacements?: any) => translate(language, key, replacements);
+    const t = (key: string, replacements?: Record<string, string | number>) => translate(language, key, replacements);
 
     const gameDataSource = creationData.customGameData || gameData;
-    let currentWorld: any;
+    const gameDataType = gameDataSource as typeof gameData & { custom?: Record<string, WorldData | undefined> };
+    let currentWorld: WorldData;
     
     if (universe === 'custom') {
-        currentWorld = (gameDataSource.custom && (gameDataSource.custom as Record<string, WorldState | undefined>)[selectedEra]) || {
+        currentWorld = (gameDataType.custom && gameDataType.custom[selectedEra ?? '']) || {
             name: selectedEra || t('New Universe'), description: t('Create your own world from scratch...'), races: {}, classes: {}, currencyName: 'Gold', currencyOptions: ['Gold'],
             calendar: JSON.parse(JSON.stringify(gameData.fantasy.calendar))
         };
     } else if (universe === 'history') {
-        currentWorld = gameDataSource.history[selectedEra as keyof typeof gameDataSource.history];
+        currentWorld = gameDataType.history[selectedEra as keyof typeof gameDataType.history];
     } else if (universe === 'myths') {
-        currentWorld = gameDataSource.myths[selectedEra as keyof typeof gameDataSource.myths];
+        currentWorld = gameDataType.myths[selectedEra as keyof typeof gameDataType.myths];
     } else {
-        currentWorld = (gameDataSource as Record<string, WorldState>)[universe];
+        currentWorld = (gameDataType as unknown as Record<string, WorldData>)[universe];
     }
     
     const worldForContext = JSON.parse(JSON.stringify(currentWorld));

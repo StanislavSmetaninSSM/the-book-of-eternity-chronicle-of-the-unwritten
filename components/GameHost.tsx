@@ -14,7 +14,7 @@ import { withLiveActivePlayer } from '../utils/partyView';
 import TurnIndicator from './TurnIndicator';
 import { useLocalization } from '../context/LocalizationContext';
 import { useGameLogic } from '../hooks/useGameLogic';
-import { ChatMessage, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, LocationData, ImageCacheEntry } from '../types';
+import { ChatMessage, Faction, Item, Location, NPC, PlayerCharacter, Quest, Wound, LocationStorage, LocationData, ImageCacheEntry, CharacterCreationData } from '../types';
 import { useSpeech } from '../context/SpeechContext';
 import { releasePreparedSaveFiles, type PreparedSaveFiles } from '../utils/fileManager';
 import ConfirmationModal from './ConfirmationModal';
@@ -62,7 +62,7 @@ const clampUiScale = (value: unknown, min = 0.8, max = 1.25): number => {
 
 
 export type GameStartRequest =
-    | { kind: 'new'; creationData: unknown }
+    | { kind: 'new'; creationData: CharacterCreationData }
     | { kind: 'file' }
     | { kind: 'autosave' }
     | { kind: 'crashRecovery' }
