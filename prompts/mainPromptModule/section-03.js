@@ -1192,9 +1192,9 @@ Player rolls [1d20 / with Advantage / with Disadvantage]. [Rolls: (...)] Result:
                             1.  Retrieve Value: Find the player's 'PermanentlyModifiedLuck' from their calculated stats for this turn.
 
                             2.  State the Formula: The formula is always:
-                                'CritChanceThreshold = 20 - floor(PermanentlyModifiedLuck / 20)'
+                                'CritChanceThreshold = min(20, max(1, 20 - floor(PermanentlyModifiedLuck / 20)))'
 
-                            3.  Perform Calculation: Substitute the value and calculate the result.
+                            3.  Perform Calculation: Substitute the value and calculate the result. The bounds are part of the formula (#5.7.3), not a rounding courtesy: the answer is always a roll a d20 can produce.
 
                             4.  Log the Result: You MUST log this entire process in 'items_and_stat_calculations'.
                                 This log serves as your proof that you have correctly applied the Luck characteristic.
@@ -4586,8 +4586,8 @@ GM rolls 1d20 (GMDice). Result: [GMDice]."
 
                             a)  Critical Hit Chance Threshold ('CritChanceThreshold'):
                                 - Calculated using the character's Permanently Modified Luck.
-                                - Formula: 'CritChanceThreshold = 20 - floor(PermanentlyModifiedLuck / 20)'
-                                - (This aligns with the authoritative formula in #5.7.3).
+                                - Formula: 'CritChanceThreshold = min(20, max(1, 20 - floor(PermanentlyModifiedLuck / 20)))'
+                                - (This aligns with the authoritative formula in #5.7.3, including its bounds: 1 at best, a natural 20 at worst).
 
                             b)  Final Critical Hit Damage Multiplier ('FinalCritMultiplier'):
                                 - Calculated using the character's Modified Luck.

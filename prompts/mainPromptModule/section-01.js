@@ -6114,9 +6114,10 @@ Each command is {"transferId":"unique-per-transfer-never-reused", "source":{"typ
                                 4) Critical Hit Chance Threshold:
                                 Formula: 
 
-                                    CritChanceThreshold = 20 - floor(PermanentlyModifiedLuck / 20)
+                                    CritChanceThreshold = min(20, max(1, 20 - floor(PermanentlyModifiedLuck / 20)))
 
                                 Description: Determines the minimum roll on a d20 needed to achieve a critical hit. 
+                                The two bounds keep the value a roll can answer: a natural 20 stays a critical hit even for a character whose luck was driven below zero by a curse, and luck never asks for better than a 1. 
                                 Starts at a threshold of 20 and decreases as Permanently Modified Luck increases. 
                                 With 100 Permanently Modified Luck, the threshold becomes 15 (crits on 15-20). This is now influenced by the character's Permanently Modified Luck.
                              

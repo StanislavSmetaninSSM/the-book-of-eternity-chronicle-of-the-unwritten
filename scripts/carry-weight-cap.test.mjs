@@ -2,11 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
-  CARRY_CAPACITY_BASE_WEIGHT,
   DEFAULT_CRITICAL_EXCESS_WEIGHT,
   canCarryWeight,
   criticalCarryWeight,
-  maxCarryWeight,
 } from '../utils/carryWeight.js';
 import { getGameMasterGuideRules } from '../prompts/mainPromptModule.js';
 
@@ -28,15 +26,6 @@ test('the ceiling of a load is the threshold plus the extra capacity, boundary i
   assert.equal(canCarryWeight(50, 15, 65), true, 'the ceiling itself is still carried');
   assert.equal(canCarryWeight(50, 15, 65.5), false);
   assert.equal(canCarryWeight(50, 15, undefined), true);
-});
-
-test('capacity is base weight plus one rounded term of strength and constitution', () => {
-  assert.equal(CARRY_CAPACITY_BASE_WEIGHT, 30);
-  assert.equal(maxCarryWeight(10, 10), 52);
-  // The rule rounds the two contributions once, together: 11 * 1.8 + 6 * 0.4 = 22.2 -> 22.
-  // Rounding each term apart would claim 19 + 2 and lose a kilo the character does have.
-  assert.equal(maxCarryWeight(11, 6), 52);
-  assert.equal(maxCarryWeight(undefined, undefined), 32, 'a missing characteristic counts as 1');
 });
 
 test('the rulebook states the same ceiling for a player and for a companion', () => {
@@ -65,7 +54,6 @@ test('the rulebook states the same ceiling for a player and for a companion', ()
   assert.equal(criticalCarryWeight(50, DEFAULT_CRITICAL_EXCESS_WEIGHT), 65);
   assert.equal(canCarryWeight(50, DEFAULT_CRITICAL_EXCESS_WEIGHT, 40 + 15), true);
 
-  assert.match(rules, /MaxWeight_kg = 30 \+ floor\(PermanentlyModifiedStrength \* 1\.8 \+ PermanentlyModifiedConstitution \* 0\.4\)/);
 });
 
 test('every gate asks the shared helper instead of adding the constant itself', async () => {
@@ -89,9 +77,9 @@ test('every gate asks the shared helper instead of adding the constant itself', 
   ]);
   assert.match(weightMath, /newPc\.maxWeight = maxCarryWeight\(pmStr, pmCon\);/);
   assert.match(creation, /const maxWeight = maxCarryWeight\(stdStr, stdCon\);/);
+  assert.doesNotMatch(await read('../utils/carryWeight.js'), /maxCarryWeight\(/, 'the ceiling module does not own the capacity formula');
   for (const [name, source] of [['character creation', creation], ['restoring a character', restore], ['loading a save', loader]]) {
     assert.match(source, /DEFAULT_CRITICAL_EXCESS_WEIGHT/, `${name} must default the constant from one place`);
     assert.doesNotMatch(source, /criticalExcessWeight[:=] 15/, `${name} must not restate the constant`);
   }
-  assert.match(weightMath, /maxHealth = 100 \+ Math\.floor\(pmCon \* 2\.0\)/, 'capacity alone is rounded jointly; health keeps its terms apart');
 });

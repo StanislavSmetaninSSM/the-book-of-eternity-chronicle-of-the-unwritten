@@ -1,5 +1,5 @@
 // @ts-ignore -- shared JS helpers
-import { maxCarryWeight } from './carryWeight.js';
+import { critChanceBuffFromLuck, criticalHitThreshold, maxCarryWeight, maxEnergyPercent, maxHealthPercent } from './derivedStats.js';
 import { coordinateKey, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
 import { withLiveActivePlayer } from './partyView';
 import { GameState, GameResponse, PlayerCharacter, Location, Language, Item, GameSettings, WorldState, NPC, WorldData, CharacterCreationData, Effect, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Calendar, Month, DayInfo, GameContext, ChatMessage, Characteristics, ItemResourceChange, NPCInventoryResourceChange } from '../types';
@@ -148,11 +148,11 @@ export function recalculateDerivedStats<T extends PlayerCharacter | NPC>(pc: T):
     const pmFth = permanentlyModifiedValues.faith || 1;
     const pmLck = permanentlyModifiedValues.luck || 1;
 
-    newPc.maxHealth = 100 + Math.floor(pmCon * 2.0) + Math.floor(pmStr * 1.0);
-    newPc.maxEnergy = 100 + Math.floor(pmCon * 0.75) + Math.floor(pmInt * 0.75) + Math.floor(pmWis * 0.75) + Math.floor(pmFth * 0.75);
+    newPc.maxHealth = maxHealthPercent(pmCon, pmStr);
+    newPc.maxEnergy = maxEnergyPercent(pmCon, pmInt, pmWis, pmFth);
     newPc.maxWeight = maxCarryWeight(pmStr, pmCon);
-    newPc.critChanceBuffFromLuck = Math.floor(pmLck / 20);
-    newPc.critChanceThreshold = 20 - newPc.critChanceBuffFromLuck;
+    newPc.critChanceBuffFromLuck = critChanceBuffFromLuck(pmLck);
+    newPc.critChanceThreshold = criticalHitThreshold(pmLck);
 
     if (newPc.currentHealth === undefined) newPc.currentHealth = newPc.maxHealth;
     if (newPc.currentEnergy === undefined) newPc.currentEnergy = newPc.maxEnergy;

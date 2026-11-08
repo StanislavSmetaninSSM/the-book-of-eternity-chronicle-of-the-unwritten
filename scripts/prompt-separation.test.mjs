@@ -23,7 +23,8 @@ test('the entire guide is invariant across different turn contexts', () => {
   // Intentional guide edits require an explicit snapshot update and review.
   // Updated for the explicit inventory-transfer protocol, and for the carrying ceiling that
   // now states one constant (15 kg, as in #19.C.1) and the inclusive boundary the interface gates on.
-  assert.equal(sha256(guide), '6b971500222583da56e2f295b9041962cdfb0d377f73b07ae843a36f61b2914f');
+  // The critical-hit threshold now states its bounds in the formula itself, in all three places.
+  assert.equal(sha256(guide), '69bfa3b37b92f65bc965fb50c7d38693f483a4d1fad858c4593073524c9f6969');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);

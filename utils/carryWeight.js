@@ -1,5 +1,5 @@
 /**
- * Carrying capacity, shared by the inventory gates, the character sheet and the rules.
+ * The ceiling of a load, shared by the inventory gates, the character sheet and the rules.
  *
  * Two numbers describe a load. 'maxWeight' is what the character carries without being
  * overloaded, and every kilo above it makes the character overloaded but does not by itself
@@ -12,25 +12,8 @@
  * weight, and a character whose extra capacity was never recorded gets the universal constant.
  */
 
-/** Kilos every character carries before Strength and constitution start to matter. */
-export const CARRY_CAPACITY_BASE_WEIGHT = 30;
-
 /** Kilos of extra lift every character has past the overload threshold. */
 export const DEFAULT_CRITICAL_EXCESS_WEIGHT = 15;
-
-/**
- * What a character carries without becoming overloaded (Rule #5.7.3, and the same formula the
- * game master applies): the base capacity plus one term of Strength and constitution rounded
- * together, so that a permanent bonus from gear shifts the whole term rather than each part.
- * @param {number|undefined} strength permanently modified Strength
- * @param {number|undefined} constitution permanently modified Constitution
- * @returns {number} kilograms
- */
-export function maxCarryWeight(strength, constitution) {
-    const str = Number.isFinite(strength) ? strength : 1;
-    const con = Number.isFinite(constitution) ? constitution : 1;
-    return CARRY_CAPACITY_BASE_WEIGHT + Math.floor(str * 1.8 + con * 0.4);
-}
 
 /**
  * The absolute ceiling in kilograms: a character can carry this much, no more.

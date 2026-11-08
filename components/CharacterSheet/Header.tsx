@@ -6,7 +6,8 @@ import { useLocalization } from '../../context/LocalizationContext';
 import ImageRenderer from '../ImageRenderer';
 import EditableField from '../DetailRenderer/Shared/EditableField';
 import StatBar from './Shared/StatBar';
-import { CARRY_CAPACITY_BASE_WEIGHT, criticalCarryWeight } from '../../utils/carryWeight.js';
+import { criticalCarryWeight } from '../../utils/carryWeight.js';
+import { CARRY_CAPACITY_BASE_WEIGHT } from '../../utils/derivedStats.js';
 import { CharacterSheetProps } from '../CharacterSheet'; // Добавьте этот импорт
 
 import { 

@@ -1,7 +1,8 @@
 import { PlayerCharacter, Characteristics, GameSettings, CharacterCreationData } from '../types';
 import { recalculateDerivedStats } from './gameContext';
 import { asWorld } from './worldData';
-import { DEFAULT_CRITICAL_EXCESS_WEIGHT, maxCarryWeight } from './carryWeight.js';
+import { DEFAULT_CRITICAL_EXCESS_WEIGHT } from './carryWeight.js';
+import { critChanceBuffFromLuck, criticalHitThreshold, maxCarryWeight, maxEnergyPercent, maxHealthPercent } from './derivedStats.js';
 
 const CHARACTERISTICS_LIST = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'faith', 'attractiveness', 'trade', 'persuasion', 'perception', 'luck', 'speed'];
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -160,11 +161,11 @@ export function createNewPlayerCharacter(
     const stdFth = standardCharacteristics.standardFaith;
     const stdLck = standardCharacteristics.standardLuck;
     
-    const maxHealth = 100 + Math.floor(stdCon * 2.0) + Math.floor(stdStr * 1.0);
-    const maxEnergy = 100 + Math.floor(stdCon * 0.75) + Math.floor(stdInt * 0.75) + Math.floor(stdWis * 0.75) + Math.floor(stdFth * 0.75);
+    const maxHealth = maxHealthPercent(stdCon, stdStr);
+    const maxEnergy = maxEnergyPercent(stdCon, stdInt, stdWis, stdFth);
     const maxWeight = maxCarryWeight(stdStr, stdCon);
-    const critChanceBuffFromLuck = Math.floor(stdLck / 20);
-    const critChanceThreshold = 20 - critChanceBuffFromLuck;
+    const luckBuff = critChanceBuffFromLuck(stdLck);
+    const critChanceThreshold = criticalHitThreshold(stdLck);
 
     const playerCharacter: PlayerCharacter = {
         playerId: generateId('player'),
@@ -191,7 +192,7 @@ export function createNewPlayerCharacter(
         maxWeight: maxWeight,
         totalWeight: 0,
         criticalExcessWeight: DEFAULT_CRITICAL_EXCESS_WEIGHT,
-        critChanceBuffFromLuck,
+        critChanceBuffFromLuck: luckBuff,
         critChanceThreshold,
         characteristics: {
             ...standardCharacteristics,
