@@ -54,5 +54,6 @@ npm run preview -- --host 0.0.0.0
 - Never commit API keys, saved games, relay payloads, or generated images.
 - `npm run relay:watch` is an optional local mailbox watcher; it only announces requests and does not contact or wake the Arena agent.
 - Run `npm test`, `npm run typecheck`, and `npm run build` to validate changes. Automated tests do not replace a real browser/game-master playthrough.
+- `npm test` also fails when the source reintroduces `as any` or a `: any` annotation (`scripts/no-any-casts.test.mjs`, `scripts/no-any-annotations.test.mjs`). Reach for a real entity type, a named shape in `types.ts`, or `unknown` narrowed through `utils/typeGuards.ts` (`isRecord` / `asRecord`) instead.
 
 Legacy network saves retain their character IDs, party, story and inventory. The active character becomes the locally controlled character. Unfinished collective/simultaneous actions are kept as inert `legacyNetworkActions` in the save rather than executed. An interrupted network-turn checkpoint cannot safely be replayed because its delivery was not known; load a normal or crash-recovery save instead. Local interrupted turns remain resumable.
