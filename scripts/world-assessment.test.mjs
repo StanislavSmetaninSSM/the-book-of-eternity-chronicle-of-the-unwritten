@@ -1,6 +1,7 @@
 /**
  * The read-back over the living world: what the state says about its own projects, activities,
- * standings, wounds and chronicle entries, and what the interface is allowed to conclude from it.
+ * standings, wounds, chronicle entries and world events, and what the interface is allowed to
+ * conclude from them.
  *
  * Run from the repository root with: node --test scripts/world-assessment.test.mjs
  */
@@ -8,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { assessChronicle, assessTracker, assessWorld, assessWoundProgress, REPUTATION_CEILING, REPUTATION_FLOOR } from '../utils/worldAssessment.js';
+import { assessChronicle, assessEvent, assessTracker, assessWorld, assessWoundProgress, REPUTATION_CEILING, REPUTATION_FLOOR } from '../utils/worldAssessment.js';
 
 /** One faction with one active project, the shortest state that can contradict itself. */
 const factionWithProject = (project, extra = {}) => ({
@@ -249,4 +250,52 @@ test('the sheet reads its wounds with the reader the fighter’s card uses', () 
 
     const strings = readFileSync(new URL('../utils/translations/ui/common.ts', import.meta.url), 'utf8');
     assert.equal((strings.match(/"Wound State Check":/g) || []).length, 2, 'and that heading is answered in both locales');
+});
+test('a world event answers for the stamp its schema writes and its timeline sorts by', () => {
+    const ok = {
+        turnNumber: 7,
+        date: { year: 1024, monthName: 'Месяц Начал', dayOfMonth: 15, timeOfDay: '14:30' },
+        headline: 'The mill burns',
+    };
+
+    assert.equal(assessEvent(ok, 7).notes.length, 0, 'an event of the turn that is running contradicts nothing');
+    assert.equal(assessEvent({ ...ok, turnNumber: 6 }, 7).notes.length, 0, 'and yesterday is not a defect');
+
+    assert.deepEqual(assessEvent({ ...ok, turnNumber: 9 }, 7).notes.map(n => [n.key, n.params]), [
+        ['world_notes_event_turn_from_the_future', { turn: 9, current: 7 }],
+    ], 'a future turn owning a record of what has happened is named with both numbers');
+    // Without the second number there is nothing to compare, and silence is the only honest answer.
+    assert.equal(assessEvent({ ...ok, turnNumber: 9 }, undefined).notes.length, 0);
+    assert.equal(assessEvent({ ...ok, turnNumber: 9 }, null).notes.length, 0);
+    // The schema writes the number out of the Context, and a hand-edited save may carry it as text.
+    assert.equal(assessEvent({ ...ok, turnNumber: '7' }, 7).notes.length, 0, 'a typed 7 is the same turn');
+
+    assert.deepEqual(assessEvent({ turnNumber: 7 }, 7).notes.map(n => n.kind), ['event_date_missing'],
+        'the date object is MANDATORY in #30.4.2');
+    assert.deepEqual(assessEvent({ ...ok, date: { ...ok.date, timeOfDay: '14.30' } }, 7).notes.map(n => n.params.value), ['14.30'],
+        'a clock in another shape is named as written, because the timeline orders one turn by that string');
+    assert.deepEqual(assessEvent({ ...ok, date: { ...ok.date, timeOfDay: '   ' } }, 7).notes.map(n => n.params.value), ['—'],
+        'and an empty clock is named, not hidden behind a blank');
+
+    assert.equal(assessEvent(null, 7).notes.length, 0, 'a missing event says nothing');
+    assert.equal(assessEvent({ ...ok, date: 'Месяц Начал' }, 7).notes.map(n => n.kind)[0], 'event_date_missing',
+        'a date that is not an object carries no time of day either, and is named once');
+});
+
+test('the event card reads its own timestamp, and the timeline reads none over their heads', () => {
+    const panel = readFileSync(new URL('../components/WorldPanel.tsx', import.meta.url), 'utf8');
+
+    assert.match(panel, /assessEvent\(event, currentTurnNumber\)\.notes/, 'one event, read against the turn the world is on');
+    assert.match(panel, /currentTurnNumber=\{turnNumber\}/, 'and the list hands each card that number');
+    assert.match(panel, /<WorldStateNotes notes=\{eventNotes\} compact/, 'as a line under the card it is about');
+    assert.doesNotMatch(panel, /titleKey=/, 'while the timeline itself grows no heading and no band');
+
+    const strings = readFileSync(new URL('../utils/translations/ui/common.ts', import.meta.url), 'utf8');
+    for (const key of [
+        'world_notes_event_turn_from_the_future',
+        'world_notes_event_date_missing',
+        'world_notes_event_clock_missing',
+    ]) {
+        assert.equal((strings.match(new RegExp(`"${key}"`, 'g')) || []).length, 2, `${key} has to be answered in both locales`);
+    }
 });

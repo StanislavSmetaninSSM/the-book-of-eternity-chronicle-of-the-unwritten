@@ -5,6 +5,8 @@ import { NPC, Location, Faction, ImageCacheEntry, WorldState, WorldStateFlag, Wo
 import { useLocalization } from '../context/LocalizationContext';
 import ImageRenderer from './ImageRenderer';
 import MarkdownRenderer from './MarkdownRenderer';
+import WorldStateNotes from './WorldStateNotes';
+import { assessEvent } from '../utils/worldAssessment.js';
 // FIX: Add missing icon imports and aliases to resolve multiple 'Cannot find name' errors.
 import {
     UserGroupIcon, BookOpenIcon, GlobeAltIcon,
@@ -280,6 +282,8 @@ const WorldStateDisplay: React.FC<{
 
 interface WorldEventCardProps {
     event: WorldEvent;
+    /** The turn the world is on: the event's own stamp is read against it, and nothing else. */
+    currentTurnNumber?: number | null;
     onDelete: (event: WorldEvent) => void;
     allowHistoryManipulation: boolean;
     onOpenDetailModal: (title: string, data: DetailData) => void;
@@ -289,8 +293,12 @@ interface WorldEventCardProps {
     onOpenImageModal: (displayPrompt: string, originalTextPrompt: string, onClearCustom?: () => void, onUpload?: (base64: string) => void, pendingPrompt?: string | null, onAcceptPending?: () => void) => void;
 }
 
-const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, onDelete, allowHistoryManipulation, onOpenDetailModal, imageCache, onImageGenerated, gameSettings, onOpenImageModal }) => {
+const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, currentTurnNumber, onDelete, allowHistoryManipulation, onOpenDetailModal, imageCache, onImageGenerated, gameSettings, onOpenImageModal }) => {
     const { t } = useLocalization();
+
+    // #30.4.2 writes the turn of an event out of the Context and makes its date carry HH:MM, so the
+    // card answers for its own timestamp - the timeline neither clamps nor repairs it.
+    const eventNotes = useMemo(() => assessEvent(event, currentTurnNumber).notes, [event, currentTurnNumber]);
 
     const eventTypeMapping = useMemo(() => ({
         'Political': { icon: PoliticalIcon, colorClass: 'event-type-Political', label: t('Political') },
@@ -360,6 +368,9 @@ const WorldEventCard: React.FC<WorldEventCardProps> = ({ event, onDelete, allowH
                         <MarkdownRenderer content={event.summary} />
                     </p>
                 </button>
+                {eventNotes.length > 0 && (
+                    <WorldStateNotes notes={eventNotes} compact className="mt-2 pt-2 border-t border-amber-500/20" />
+                )}
             </div>
         </div>
     );
@@ -744,6 +755,7 @@ const WorldPanel = (props: WorldPanelProps) => {
                                         <WorldEventCard 
                                             key={event.eventId} 
                                             event={event} 
+                                            currentTurnNumber={turnNumber} 
                                             onDelete={setEventToDelete}
                                             allowHistoryManipulation={allowHistoryManipulation}
                                             onOpenDetailModal={onOpenDetailModal}

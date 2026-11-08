@@ -136,6 +136,10 @@ export const common = {
     "world_notes_chronicle_turn_unreadable": "This entry does not begin with the `#[turn] - date, HH:MM` stamp #18.A.0 makes mandatory; no turn can be read out of it, so the archive sorts it as -1 and the rule that keeps the latest entries prunes it first.",
     "world_notes_chronicle_clock_missing": "The turn is written, the hour is not - and #18.A.0 asks for HH:MM. The archive sorts by turn alone, so nothing separates two events of the same day here.",
     "Wound State Check": "Wound State Check",
+    // One entry of the world events log, read back for the two fields its own schema names.
+    "world_notes_event_turn_from_the_future": "This event claims turn {turn}, while the world is on turn {current}. #30.4.2 takes the number from the Context, and the timeline below groups events by it - so a future turn has nothing to report yet.",
+    "world_notes_event_date_missing": "The date of a world event is MANDATORY in #30.4.2, and this entry carries no date object at all.",
+    "world_notes_event_clock_missing": "The time of day reads \"{value}\" instead of the HH:MM the schema names, and the timeline orders one turn by comparing exactly that string.",
     ...ui_overrides.en
   },
   ru: {
@@ -269,6 +273,9 @@ export const common = {
     "world_notes_chronicle_turn_unreadable": "Запись не начинается с обязательной по #18.A.0 метки `#[ход] - дата, ЧЧ:ММ`; ход в ней не читается, архив сортирует её как -1, и правило «хранить последние N» вычищает её первой.",
     "world_notes_chronicle_clock_missing": "Номер хода указан, а час нет — хотя #18.A.0 требует ЧЧ:ММ. Архив сортирует только по ходу, поэтому два события одного дня здесь ничем не разделены.",
     "Wound State Check": "Проверка состояния ран",
+    "world_notes_event_turn_from_the_future": "Событие заявляет ход {turn}, хотя мир идёт по ходу {current}. #30.4.2 берёт номер из Контекста, а таймлайн группирует события по нему — у будущего хода ещё нечего сообщать.",
+    "world_notes_event_date_missing": "Дата мирового события обязательна по #30.4.2, а у этой записи объекта даты нет вовсе.",
+    "world_notes_event_clock_missing": "Время дня записано как «{value}» вместо указанных схемой HH:ММ, а таймлайн и сортирует ход именно по этой строке.",
     ...ui_overrides.ru
   }
 }

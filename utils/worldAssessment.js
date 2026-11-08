@@ -205,3 +205,51 @@ export function assessChronicle(entries = [], subject = '') {
     });
     return { notes, byIndex };
 }
+
+/**
+ * One entry of `worldEventsLog`, read back for #30.4.2 - "Field Definitions for World Event Object".
+ * Two of its field definitions are worth a check, because the log is what the world treats as fact:
+ *
+ *   - "turnNumber: (integer) The number of the turn during which this event was generated. You MUST
+ *     use the 'currentTurnNumber' value from the Context." A turn that has not arrived cannot own a
+ *     record of what has happened, so a stored number above the current one is a contradiction
+ *     between two fields of one state - and the panel groups this log by exactly that number.
+ *   - "date: (object, MANDATORY) ... timeOfDay: (string) The exact time in \"HH:MM\" format." The
+ *     timeline orders the events of one turn by comparing that string, so an event without a clock
+ *     is not merely unlabelled: it slides to wherever a missing field puts it.
+ *
+ * The reader stays out of everything else: the age of an event (Breaking News, Recent, Historical,
+ * ABSOLUTE LAW 7) is measured in game days, and the calendar of a universe is a property of that
+ * universe, not a number the client may assume.
+ */
+
+/** The clock format #30.4.2 names for `date.timeOfDay`. */
+const EVENT_CLOCK = /^\d{1,2}:\d{2}$/;
+
+/**
+ * @param {object} event - one entry of the world events log
+ * @param {number|undefined} currentTurnNumber - the turn the world is on
+ * @returns {{ notes: Array<object> }}
+ */
+export const assessEvent = (event, currentTurnNumber) => {
+    const notes = [];
+    if (!event || typeof event !== 'object') return { notes };
+
+    const turn = statedNumber(event.turnNumber);
+    const now = statedNumber(currentTurnNumber);
+    if (turn !== null && now !== null && turn > now) {
+        notes.push(worldNote('event_turn_from_the_future', '', { turn, current: now }));
+    }
+
+    const date = event.date;
+    if (!date || typeof date !== 'object') {
+        notes.push(worldNote('event_date_missing', '', {}));
+    } else {
+        const timeOfDay = typeof date.timeOfDay === 'string' ? date.timeOfDay.trim() : '';
+        if (!EVENT_CLOCK.test(timeOfDay)) {
+            notes.push(worldNote('event_clock_missing', '', { value: timeOfDay || '—' }));
+        }
+    }
+
+    return { notes };
+};
