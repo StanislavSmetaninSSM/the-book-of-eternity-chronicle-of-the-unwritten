@@ -117,13 +117,19 @@ export function evaluateArithmetic(text) {
 }
 
 /**
+ * Joins English digit groups: `13,500` is one number, while the comma in `min(20, max(1, 5))`
+ * separates arguments. Only a group of exactly three digits after the comma counts.
+ */
+const joinThousands = (text) => String(text).replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
+
+/**
  * The arithmetic a logged line is claiming, stripped of everything that is not part of it.
  * Lines here are `Label: expression = result`, so the label goes with the last colon; what
  * remains must be numbers, the four operations, parentheses and nothing else. A letter or a
  * missing operator means this is a definition, a comparison or prose, and it is left alone.
  */
 const cleanExpression = (text) => {
-    let expression = String(text);
+    let expression = joinThousands(text);
     const colon = expression.lastIndexOf(':');
     if (colon !== -1) expression = expression.slice(colon + 1);
     expression = expression
@@ -159,23 +165,135 @@ const parseClaim = (text) => {
 export function auditCalculationLines(lines) {
     const failures = [];
     let checked = 0;
-    for (const entry of Array.isArray(lines) ? lines : []) {
-        if (typeof entry !== 'string' || !entry.includes('=')) continue;
+    (Array.isArray(lines) ? lines : []).forEach((entry, order) => {
+        if (typeof entry !== 'string' || !entry.includes('=')) return;
         const line = entry.trim();
-        if (/[[\]{}]/.test(line) || /[<>]=|==|!=|=>/.test(line)) continue;
+        if (/[[\]{}]/.test(line) || /[<>]=|==|!=|=>/.test(line)) return;
         const parts = line.split('=');
         const claim = parseClaim(parts[parts.length - 1]);
-        if (!claim) continue;
+        if (!claim) return;
         const expression = cleanExpression(parts.length > 2 ? parts[parts.length - 2] : parts[0]);
-        if (expression === null) continue;
+        if (expression === null) return;
         const computed = evaluateArithmetic(expression);
-        if (computed === null) continue;
+        if (computed === null) return;
         checked += 1;
         const tolerance = claim.exact ? Math.max(0.01, Math.abs(claim.value) * 0.005) : 0.5;
         if (Math.abs(computed - claim.value) > tolerance) {
-            failures.push({ line, claimed: claim.value, computed: Math.round(computed * 100) / 100 });
+            failures.push({ line, kind: 'equality', order, claimed: claim.value, computed: Math.round(computed * 100) / 100 });
         }
+    });
+    return { checked, failures };
+}
+
+/**
+ * The verdict a line states about its own comparison. Labelled ("RESULT: TRUE", "Status: FALSE"),
+ * asked ("Is 6 <= 0? FALSE"), or, failing both, the first standalone TRUE or FALSE after the
+ * comparison. A line that only shows a threshold - and the rulebook is full of them - states no
+ * verdict about a number, so it is passed over.
+ * @param {string} text
+ */
+function parseVerdict(text) {
+    const labelled = /\b(?:result|status|итог|результат)\b\s*[:=]?\s*["']?(true|false)\b/i.exec(text);
+    if (labelled) return { value: labelled[1].toLowerCase() === 'true', index: labelled.index };
+    const asked = /(?:\?|:)\s*["']?(true|false)\b\s*[.)]?\s*$/i.exec(text);
+    if (asked) return { value: asked[1].toLowerCase() === 'true', index: asked.index };
+    const stated = /\b(true|false)\b(?!\w)/i.exec(text);
+    return stated ? { value: stated[1].toLowerCase() === 'true', index: stated.index } : null;
+}
+
+/**
+ * The comparisons stated in a stretch of text. `>>` and `<<` belong to markup, not to arithmetic,
+ * and `≥`/`≤` are the same two relations written another way.
+ * @param {string} text
+ */
+function comparisonsIn(text) {
+    const found = [];
+    const pattern = /(>=|<=|≥|≤|>|<)/g;
+    let match = pattern.exec(text);
+    while (match !== null) {
+        const token = match[1];
+        const index = match.index;
+        const doubled = (token === '>' || token === '<') && (text[index - 1] === token || text[index + 1] === token);
+        if (!doubled) {
+            found.push({ token: token === '≥' ? '>=' : token === '≤' ? '<=' : token, index, length: token.length });
+        }
+        match = pattern.exec(text);
     }
+    return found;
+}
+
+/**
+ * One side of a comparison: a bare number keeping its unit (`55kg`), or arithmetic. Quotes,
+ * markdown emphasis, a label and trailing punctuation are stripped; prose, a placeholder in
+ * brackets or a name in the way yield null, which skips the line instead of inventing a claim.
+ * @param {string} text
+ */
+function readOperand(text) {
+    let region = joinThousands(text)
+        .replace(/[*"'`“”«»]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const colon = region.lastIndexOf(':');
+    if (colon !== -1) region = region.slice(colon + 1).trim();
+    if (region.startsWith('(') && !region.includes(')')) region = region.slice(1).trim();
+    if (region.endsWith(')') && !region.includes('(')) region = region.slice(0, -1).trim();
+    region = region.replace(/^[.,;:\s]+/, '').replace(/[.,;:\s]+$/, '');
+    if (!region) return null;
+    const bare = /^(-?\d+(?:\.\d+)?)\s*(?:%|kg|кг)?$/i.exec(region);
+    if (bare) return Number(bare[1]);
+    const expression = cleanExpression(region);
+    if (expression === null) return null;
+    const value = evaluateArithmetic(expression);
+    return Number.isFinite(value) ? value : null;
+}
+
+const RELATION = {
+    '>=': (left, right) => left >= right,
+    '<=': (left, right) => left <= right,
+    '>': (left, right) => left > right,
+    '<': (left, right) => left < right,
+};
+
+/**
+ * Re-checks the verdicts of a turn: the lines that compare two quantities and then state whether
+ * the comparison holds, as the rules require of a threshold check ("Step 5 (Threshold Check):
+ * 21 <= 10. RESULT: FALSE."). Whether the armor holds, whether a level went up, whether a pack
+ * fits under the ceiling - these are the decisions a fight is made of, and they are the arithmetic
+ * a model most often writes one step away from the truth. A line is audited only when it carries
+ * exactly one comparison, both sides read as numbers and a verdict is stated on the same line; the
+ * verdict is then measured against what the numbers say. Nothing is corrected here either: an
+ * outcome the rules hand to judgement stays the game master's, and only its arithmetic is checked.
+ * @param {string[]} lines
+ */
+export function auditComparisonLines(lines) {
+    const failures = [];
+    let checked = 0;
+    (Array.isArray(lines) ? lines : []).forEach((entry, order) => {
+        if (typeof entry !== 'string' || !/true|false/i.test(entry)) return;
+        const line = entry.trim().replace(/^[-+•*]\s+/, '');
+        const verdict = parseVerdict(line);
+        if (!verdict) return;
+        // Only the stretch before the verdict is read: the numbers to compare, and nothing that
+        // the sentence goes on to say about them.
+        const statement = line.slice(0, verdict.index);
+        const comparisons = comparisonsIn(statement);
+        if (comparisons.length !== 1) return;
+        const [comparison] = comparisons;
+        const left = readOperand(statement.slice(0, comparison.index));
+        const right = readOperand(statement.slice(comparison.index + comparison.length));
+        if (left === null || right === null) return;
+        checked += 1;
+        const holds = RELATION[comparison.token](left, right);
+        if (holds !== verdict.value) {
+            failures.push({
+                line,
+                kind: 'comparison',
+                order,
+                claimed: verdict.value ? 'TRUE' : 'FALSE',
+                computed: holds ? 'TRUE' : 'FALSE',
+            });
+        }
+    });
     return { checked, failures };
 }
 
@@ -245,6 +363,15 @@ export function assessCombat({ enemies = [], allies = [], npcs = [], player = nu
         };
     };
 
+    const equality = auditCalculationLines(calculationLines);
+    const verdicts = auditComparisonLines(calculationLines);
+    const calculations = {
+        checked: equality.checked + verdicts.checked,
+        // Kept in log order, so a verdict that contradicts its own numbers is reported before a
+        // sum written further down, whatever order the two readers found them in.
+        failures: [...equality.failures, ...verdicts.failures].sort((a, b) => a.order - b.order),
+    };
+
     return {
         rows,
         enemies: sideOf('enemy'),
@@ -258,6 +385,6 @@ export function assessCombat({ enemies = [], allies = [], npcs = [], player = nu
             overloaded: player.isOverloaded === true,
         } : null,
         issues: rows.flatMap(row => row.issues.map(issue => ({ ...issue, subject: row.name }))),
-        calculations: auditCalculationLines(calculationLines),
+        calculations,
     };
 }

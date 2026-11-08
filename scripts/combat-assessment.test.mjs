@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { assessCombat, auditCalculationLines, evaluateArithmetic } from '../utils/combatAssessment.js';
+import { assessCombat, auditCalculationLines, auditComparisonLines, evaluateArithmetic } from '../utils/combatAssessment.js';
 import { getGameMasterGuideRules } from '../prompts/mainPromptModule.js';
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
@@ -46,11 +46,61 @@ test('a calculation is re-checked only when the line states one', () => {
   assert.deepEqual(auditCalculationLines(['X = 4 + 30.6']).failures, []);
 });
 
-test('every calculation the rulebook works out as an example adds up', () => {
+test('every calculation and every verdict the rulebook works out as an example holds', () => {
   const lines = getGameMasterGuideRules().split('\n');
   const { checked, failures } = auditCalculationLines(lines);
   assert.ok(checked > 100, `the guide states plenty of arithmetic, saw only ${checked}`);
   assert.deepEqual(failures.map(f => f.line), [], 'a worked example with wrong arithmetic teaches the game master to miscount');
+
+  const verdicts = auditComparisonLines(lines);
+  assert.ok(verdicts.checked >= 12, `the guide states its threshold checks in the auditable form, saw only ${verdicts.checked}`);
+  assert.deepEqual(verdicts.failures.map(f => f.line), [], 'a worked example whose verdict contradicts its own comparison teaches the game master to misjudge');
+});
+
+test('a verdict that contradicts the comparison on its own line is reported', () => {
+  const holding = auditComparisonLines([
+    '- Step 5 (Threshold Check): 10 <= 10. RESULT: TRUE. The Armor Holds.',
+    "- Check: '3720 >= 4960'? FALSE.",
+    '- Check: 45 <= 60. Status: TRUE.',
+    '**Step 1 (Check):** 6000 >= 5590. TRUE. Level-up triggered.',
+  ]);
+  assert.equal(holding.checked, 4);
+  assert.deepEqual(holding.failures, []);
+
+  const broken = auditComparisonLines([
+    '- Step 5 (Threshold Check): 21 <= 10. RESULT: TRUE. The Armor Holds.',
+    '- Threshold Check: 7 >= 10. RESULT: TRUE.',
+  ]);
+  assert.equal(broken.checked, 2);
+  assert.deepEqual(broken.failures.map(f => [f.kind, f.claimed, f.computed]), [
+    ['comparison', 'TRUE', 'FALSE'],
+    ['comparison', 'TRUE', 'FALSE'],
+  ]);
+
+  // A threshold written as a rule, a comparison with no verdict, a word in the way of a number and
+  // the template the rules hand out for these lines: none of them claims anything about this turn.
+  assert.deepEqual(auditComparisonLines([
+    '- If Difference >= 10:      Result = Critical Success',
+    '- Reasoning: 2160 <= 2280. This event happened during the rest.',
+    '- Check: Is -5 <= 0? TRUE.',
+    '- Result: LEVEL UP! (13,500 >= 13,200).',
+    '- Threshold Check: [Difference] [>= or <=] [bound]. RESULT: TRUE|FALSE.',
+    'Check: 55kg <= 65kg. RESULT: TRUE, but only just - the label is prose and the rest is two sums: 30 + 15 = 45',
+  ]), { checked: 1, failures: [] }, 'a readable comparison in an unreadable line is still a claim');
+
+  // Both readers feed one list, in the order the log states them.
+  const merged = assessCombat({
+    calculationLines: ['Damage: 3 + 4 = 8', '- Threshold Check: 7 >= 10. RESULT: TRUE.', 'Weight: 30 + 15 = 45kg'],
+  });
+  assert.equal(merged.calculations.checked, 3);
+  assert.deepEqual(merged.calculations.failures.map(f => [f.order, f.kind]), [[0, 'equality'], [1, 'comparison']]);
+});
+
+test('the rules require a verdict to be written where it can be re-checked', () => {
+  const guide = getGameMasterGuideRules();
+  assert.match(guide, /#12\.7\.5\. The Threshold Check Lines \(MANDATORY FORMAT\)/);
+  assert.match(guide, /- Threshold Check: \[Difference\] \[>= or <=\] \[bound\]\. RESULT: TRUE\|FALSE\./);
+  assert.match(guide, /- Threshold Check: 7 >= 5\. RESULT: TRUE\./);
 });
 
 test('the fight is summed up from the lists, the characters behind them and the log', () => {

@@ -1724,6 +1724,19 @@ GM rolls 1d20 (GMDice). Result: [GMDice]."
 
 - Final Result: [TRANSLATED Result String (e.g., 'Полный успех', 'Критический провал')]"
 
+                    #12.7.5. The Threshold Check Lines (MANDATORY FORMAT):
+                    The band chosen in #12.7.2 is a claim about a comparison, so it must be written on its own line, stating the comparison and its verdict:
+
+                    "- Threshold Check: [Difference] [>= or <=] [bound]. RESULT: TRUE|FALSE."
+
+                    Write one such line for the bound the Difference satisfies, and one for the next bound above it (skip the second when the band is the lowest one). The client recomputes every line of this shape and tells the player when a verdict does not follow from the numbers on the same line, so a line that states TRUE about a failing comparison is reported as a mistake of the turn. Example for a Difference of 7, which falls into the 'Full Success' band:
+
+                    "- Threshold Check: 7 >= 5. RESULT: TRUE.
+                    - Threshold Check: 7 >= 10. RESULT: FALSE.
+                    - Final Result: [TRANSLATED Result String]"
+
+                    The format is the one the armor rules already use for their own threshold check. It changes nothing about which band applies - it only makes the choice readable.
+
                     Next Step: Proceed to #12.8 (Interpret Final Action Result).
 
                     ]]>

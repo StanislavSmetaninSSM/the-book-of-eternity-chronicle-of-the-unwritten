@@ -24,7 +24,9 @@ test('the entire guide is invariant across different turn contexts', () => {
   // Updated for the explicit inventory-transfer protocol, and for the carrying ceiling that
   // now states one constant (15 kg, as in #19.C.1) and the inclusive boundary the interface gates on.
   // The critical-hit threshold now states its bounds in the formula itself, in all three places.
-  assert.equal(sha256(guide), '69bfa3b37b92f65bc965fb50c7d38693f483a4d1fad858c4593073524c9f6969');
+  // #12.7.5 requires the band an action check lands in to be logged as a comparison with its
+  // verdict on the same line, which is the form the combat panel re-computes.
+  assert.equal(sha256(guide), '800f277feafba27df7479bf3ba4e60cf547c0aee6974740a9740f720e8e7cf11');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);

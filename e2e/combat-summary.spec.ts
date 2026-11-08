@@ -32,6 +32,9 @@ function writeCombatSave(): string {
   save.gameLog = [
     'Wolf pack weight: 30 + 15 = 45kg',
     'Goblin armor: 40 * 0.7 = 27%',
+    // A threshold check whose verdict contradicts its own numbers: the sum is right, the reading
+    // of the comparison is not, and only the second mistake is one the panel can prove.
+    '- Wolf pack, Threshold Check: 41 >= 45. RESULT: TRUE.',
   ];
   // One item so heavy that the character is overloaded by it: the panel must say so, because the
   // flag is now recomputed while the save is being read rather than trusted from the file.
@@ -69,8 +72,9 @@ test('the combat panel sums the fight up and flags the calculation that does not
   await expect(summary).toContainText('2 of 2 standing · 70% health · 0 wounds · 0 effects');
   await expect(summary).toContainText('You: 100% health');
   await expect(summary).toContainText('overloaded');
-  await expect(summary).toContainText('1 of 2 logged calculations do not add up');
+  await expect(summary).toContainText('2 of 3 logged calculations do not add up');
   await expect(summary).toContainText('Goblin armor: 40 * 0.7 = 27% · 27 ≠ 28');
+  await expect(summary).toContainText('Wolf pack, Threshold Check: 41 >= 45. RESULT: TRUE. · TRUE ≠ FALSE');
   // The enemy lists are untouched by the summary: the cards are still there below it.
   await expect(page.getByText('Goblin').first()).toBeVisible();
   await expect(page.getByText('Wolf pack').first()).toBeVisible();
