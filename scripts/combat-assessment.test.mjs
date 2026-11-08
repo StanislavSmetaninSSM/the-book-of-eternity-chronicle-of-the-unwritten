@@ -61,10 +61,37 @@ test('a calculation is re-checked only when the line states one', () => {
   assert.deepEqual(auditCalculationLines(['X = 4 + 30.6']).failures, []);
 });
 
+test('a chain of substitutions is checked step by step, and a sum of terms is left alone', () => {
+  const chain = [
+    '- maxHealth = (100 + 13 * 2) = 100 + 26 = 126%',
+    '- LevelDifference = PL - LD_calc = 10 - 15 = -5',
+    "Calculation: 'BaseResistValue' (Boss, EL=100) = round(15 + pow(100, 0.8) * 1.2) = round(15 + 39.8 * 1.2) = round(15 + 47.8) = 63%.",
+  ];
+  const sound = auditCalculationLines(chain);
+  assert.ok(sound.checked >= chain.length + 1, `every step of a chain is a claim of its own, saw ${sound.checked}`);
+  assert.deepEqual(sound.failures, []);
+
+  // The middle step disagrees with both of its neighbours, so both are named: the substitution the
+  // turn wrote, and the total that was carried on from it.
+  const broken = auditCalculationLines(['- maxHealth = (100 + 13 * 2) = 100 + 27 = 126%']);
+  assert.equal(broken.checked, 2);
+  assert.deepEqual(broken.failures.map(f => [f.claimed, f.computed]), [[126, 127], [127, 126]]);
+
+  // Written this way the pieces belong to different sums, and pairing them would invent a mistake.
+  assert.deepEqual(auditCalculationLines(['- Attack = 7% + Guard = 16% = 23%']), { checked: 0, failures: [] });
+});
+
+test('the rules hand the client the two shapes it re-computes', () => {
+  const guide = getGameMasterGuideRules().split('\n').map(line => line.trim());
+  assert.ok(guide.includes('- maxHealth = (100 + 13 * 2) = 100 + 26 = 126%'), 'the chain the rules show is one the reader follows');
+  assert.ok(guide.includes('- Attack = 7% + Guard = 16% = 23%'), 'and so is the shape they warn against');
+  assert.ok(guide.includes('- Threshold Check: 360 >= 360. RESULT: TRUE. The project step is COMPLETE.'), 'a world threshold is written with its verdict');
+});
+
 test('every calculation and every verdict the rulebook works out as an example holds', () => {
   const lines = getGameMasterGuideRules().split('\n');
   const { checked, failures } = auditCalculationLines(lines);
-  assert.ok(checked > 100, `the guide states plenty of arithmetic, saw only ${checked}`);
+  assert.ok(checked > 220, `the guide states plenty of arithmetic, saw only ${checked}`);
   assert.deepEqual(failures.map(f => f.line), [], 'a worked example with wrong arithmetic teaches the game master to miscount');
 
   const verdicts = auditComparisonLines(lines);

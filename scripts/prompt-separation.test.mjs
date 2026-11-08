@@ -28,7 +28,9 @@ test('the entire guide is invariant across different turn contexts', () => {
   // verdict on the same line, which is the form the combat panel re-computes.
   // #5.10.A.1 now works its formula out to a number the interface can re-compute, and the party
   // power example lost three terms that did not add up once exponentiation became readable.
-  assert.equal(sha256(guide), '21a3f607e134671afef08ac25e736c843d483f94138d95c5a9b8036872692ac8');
+  // The auditor's rule now states the two shapes the client re-computes: a chain of substitutions
+  // that reads step by step, and a threshold written with its verdict - outside combat as well.
+  assert.equal(sha256(guide), '538dbed96e01523825cc89b5c753d1df6f5770b790bb4031c874bb08cd5d1f99');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);

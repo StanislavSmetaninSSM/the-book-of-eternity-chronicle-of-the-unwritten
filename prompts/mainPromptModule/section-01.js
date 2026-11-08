@@ -2290,6 +2290,19 @@ Each command is {"transferId":"unique-per-transfer-never-reused", "source":{"typ
             Inside this array, you MUST show your work by recording every intermediate step, every variable used, every bonus considered (and whether its condition was met), and every mathematical operation performed.
 
             If you produce a final number (like damage dealt, a new health total, or an experience reward) without showing the complete, step-by-step derivation of that number in the logs, it is considered a critical failure on your part.
+            Two shapes of that worksheet are re-computed by the client, so write them in these forms. A substitution states a number at every step, so that each step can be compared with its neighbours:
+
+            - maxHealth = (100 + 13 * 2) = 100 + 26 = 126%
+
+            and not as one line of labelled terms whose pieces belong to different sums, where nothing can be followed:
+
+            - Attack = 7% + Guard = 16% = 23%
+
+            A threshold that decides an outcome states its verdict on the same line - the form #12.7.5 requires of a check, and a project step, a travel time, a detection roll and a level-up are decided the same way a blow is:
+
+            - Threshold Check: 360 >= 360. RESULT: TRUE. The project step is COMPLETE.
+
+            A line of either shape whose step or verdict does not follow from its own numbers is reported to the player as a mistake of the turn.
             This audit trail is essential for the game's integrity. Think of it as your "worksheet" or "proof".
 
             ]]> 

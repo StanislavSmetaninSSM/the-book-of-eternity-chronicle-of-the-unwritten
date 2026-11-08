@@ -173,11 +173,28 @@ const parseClaim = (text) => {
 };
 
 /**
- * Re-checks the lines the game master must log for every calculation it performs. A line is
- * audited only when it reads `expression = number` (a label before the expression is allowed,
- * as in "Kaelen's criticalWeight = 50 + 15 = 65kg"), and only when both sides are readable:
- * a whole number is tolerated up to the rounding the rules ask for, a decimal one up to half a
- * percent. Anything else is passed over in silence - the panel reports a slip, never a hunch.
+ * One readable step of a chain: the arithmetic written between two `=` signs. A step has to read as
+ * an expression and not as a lone number, because in `Attack = 7% + Guard = 16% = 23%` the pieces
+ * between the signs belong to two different sums - reading one of them as a whole would accuse the
+ * turn of an error it never claimed.
+ * @param {string} text
+ * @returns {number|null}
+ */
+function readStep(text) {
+    const expression = cleanExpression(text);
+    if (expression === null) return null;
+    const value = evaluateArithmetic(expression);
+    return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Re-checks the arithmetic a turn logged. A statement is audited when it reads
+ * `label: expression = number`, or when it is a chain of substitutions - `label: a = b = c` - and
+ * every step between the first and the last also reads as arithmetic, so each can be compared with
+ * its neighbour. A whole number is forgiven half a point because the rules round, a decimal one up
+ * to half a percent, and a chain step gets both allowances at once. Anything else is passed over in
+ * silence: the panel reports a slip, never a hunch, and a line that mixes prose with numbers is
+ * likelier to be misread by the reader than miscounted by the game master.
  * @param {string[]} lines
  */
 export function auditCalculationLines(lines) {
@@ -187,17 +204,41 @@ export function auditCalculationLines(lines) {
         if (typeof entry !== 'string' || !entry.includes('=')) return;
         const line = entry.trim();
         if (/[[\]{}]/.test(line) || /[<>]=|==|!=|=>/.test(line)) return;
-        const parts = line.split('=');
-        const claim = parseClaim(parts[parts.length - 1]);
-        if (!claim) return;
-        const expression = cleanExpression(parts.length > 2 ? parts[parts.length - 2] : parts[0]);
-        if (expression === null) return;
-        const computed = evaluateArithmetic(expression);
-        if (computed === null) return;
-        checked += 1;
-        const tolerance = claim.exact ? Math.max(0.01, Math.abs(claim.value) * 0.005) : 0.5;
-        if (Math.abs(computed - claim.value) > tolerance) {
-            failures.push({ line, kind: 'equality', order, claimed: claim.value, computed: Math.round(computed * 100) / 100 });
+        // A log line carries as many statements as it has semicolons, and a chain of substitutions
+        // only means something inside one of them.
+        for (const statement of line.split(';')) {
+            const parts = statement.split('=');
+            if (parts.length < 2) continue;
+            const claim = parseClaim(parts[parts.length - 1]);
+            if (!claim) continue;
+            // The chain is the longest readable run of steps that ends just before the claimed
+            // number. A line may open with a definition that is not arithmetic - `EL = max(1,
+            // round(LD + diff * 0.5)) = 27` - and the substitutions written after it still have to
+            // agree with each other. If the step before the claim does not read at all, the line is
+            // a sum of labelled terms (`Attack = 7% + Guard = 16% = 23%`) rather than a chain, and
+            // the whole statement is left alone: its pieces belong to different sums, and a reader
+            // that paired them anyway would invent an error.
+            const middles = parts.slice(1, -1).map(readStep);
+            let chain = null;
+            for (let index = 0; index < middles.length; index += 1) {
+                const tail = middles.slice(index);
+                if (tail.every(step => step !== null)) { chain = tail; break; }
+            }
+            const steps = chain || [];
+            const previous = steps.length ? steps[steps.length - 1] : (middles.length ? null : readStep(parts[0]));
+            if (previous === null) continue;
+            checked += 1;
+            const tolerance = claim.exact ? Math.max(0.01, Math.abs(claim.value) * 0.005) : 0.5;
+            if (Math.abs(previous - claim.value) > tolerance) {
+                failures.push({ line, kind: 'equality', order, claimed: claim.value, computed: Math.round(previous * 100) / 100 });
+            }
+            for (let index = 0; index + 1 < steps.length; index += 1) {
+                checked += 1;
+                const stepTolerance = Math.max(0.5, Math.abs(steps[index + 1]) * 0.005);
+                if (Math.abs(steps[index] - steps[index + 1]) > stepTolerance) {
+                    failures.push({ line, kind: 'equality', order, claimed: steps[index + 1], computed: Math.round(steps[index] * 100) / 100 });
+                }
+            }
         }
     });
     return { checked, failures };
