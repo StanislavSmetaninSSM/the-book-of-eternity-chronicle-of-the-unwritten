@@ -1,6 +1,8 @@
 
 export const combat = {
   en: {
+    // One action of a fighter, counted by the client from the use the response named (#6.1.6.7).
+    "cooldown_chip": "'{action}' · ready from turn {turn}",
     // Combat UI
     "Not in Combat": "Not in Combat",
     "attack_command": "I attack {name}",
@@ -73,6 +75,7 @@ export const combat = {
     "Targets": "Targets",
   },
   ru: {
+    "cooldown_chip": "«{action}» · готов с хода {turn}",
     // Combat UI
     "Not in Combat": "Не в бою",
     "attack_command": "Я атакую {name}",

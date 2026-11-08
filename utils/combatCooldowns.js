@@ -169,3 +169,24 @@ export const assessCooldowns = (cooldowns, subject = '') => {
     }
     return { notes };
 };
+
+/**
+ * The waits that are still running on a given turn. This is not an accusation - #6.1.6.7 asks a
+ * cooldown to be respected, and an action that is waiting is the rule working. It is shown because
+ * the client is the one keeping the count, and a player has no other way to see it. A turn that is
+ * not stated silences the whole list instead of guessing one, and an action whose wait is over is
+ * left out: "ready" is not news.
+ * @param {ActionCooldown[] | undefined} cooldowns
+ * @param {number | null | undefined} currentTurnNumber
+ * @returns {{ actionName: string, readyFromTurn: number, turnsLeft: number }[]}
+ */
+export const cooldownStatuses = (cooldowns, currentTurnNumber) => {
+    if (!Number.isInteger(currentTurnNumber)) return [];
+    return dedupeCooldowns(cooldowns)
+        .filter(entry => Number.isInteger(entry?.readyFromTurn) && entry.readyFromTurn > currentTurnNumber)
+        .map(entry => ({
+            actionName: entry.actionName,
+            readyFromTurn: entry.readyFromTurn,
+            turnsLeft: entry.readyFromTurn - currentTurnNumber,
+        }));
+};

@@ -1367,6 +1367,7 @@ export default function GameHost({ request, onSettled }: GameHostProps): React.R
                 >
                     <div className="flex-1 flex flex-col h-full bg-gray-900 -m-6 p-4">
                         <Suspense fallback={null}><CombatTracker
+                            turnNumber={turnNumber}
                             enemies={gameState.enemiesData}
                             allies={gameState.alliesData}
                             combatLog={combatLog}

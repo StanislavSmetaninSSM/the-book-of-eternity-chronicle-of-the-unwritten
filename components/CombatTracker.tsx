@@ -11,7 +11,7 @@ import { isEncumbered } from '../utils/carryWeight.js';
 import { assessCombat, auditCombatLog } from '../utils/combatAssessment.js';
 import { assessEffects } from '../utils/effectAssessment.js';
 import { assessWoundProgress } from '../utils/worldAssessment.js';
-import { assessCooldowns } from '../utils/combatCooldowns.js';
+import { assessCooldowns, cooldownStatuses } from '../utils/combatCooldowns.js';
 import WorldStateNotes from './WorldStateNotes';
 
 type Combatant = EnemyCombatObject | AllyCombatObject;
@@ -63,6 +63,8 @@ const HealthGrid: React.FC<{ healthStates: string[], maxHealth: string }> = ({ h
 
 interface CombatantCardProps {
     combatant: Combatant;
+    /** The turn the world is on: a wait is counted against it, and nothing else. */
+    turnNumber?: number | null;
     fullNpcData: NPC | null;
     onOpenDetailModal: (title: string, data: DetailData) => void;
     onViewCharacterSheet: (character: PlayerCharacter | NPC) => void;
@@ -74,7 +76,7 @@ interface CombatantCardProps {
 }
 
 
-const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, onOpenDetailModal, onViewCharacterSheet, imageCache, onImageGenerated, onOpenImageModal, gameSettings, editNpcData }) => {
+const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, turnNumber, fullNpcData, onOpenDetailModal, onViewCharacterSheet, imageCache, onImageGenerated, onOpenImageModal, gameSettings, editNpcData }) => {
     const isGroup = combatant.isGroup;
     const isDefeated = isGroup ? (combatant.count ?? 0) <= 0 : parseInt(combatant.currentHealth ?? '0') <= 0;
     
@@ -180,6 +182,10 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
     // The card is where a fighter's own buffs, debuffs and open wounds are listed, so the reading is
     // done here and over these exact arrays - the summary has nothing of its own to contradict.
     const allWounds = fullNpcData?.wounds || combatant.wounds || [];
+    // The count is the client's, so the wait is shown where the action is listed - on its own row,
+    // and only while it runs.
+    const waitingByAction = new Map(cooldownStatuses(combatant.cooldowns, turnNumber).map(entry => [entry.actionName, entry]));
+
     const combatantNotes = [
         ...assessEffects({
             characters: [
@@ -306,6 +312,14 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
                                 {(action.effects ?? []).map((e, idx) => (
                                     <p key={idx} className="text-gray-400 italic">{generateEffectDescription(e, t)}</p>
                                 ))}
+                                {waitingByAction.get(action.actionName) && (
+                                    <p data-testid="action-cooldown-chip" className="mt-1 font-medium text-amber-300/90">
+                                        {t('cooldown_chip', {
+                                            action: action.actionName,
+                                            turn: waitingByAction.get(action.actionName).readyFromTurn,
+                                        })}
+                                    </p>
+                                )}
                             </button>
                         ))}
                     </Section>
@@ -400,6 +414,7 @@ const CombatantCard: React.FC<CombatantCardProps> = ({ combatant, fullNpcData, o
 
 interface CombatTrackerProps {
     enemies: EnemyCombatObject[];
+    turnNumber?: number | null;
     allies: AllyCombatObject[];
     combatLog: string[];
     gameLog: string[];
@@ -420,7 +435,7 @@ interface CombatTrackerProps {
     editNpcData?: (npcId: string, field: keyof NPC, value: unknown) => void;
 }
 
-export default function CombatTracker({ enemies, allies, combatLog, gameLog, allNpcs, playerCharacter, setAutoCombatSkill, onOpenDetailModal, onViewCharacterSheet, onSendMessage, isLoading, imageCache, onImageGenerated, onOpenImageModal, gameSettings, onExpand, isFullScreen, onCollapse, editNpcData }: CombatTrackerProps): React.ReactNode {
+export default function CombatTracker({ enemies, allies, combatLog, gameLog, turnNumber, allNpcs, playerCharacter, setAutoCombatSkill, onOpenDetailModal, onViewCharacterSheet, onSendMessage, isLoading, imageCache, onImageGenerated, onOpenImageModal, gameSettings, onExpand, isFullScreen, onCollapse, editNpcData }: CombatTrackerProps): React.ReactNode {
     const { t } = useLocalization();
     const hasCombatants = (enemies && enemies.length > 0) || (allies && allies.length > 0);
     const hasLog = combatLog && combatLog.length > 0;
@@ -582,7 +597,7 @@ export default function CombatTracker({ enemies, allies, combatLog, gameLog, all
                             return (
                                 <div key={enemy.NPCId || `enemy-${index}`} className="flex items-start gap-2 group">
                                     <div className="flex-1">
-                                        <CombatantCard combatant={enemy} fullNpcData={fullNpcData} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} editNpcData={editNpcData} />
+                                        <CombatantCard turnNumber={turnNumber} combatant={enemy} fullNpcData={fullNpcData} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} editNpcData={editNpcData} />
                                     </div>
                                     {!isDefeated && (
                                         <button
@@ -613,7 +628,7 @@ export default function CombatTracker({ enemies, allies, combatLog, gameLog, all
                              if (!fullNpcData && ally.name) {
                                  fullNpcData = allNpcs.find(npc => npc.name === ally.name) || null;
                              }
-                            return <CombatantCard key={ally.NPCId || `ally-${index}`} combatant={ally} fullNpcData={fullNpcData} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} editNpcData={editNpcData} />
+                            return <CombatantCard key={ally.NPCId || `ally-${index}`} turnNumber={turnNumber} combatant={ally} fullNpcData={fullNpcData} onOpenDetailModal={onOpenDetailModal} onViewCharacterSheet={onViewCharacterSheet} imageCache={imageCache} onImageGenerated={onImageGenerated} onOpenImageModal={onOpenImageModal} gameSettings={gameSettings} editNpcData={editNpcData} />
                         })}
                     </div>
                 </div>

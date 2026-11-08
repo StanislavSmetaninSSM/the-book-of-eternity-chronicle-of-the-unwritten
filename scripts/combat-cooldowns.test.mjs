@@ -13,7 +13,7 @@ import { getTestServer, closeTestServer } from './helpers/testServer.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { applyCooldownUses, assessCooldowns, dedupeCooldowns, readyFromTurnOf } from '../utils/combatCooldowns.js';
+import { applyCooldownUses, assessCooldowns, cooldownStatuses, dedupeCooldowns, readyFromTurnOf } from '../utils/combatCooldowns.js';
 import { getGameMasterGuideRules } from '../prompts/mainPromptModule.js';
 
 const npcs = [{
@@ -167,6 +167,41 @@ test('the turn pipeline counts the wait while it applies the response', async ()
     assert.equal(silent.enemiesData[0].cooldowns.length, 1, 'a turn that names nothing adds no claim and no second entry');
     assert.equal(silent.enemiesData[0].cooldowns[0].earlyUseTurnNumber, 2, 'while the recorded contradiction stays where the card reads it');
   } finally { await server.close(); }
+});
+
+test('a wait that runs is shown on the action it belongs to, and a finished one not at all', () => {
+  const list = [
+    { actionName: 'Shield Bash', lastUsedTurnNumber: 5, cooldownTurns: 3, readyFromTurn: 8 },
+    { actionName: 'Gore', lastUsedTurnNumber: 1, cooldownTurns: 3, readyFromTurn: 4 },
+  ];
+
+  assert.deepEqual(cooldownStatuses(list, 7), [{ actionName: 'Shield Bash', readyFromTurn: 8, turnsLeft: 1 }],
+    'on turn 7 one action is still waiting, and its row says until when');
+  assert.deepEqual(cooldownStatuses(list, 8), [], 'a wait that has run out is not news, and is not shown');
+  assert.deepEqual(cooldownStatuses(list, 4), [{ actionName: 'Shield Bash', readyFromTurn: 8, turnsLeft: 4 }],
+    'the boundary belongs to the wait, not to the ready state');
+  assert.deepEqual(cooldownStatuses(list, null), [], 'without the turn of the world nothing is counted');
+  assert.deepEqual(cooldownStatuses(list, '7'), [], 'and a turn written as text is not a number to subtract from');
+  assert.deepEqual(cooldownStatuses(undefined, 7), []);
+  assert.equal(cooldownStatuses([...list, list[0]], 7).length, 1, 'one action stays one line, however the state was merged');
+  assert.equal(cooldownStatuses([{ actionName: 'x' }, null, 7], 7).length, 0, 'and an entry that is not a cooldown is not a chip');
+});
+
+test('the card is handed the turn its waits are counted against', () => {
+  const tracker = readFileSync(new URL('../components/CombatTracker.tsx', import.meta.url), 'utf8');
+  const side = readFileSync(new URL('../components/SidePanel.tsx', import.meta.url), 'utf8');
+  const host = readFileSync(new URL('../components/GameHost.tsx', import.meta.url), 'utf8');
+  const combat = readFileSync(new URL('../utils/translations/ui/combat.ts', import.meta.url), 'utf8');
+
+  assert.match(tracker, /cooldownStatuses\(combatant\.cooldowns, turnNumber\)/, 'the card reads the fighter it shows');
+  assert.match(tracker, /data-testid="action-cooldown-chip"/, 'as a line on the row of the action itself');
+  assert.match(tracker, /t\('cooldown_chip', \{/, 'said in the player’s language, not in numbers alone');
+
+  for (const [name, source] of [['the side panel', side], ['the full-screen view', host]]) {
+    assert.match(source, /<CombatTracker\s+turnNumber=\{turnNumber\}/s, `${name} has to hand the combat view the turn it already holds`);
+  }
+
+  assert.equal((combat.match(/"cooldown_chip":/g) || []).length, 2, 'and the line is answered in both locales');
 });
 
 // The server is shared for the whole file, so it is closed once, here, or the run never ends.
