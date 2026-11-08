@@ -5,6 +5,7 @@ import { useLocalization } from '../context/LocalizationContext';
 import MarkdownRenderer from './MarkdownRenderer';
 import ImageRenderer from './ImageRenderer';
 import ConfirmationModal from './ConfirmationModal';
+import WorldStateNotes from './WorldStateNotes';
 
 interface LocationLogProps {
   locations: Location[];
@@ -202,6 +203,12 @@ export default function LocationLog({ locations, currentLocation, onOpenModal, a
     <>
       <div className="space-y-4">
         <h3 className="text-xl font-bold text-cyan-400 mb-3 narrative-text">{t('Known Locations')}</h3>
+        {/* A threat works through its own activity tracker, so it answers to the same completion
+            check. The place is named with it because a threat name alone does not say where it is. */}
+        <WorldStateNotes
+          threats={sortedLocations.flatMap(loc => (loc.activeThreats || []).map(threat => ({ ...threat, name: `${threat.name} (${loc.name})` })))}
+          className="mb-4"
+        />
         {sortedLocations && sortedLocations.length > 0 ? (
           <div className="space-y-3">
             {sortedLocations.map((loc) => (

@@ -112,6 +112,11 @@ export const common = {
     "The Game Master is responding...": "The Game Master is responding...",
     "Are you sure you want to delete this message?": "Are you sure you want to delete this message?",
     "Generated image": "Generated image",
+    "World State Check": "World State Check",
+    "world_notes_negative_effort": "{subject}: time spent is {minutes} minutes; effort written into a tracker cannot fall below zero.",
+    "world_notes_completed_but_active": "{subject}: {spent} of {cost} minutes spent - the completion check is met, yet the task is still listed as unfinished.",
+    "world_notes_standing_out_of_range": "{subject}: standing {value} is outside the scale of {floor} to {ceiling}.",
+    "world_notes_wound_awaiting_transition": "{subject}: treatment progress {progress} of {needed} - at that number the wound is supposed to change its state.",
     ...ui_overrides.en
   },
   ru: {
@@ -224,6 +229,11 @@ export const common = {
     "The Game Master is responding...": "Мастер игры отвечает...",
     "Are you sure you want to delete this message?": "Вы уверены, что хотите удалить это сообщение?",
     "Generated image": "Сгенерированное изображение",
+    "World State Check": "Проверка состояния мира",
+    "world_notes_negative_effort": "{subject}: потрачено {minutes} мин; время, записанное в задачу, не может быть меньше нуля.",
+    "world_notes_completed_but_active": "{subject}: потрачено {spent} из {cost} мин — условие завершения выполнено, но задача всё ещё числится незавершённой.",
+    "world_notes_standing_out_of_range": "{subject}: {value} вне шкалы от {floor} до {ceiling}.",
+    "world_notes_wound_awaiting_transition": "{subject}: прогресс лечения {progress} из {needed} — при таком значении состояние раны должно измениться.",
     ...ui_overrides.ru
   }
 }

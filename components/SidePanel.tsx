@@ -14,6 +14,7 @@ import { ChevronDoubleRightIcon, ChevronDoubleLeftIcon, UserIcon as UserIconSoli
 import JsonDebugView from './JsonDebugView';
 import GameLogView from './GameLogView';
 import NpcLog from './NpcLog';
+import WorldStateNotes from './WorldStateNotes';
 import CombatTracker from './CombatTracker';
 import GameMenuView from './GameMenuView';
 import LocationViewer from './LocationViewer';
@@ -257,6 +258,9 @@ const FactionLog: React.FC<{
         <>
             <div className="space-y-4">
                  <h3 className="text-xl font-bold text-cyan-400 mb-3 narrative-text">{t('Factions')}</h3>
+                {/* The same read-back over the factions listed here - a project whose spent time
+                    reached its cost is finished, a standing outside the scale is not a state. */}
+                <WorldStateNotes factions={factions} className="mb-4" />
                 {factions.length > 0 ? (
                     <div className="space-y-3">
                         {factions.map((faction) => (

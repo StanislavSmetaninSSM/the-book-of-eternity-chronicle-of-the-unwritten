@@ -5,6 +5,7 @@ import { CheckIcon, Bars3Icon } from '@heroicons/react/24/solid';
 import { useLocalization } from '../context/LocalizationContext';
 import ImageRenderer from './ImageRenderer';
 import ConfirmationModal from './ConfirmationModal';
+import WorldStateNotes from './WorldStateNotes';
 
 interface NpcLogProps {
   gameState: GameState | null;
@@ -257,6 +258,9 @@ export default function NpcLog({ gameState, npcs, encounteredFactions, onOpenJou
             {isSorting ? t('Done') : t('Sort')}
         </button>
       </div>
+      {/* Read back over the people listed here: an activity that outlived its own completion check,
+          a standing off the scale, a wound whose treatment reached the number that changes it. */}
+      <WorldStateNotes npcs={filteredNpcs || []} />
        {allTags.length > 0 && (
           <div className="p-3 bg-gray-900/30 rounded-lg">
               <h4 className="text-sm font-semibold text-gray-400 mb-2">{t('Filter by tags:')}</h4>
