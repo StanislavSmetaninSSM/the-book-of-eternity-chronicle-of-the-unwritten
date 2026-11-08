@@ -492,7 +492,7 @@ export default function CombatTracker({ enemies, allies, combatLog, gameLog, all
                 </div>
             )}
             {(hasCombatants || assessment.issues.length > 0) && (
-                <div className="bg-gray-900/40 p-3 rounded-lg border border-gray-700/50">
+                <div data-testid="combat-summary" className="bg-gray-900/40 p-3 rounded-lg border border-gray-700/50">
                     <h4 className="text-sm font-semibold text-cyan-300/80 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                         <ShieldCheckIcon className="w-4 h-4" />
                         {t('Combat Summary')}
