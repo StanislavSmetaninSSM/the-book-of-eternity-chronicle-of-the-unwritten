@@ -1,7 +1,7 @@
 // @ts-ignore -- shared JS helpers
 import { critChanceBuffFromLuck, criticalHitThreshold, maxCarryWeight, maxEnergyPercent, maxHealthPercent } from './derivedStats.js';
 import { isEncumbered } from './carryWeight.js';
-import { coordinateKey, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
+import { coordinateKey, normalizeCoordinates, sameHorizontalCoordinates, matchingLinkIndexes, isAmbiguousCoordinateLink } from './locationLinks.js';
 import { withLiveActivePlayer } from './partyView';
 import { GameState, GameResponse, PlayerCharacter, Location, Language, Item, GameSettings, WorldState, NPC, WorldData, CharacterCreationData, Effect, QuestUpdate, PassiveSkill, LocationStorage, ActiveThreat, Calendar, Month, DayInfo, GameContext, ChatMessage, Characteristics, ItemResourceChange, NPCInventoryResourceChange } from '../types';
 import { gameData } from './localizationGameData';
@@ -383,18 +383,18 @@ export function updateWorldMap(
     
     const existingCoords = new Set<string>();
     Object.values(newMap).forEach(loc => {
-        if (loc.coordinates) {
-            existingCoords.add(`${loc.coordinates.x},${loc.coordinates.y}`);
-        }
+        const key = coordinateKey(loc.coordinates);
+        if (key) existingCoords.add(key);
     });
 
     const initialIdToLocationIdMap = new Map<string, string>();
 
     asArray(updates.newLocations).forEach(newLoc => {
-        if (!newLoc.coordinates) return;
-        const coordKey = `${newLoc.coordinates.x},${newLoc.coordinates.y}`;
+        const coordinates = normalizeCoordinates(newLoc?.coordinates);
+        if (!coordinates) return;
+        const coordKey = coordinateKey(coordinates)!;
         const newLocationId = newLoc.locationId || generateId('loc');
-        newLoc.locationId = newLocationId;
+        const locationData: Partial<Location> = { ...newLoc, locationId: newLocationId, coordinates };
 
         if (newLoc.initialId) {
             initialIdToLocationIdMap.set(newLoc.initialId, newLocationId);
@@ -406,14 +406,14 @@ export function updateWorldMap(
             console.warn(`Multiple locations share coordinates ${coordKey}; coordinate-only navigation may be ambiguous.`);
         }
 
-        if (newLoc.locationStorages) {
-            newLoc.locationStorages = (newLoc.locationStorages as Partial<LocationStorage>[]).map(storage => {
+        if (locationData.locationStorages) {
+            locationData.locationStorages = (locationData.locationStorages as Partial<LocationStorage>[]).map(storage => {
                 if (!storage) return null;
                 return { ...storage, storageId: storage.storageId || generateId('storage') } as LocationStorage;
             }).filter((s): s is LocationStorage => !!s);
         }
         
-        newMap[newLocationId] = newLoc as Location;
+        newMap[newLocationId] = locationData as Location;
         existingCoords.add(coordKey);
     });
 
@@ -497,15 +497,20 @@ export function updateWorldMap(
             return;
         }
         if (link.targetLocationId) {
-            const targetCoordinates = newMap[link.targetLocationId].coordinates;
+            const targetCoordinates = normalizeCoordinates(newMap[link.targetLocationId].coordinates);
             const targetKey = coordinateKey(targetCoordinates);
-            const suppliedKey = coordinateKey(link.targetCoordinates);
-            if (!targetKey || (link.targetCoordinates != null && suppliedKey !== targetKey)) {
+            const suppliedCoordinates = link.targetCoordinates;
+            const suppliedKey = coordinateKey(suppliedCoordinates);
+            const coordinatesMatch = suppliedCoordinates == null || (suppliedCoordinates.z === undefined
+                ? sameHorizontalCoordinates(suppliedCoordinates, targetCoordinates)
+                : suppliedKey === targetKey);
+            if (!targetKey || !coordinatesMatch) {
                 console.warn('Skipping link with invalid or conflicting destination coordinates.');
                 onWarning?.({ kind: 'link-create', subject: linkUpdate.sourceLocationId || '?' });
                 return;
             }
-            link = { ...link, targetCoordinates: { ...targetCoordinates } };
+            // The destination ID is authoritative; complete legacy x/y-only coordinates from it.
+            link = { ...link, targetCoordinates };
         }
         source.adjacencyMap ||= [];
         if (matchingLinkIndexes(source.adjacencyMap, link, locations).length === 0) source.adjacencyMap.push(link);
@@ -517,8 +522,15 @@ export function updateWorldMap(
         if (matches.length !== 1) { console.warn('Skipping ambiguous or unknown location link update.'); onWarning?.({ kind: 'link-update', subject: update.sourceLocationId || '?' }); return; }
         const merged = deepMergeResponses(source.adjacencyMap[matches[0]], update.updatedLink);
         const target = merged.targetLocationId && newMap[merged.targetLocationId];
-        if (target && merged.targetCoordinates == null && coordinateKey(target.coordinates)) merged.targetCoordinates = { ...target.coordinates };
-        if (!coordinateKey(merged.targetCoordinates) || (merged.targetLocationId && (!target || coordinateKey(merged.targetCoordinates) !== coordinateKey(target.coordinates)))) {
+        if (target) {
+            const targetCoordinates = normalizeCoordinates(target.coordinates);
+            if (targetCoordinates && (merged.targetCoordinates == null ||
+                (merged.targetCoordinates.z === undefined && sameHorizontalCoordinates(merged.targetCoordinates, targetCoordinates)))) {
+                merged.targetCoordinates = targetCoordinates;
+            }
+        }
+        const mergedKey = coordinateKey(merged.targetCoordinates);
+        if (!mergedKey || (merged.targetLocationId && (!target || mergedKey !== coordinateKey(target.coordinates)))) {
             console.warn('Skipping link update with invalid or conflicting destination coordinates.');
             onWarning?.({ kind: 'link-update', subject: update.sourceLocationId || '?' });
             return;
@@ -1044,7 +1056,7 @@ export const createInitialContext = (creationData: CharacterCreationData, langua
         locationId: generateId('loc'),
         initialId: 'start-loc-01',
         name: 'A New Beginning',
-        coordinates: { x: 0, y: 0 },
+        coordinates: { x: 0, y: 0, z: 0 },
         locationType: 'outdoor',
         biome: 'Plains',
         internalDifficultyProfile: { combat: 0, environment: 0, social: 0, exploration: 0 },

@@ -1,5 +1,5 @@
 // @ts-ignore -- shared JS helpers
-import { coordinateKey, resolveLinkTarget } from '../utils/locationLinks.js';
+import { coordinateKey, coordinateZ, normalizeCoordinates, resolveLinkTarget } from '../utils/locationLinks.js';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Location, GameSettings, Faction, ImageCacheEntry, DetailData} from '../types';
@@ -111,6 +111,7 @@ const Tooltip = ({
                 </div>
             )}
             <div className="map-tooltip-title">{location.name}</div>
+            {location.coordinates && <p className="text-xs text-gray-500">{t('Coordinates')}: ({location.coordinates.x}, {location.coordinates.y}, {coordinateZ(location.coordinates)})</p>}
             {location.description && <p className="map-tooltip-desc">{location.description}</p>}
             {profile && (
                 <div className="map-tooltip-difficulty grid grid-cols-2 gap-x-4 mt-2 text-xs">
@@ -255,23 +256,30 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
     const [showAllLabels, setShowAllLabels] = useState(true);
     const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
     const [isStrategicView, setIsStrategicView] = useState(false);
+    const currentZValue = coordinateZ(currentLocation?.coordinates);
+    const currentZ = Number.isFinite(currentZValue) ? currentZValue : 0;
+    const [activeZ, setActiveZ] = useState(currentZ);
+
+    useEffect(() => {
+        setActiveZ(currentZ);
+        setExpandedGroup(null);
+        setHoveredLocation(null);
+    }, [currentLocation?.locationId, currentZ]);
 
     // State to trigger recentering effect
     const [recenterRequest, setRecenterRequest] = useState(0);
 
-    const { mapDimensions, locations, connections } = useMemo(() => {
+    const { mapDimensions, locations, connections, zLevels, selectedZ, verticalConnectionsByLocation } = useMemo(() => {
         const allLocations = new Map<string, Location & { isVisited: boolean }>();
+        const identityFor = (location: Location) => location.locationId ||
+            `legacy-${coordinateKey(location.coordinates)}-${location.name}`;
 
         visitedLocations.forEach(loc => {
-            if (loc.coordinates) {
-                const key = loc.locationId || `legacy-${loc.coordinates.x},${loc.coordinates.y}-${loc.name}`;
-                allLocations.set(key, { ...loc, isVisited: true });
-            }
+            if (coordinateKey(loc.coordinates)) allLocations.set(identityFor(loc), { ...loc, isVisited: true });
         });
 
-        if (currentLocation && currentLocation.coordinates) {
-            const key = currentLocation.locationId || `legacy-${currentLocation.coordinates.x},${currentLocation.coordinates.y}-${currentLocation.name}`;
-            allLocations.set(key, { ...(currentLocation as Location), isVisited: true });
+        if (currentLocation && coordinateKey(currentLocation.coordinates)) {
+            allLocations.set(identityFor(currentLocation), { ...(currentLocation as Location), isVisited: true });
         }
 
         const processedLocations = Array.from(allLocations.values());
@@ -280,11 +288,12 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
                 loc.adjacencyMap.forEach(link => {
                     if (!link) return;
                     // Old saves may contain incomplete links; never crash the map.
-                    const target = resolveLinkTarget(link, Array.from(allLocations.values()));
-                    const coordinates = link.targetCoordinates || target?.coordinates;
+                    const allKnownLocations = Array.from(allLocations.values());
+                    const target = resolveLinkTarget(link, allKnownLocations);
+                    const coordinates = normalizeCoordinates(target?.coordinates || link.targetCoordinates);
                     const key = coordinateKey(coordinates);
                     if (!key) return;
-                    if (!Array.from(allLocations.values()).some(l => coordinateKey(l.coordinates) === key)) {
+                    if (!allKnownLocations.some(l => coordinateKey(l.coordinates) === key)) {
                         const unvisitedLoc: Location & { isVisited: boolean } = {
                             name: link.name,
                             description: link.shortDescription,
@@ -292,87 +301,98 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
                             externalDifficultyProfile: link.estimatedExternalDifficultyProfile || { combat: 0, environment: 0, social: 0, exploration: 0 },
                             coordinates,
                             isVisited: false,
-                            locationId: `undiscovered-${key}`, 
+                            locationId: `undiscovered-${key}`,
                             lastEventsDescription: '',
-                            locationType: 'outdoor', 
+                            locationType: 'outdoor',
                             biome: 'Plains', // A safe default for an unknown outdoor location
                             image_prompt: `A detailed fantasy art image of a mysterious location known as ${link.name}. ${link.shortDescription}`,
-                        } as Location & { isVisited: boolean; lastEventsDescription?: string };
+                        } as Location & { isVisited: boolean };
                         allLocations.set(`undiscovered-${key}`, unvisitedLoc);
                     }
                 });
             }
         });
-        
-        const locationsWithCoords = Array.from(allLocations.values()).filter(l => l.coordinates);
-        if (locationsWithCoords.length === 0) {
-            return { mapDimensions: { width: 600, height: 500 }, locations: [], connections: [] };
+
+        const allLocationsWithCoords = Array.from(allLocations.values()).filter(loc => coordinateKey(loc.coordinates));
+        const zLevels = [...new Set(allLocationsWithCoords.map(loc => coordinateZ(loc.coordinates) as number))].sort((a, b) => a - b);
+        const selectedZ = zLevels.includes(activeZ) ? activeZ : (zLevels.includes(currentZ) ? currentZ : (zLevels[0] ?? 0));
+        const locationsOnLayer = allLocationsWithCoords.filter(loc => coordinateZ(loc.coordinates) === selectedZ);
+        if (locationsOnLayer.length === 0) {
+            return { mapDimensions: { width: 600, height: 500 }, locations: [], connections: [], zLevels, selectedZ, verticalConnectionsByLocation: new Map<string, number[]>() };
         }
 
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        locationsWithCoords.forEach(loc => {
-            minX = Math.min(minX, loc.coordinates!.x);
-            maxX = Math.max(maxX, loc.coordinates!.x);
-            minY = Math.min(minY, loc.coordinates!.y);
-            maxY = Math.max(maxY, loc.coordinates!.y);
+        // Keep a shared x/y projection across z layers so vertical transitions stay aligned.
+        allLocationsWithCoords.forEach(loc => {
+            minX = Math.min(minX, loc.coordinates.x);
+            maxX = Math.max(maxX, loc.coordinates.x);
+            minY = Math.min(minY, loc.coordinates.y);
+            maxY = Math.max(maxY, loc.coordinates.y);
         });
 
         const mapPadding = 1;
         const widthUnits = (maxX - minX) || 1;
         const heightUnits = (maxY - minY) || 1;
-        
         const totalWidthInUnits = widthUnits + 2 * mapPadding;
         const totalHeightInUnits = heightUnits + 2 * mapPadding;
-        
         const calculatedWidth = totalWidthInUnits * 100;
         const calculatedHeight = totalHeightInUnits * 100;
-        
-        const MIN_CSS_WIDTH = 600;
-        const MIN_CSS_HEIGHT = 500;
-        
-        const finalMapWidth = Math.max(calculatedWidth, MIN_CSS_WIDTH);
-        const finalMapHeight = Math.max(calculatedHeight, MIN_CSS_HEIGHT);
-        
+        const finalMapWidth = Math.max(calculatedWidth, 600);
+        const finalMapHeight = Math.max(calculatedHeight, 500);
         const effectiveTotalWidthUnits = finalMapWidth / 100;
         const effectiveTotalHeightUnits = finalMapHeight / 100;
         const offsetX = (effectiveTotalWidthUnits - totalWidthInUnits) / 2;
         const offsetY = (effectiveTotalHeightUnits - totalHeightInUnits) / 2;
-        
-        const locationsWithPositions = locationsWithCoords.map(loc => ({
+
+        const locationsWithPositions = locationsOnLayer.map(loc => ({
             ...loc,
-            x: (((loc.coordinates!.x - minX + mapPadding) + offsetX) / effectiveTotalWidthUnits) * 100,
-            y: (((loc.coordinates!.y - minY + mapPadding) + offsetY) / effectiveTotalHeightUnits) * 100
+            x: (((loc.coordinates.x - minX + mapPadding) + offsetX) / effectiveTotalWidthUnits) * 100,
+            y: (((loc.coordinates.y - minY + mapPadding) + offsetY) / effectiveTotalHeightUnits) * 100,
         }));
-
-
+        const allKnownLocations = Array.from(allLocations.values());
+        const positionedById = new Map(locationsWithPositions.map(loc => [identityFor(loc), loc]));
         const drawnConnections = new Set<string>();
         const connections = [];
+        const verticalConnectionsByLocation = new Map<string, number[]>();
 
         for (const loc of locationsWithPositions) {
-            if (loc.isVisited && loc.adjacencyMap) {
-                for (const link of loc.adjacencyMap) {
-                    const targetLoc = resolveLinkTarget(link, locationsWithPositions);
-                    if (targetLoc) {
-                        const connectionKey = [loc.locationId, targetLoc.locationId].sort().join('-');
-                        if (!drawnConnections.has(connectionKey)) {
-                            drawnConnections.add(connectionKey);
-                            connections.push({
-                                key: connectionKey,
-                                x1: loc.x, y1: loc.y,
-                                x2: targetLoc.x, y2: targetLoc.y,
-                                isDiscovered: targetLoc.isVisited
-                            });
-                        }
-                    }
+            if (!loc.isVisited || !loc.adjacencyMap) continue;
+            const sourceIdentity = identityFor(loc);
+            for (const link of loc.adjacencyMap) {
+                if (!link) continue;
+                const targetLoc = resolveLinkTarget(link, allKnownLocations);
+                const targetCoordinates = targetLoc?.coordinates || link.targetCoordinates;
+                if (coordinateKey(targetCoordinates) && coordinateZ(targetCoordinates) !== selectedZ) {
+                    const levels = verticalConnectionsByLocation.get(sourceIdentity) || [];
+                    const targetZ = coordinateZ(targetCoordinates) as number;
+                    if (!levels.includes(targetZ)) levels.push(targetZ);
+                    verticalConnectionsByLocation.set(sourceIdentity, levels);
+                    continue;
                 }
+                if (!targetLoc) continue;
+                const positionedTarget = positionedById.get(identityFor(targetLoc));
+                if (!positionedTarget) continue;
+                const connectionKey = JSON.stringify([sourceIdentity, identityFor(positionedTarget)].sort());
+                if (drawnConnections.has(connectionKey)) continue;
+                drawnConnections.add(connectionKey);
+                connections.push({
+                    key: connectionKey,
+                    x1: loc.x, y1: loc.y,
+                    x2: positionedTarget.x, y2: positionedTarget.y,
+                    isDiscovered: positionedTarget.isVisited,
+                });
             }
         }
+
         return {
             mapDimensions: { width: finalMapWidth, height: finalMapHeight },
             locations: locationsWithPositions,
             connections,
+            zLevels,
+            selectedZ,
+            verticalConnectionsByLocation,
         };
-    }, [visitedLocations, currentLocation]);
+    }, [visitedLocations, currentLocation, activeZ, currentZ]);
 
     const factionTerritories = useMemo(() => {
         if (!isStrategicView || encounteredFactions.length === 0 || locations.length === 0) {
@@ -535,6 +555,28 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
             onMouseMove={handleMouseMoveTooltip}
         >
             <CompassRose />
+            {zLevels.length > 0 && (
+                <div
+                    className="map-z-controls"
+                    onMouseDown={event => event.stopPropagation()}
+                    onWheel={event => event.stopPropagation()}
+                >
+                    <label htmlFor="map-z-layer">{t('Map layer')}</label>
+                    <select
+                        id="map-z-layer"
+                        data-testid="map-z-selector"
+                        aria-label={t('Map layer')}
+                        value={selectedZ}
+                        onChange={event => {
+                            setActiveZ(Number(event.target.value));
+                            setExpandedGroup(null);
+                            setHoveredLocation(null);
+                        }}
+                    >
+                        {zLevels.map(level => <option key={level} value={level}>{t('Z = {level}', { level })}</option>)}
+                    </select>
+                </div>
+            )}
             <div 
                 className="map-transform-wrapper"
                 style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
@@ -581,14 +623,30 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
                                 <button type="button" className="map-control-button" aria-expanded={expandedGroup === groupKey} onClick={e => { e.stopPropagation(); setExpandedGroup(expandedGroup === groupKey ? null : groupKey); }}>
                                     {t('Locations')} ({group.length})
                                 </button>
-                                {expandedGroup === groupKey && <div role="group" aria-label={t('Locations')} style={{ position: 'absolute', top: '100%', left: 0, zIndex: 20, minWidth: 200, background: '#17202a', padding: 8, borderRadius: 6 }}>
-                                    {group.map(loc => <button type="button" key={loc.locationId} style={{ display: 'block', width: '100%', textAlign: 'left', padding: 6 }} onClick={e => { e.stopPropagation(); setExpandedGroup(null); if (loc.isVisited) onOpenModal(t('Location: {name}', { name: loc.name }), { ...loc, type: 'location' }); }}>
-                                        {loc.name} <small>({loc.locationId})</small>{loc.locationId === currentLocation.locationId ? ' •' : ''}
-                                    </button>)}
+                                {expandedGroup === groupKey && <div role="group" aria-label={t('Locations')} style={{ position: 'absolute', top: '100%', left: 0, zIndex: 20, minWidth: 220, background: '#17202a', padding: 8, borderRadius: 6 }}>
+                                    {group.map(loc => {
+                                        const identity = loc.locationId || `legacy-${coordinateKey(loc.coordinates)}-${loc.name}`;
+                                        const targetLevels = verticalConnectionsByLocation.get(identity) || [];
+                                        return <div key={identity} className="map-location-group-row">
+                                            <button type="button" className="map-location-group-choice" onClick={e => { e.stopPropagation(); setExpandedGroup(null); if (loc.isVisited) onOpenModal(t('Location: {name}', { name: loc.name }), { ...loc, type: 'location' }); }}>
+                                                {loc.name} <small>({loc.locationId})</small>{loc.locationId === currentLocation.locationId ? ' •' : ''}
+                                            </button>
+                                            {targetLevels.map(targetZ => <button
+                                                key={targetZ}
+                                                type="button"
+                                                className="map-group-layer-link"
+                                                data-testid={loc.locationId ? `map-vertical-link-${loc.locationId}-${targetZ}` : undefined}
+                                                aria-label={t('Switch to Z level {level}', { level: targetZ })}
+                                                onClick={e => { e.stopPropagation(); setActiveZ(targetZ); setExpandedGroup(null); setHoveredLocation(null); }}
+                                            >{targetZ > selectedZ ? '↑' : '↓'} Z {targetZ}</button>)}
+                                        </div>;
+                                    })}
                                 </div>}
                             </div>;
                         }
                         const loc = group[0];
+                        const locationIdentity = loc.locationId || `legacy-${coordinateKey(loc.coordinates)}-${loc.name}`;
+                        const verticalTargets = verticalConnectionsByLocation.get(locationIdentity) || [];
                         const { Icon, color } = getLocationIconAndStyle(loc);
                         const isPlayerLocation = loc.locationId === currentLocation.locationId;
                         const isUndiscovered = !loc.isVisited;
@@ -612,7 +670,8 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
 
                         return (
                             <div 
-                                key={loc.locationId}
+                                key={locationIdentity}
+                                data-testid={loc.locationId ? `map-location-${loc.locationId}` : undefined}
                                 className={locationClasses}
                                 style={{ ...locationStyle, left: `${loc.x}%`, top: `${loc.y}%` }}
                                 onMouseEnter={(e) => handleMouseEnter(loc, e)}
@@ -623,6 +682,25 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
                                 <div className={`map-location-label ${showAllLabels ? '' : 'map-location-label--hidden'}`}>
                                     {loc.name}
                                 </div>
+                                {verticalTargets.map(targetZ => (
+                                    <button
+                                        key={targetZ}
+                                        type="button"
+                                        className="map-layer-link-badge"
+                                        data-testid={loc.locationId ? `map-vertical-link-${loc.locationId}-${targetZ}` : undefined}
+                                        aria-label={t('Switch to Z level {level}', { level: targetZ })}
+                                        title={t('Switch to Z level {level}', { level: targetZ })}
+                                        onMouseDown={event => event.stopPropagation()}
+                                        onClick={event => {
+                                            event.stopPropagation();
+                                            setActiveZ(targetZ);
+                                            setExpandedGroup(null);
+                                            setHoveredLocation(null);
+                                        }}
+                                    >
+                                        {targetZ > selectedZ ? '↑' : '↓'} Z {targetZ}
+                                    </button>
+                                ))}
                             </div>
                         );
                     })}
@@ -634,7 +712,7 @@ export default function LocationViewer({ visitedLocations, currentLocation, onOp
                 <button onClick={(e) => { e.stopPropagation(); handleReset(); }} className="map-control-button" title={t('Reset View')}>
                     <ArrowPathIcon className="w-4 h-4"/>
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); setRecenterRequest(c => c + 1); }} className="map-control-button" title={t('Center on Player')}>
+                <button onClick={(e) => { e.stopPropagation(); setActiveZ(currentZ); setRecenterRequest(c => c + 1); }} className="map-control-button" title={t('Center on Player')}>
                     <UserGroupIcon className="w-4 h-4" />
                 </button>
                 <button 

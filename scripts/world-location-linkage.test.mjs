@@ -19,11 +19,28 @@ test('new off-screen location and NPC share one resolved ID through the next con
       const next = buildNextContext(context, processedResponse, newState, [], true);
       const savedLocation = Object.values(next.worldMap).find(item => item.name === 'Outpost');
       assert.ok(savedLocation?.locationId);
+      assert.equal(savedLocation.coordinates.z, 0, 'legacy x/y-only location payloads default to the base layer');
       assert.equal(newState.encounteredNPCs[0].currentLocationId, savedLocation.locationId);
       if (explicitId) assert.equal(savedLocation.locationId, explicitId);
       assert.equal(response.worldMapUpdates.newLocations[0].locationId, explicitId, 'original response remains unmodified');
     }
   } finally { await server.close(); }
+});
+
+test('z-coordinate keys keep vertical layers separate and treat legacy coordinates as z=0', async () => {
+  const { coordinateZ, coordinateKey, normalizeCoordinates, resolveLinkTarget } = await import('../utils/locationLinks.js');
+  const surface = { locationId: 'surface', coordinates: { x: 7, y: -2 } };
+  const lower = { locationId: 'lower', coordinates: { x: 7, y: -2, z: -1 } };
+  assert.equal(coordinateZ(surface.coordinates), 0);
+  assert.equal(coordinateKey(surface.coordinates), '7,-2,0');
+  assert.equal(coordinateKey(lower.coordinates), '7,-2,-1');
+  assert.deepEqual(normalizeCoordinates(surface.coordinates), { x: 7, y: -2, z: 0 });
+  assert.equal(resolveLinkTarget({ targetCoordinates: surface.coordinates }, [surface, lower]), surface);
+  assert.equal(resolveLinkTarget({ targetCoordinates: lower.coordinates }, [surface, lower]), lower);
+  assert.equal(resolveLinkTarget({ targetLocationId: 'lower', targetCoordinates: surface.coordinates }, [surface, lower]), lower, 'a stable ID takes precedence over stale coordinates');
+  const sameLayer = { locationId: 'same-layer', coordinates: { x: 7, y: -2, z: 0 } };
+  assert.equal(resolveLinkTarget({ targetCoordinates: { x: 7, y: -2 } }, [surface, sameLayer]), null, 'ambiguous full xyz remains unresolved');
+  assert.equal(coordinateKey({ x: 7, y: -2, z: 0.5 }), null, 'fractional z is not a valid map layer');
 });
 
 test('normal turns and GM questions build context from the resolved response', async () => {
@@ -165,19 +182,37 @@ test('same-coordinate vertical location retains its own ID and NPC and threat li
     const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
     const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Explore', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
     ctx.currentTurnNumber = 2;
-    const here = { ...ctx.currentLocation, locationId: 'surface', coordinates: { x: 0, y: 0 } };
+    const here = { ...ctx.currentLocation, locationId: 'surface', coordinates: { x: 0, y: 0, z: 0 } };
     ctx.currentLocation = here; ctx.worldMap = { surface: here };
     const player = ctx.playerCharacter;
     const base = { playerCharacter: player, players: [player], activePlayerIndex: 0, currentLocationData: here, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {}};
-    const underground = { ...here, locationId: 'underground', initialId: 'temp-underground', name: 'Lower cave', coordinates: { x: 0, y: 0 } };
+    const underground = { ...here, locationId: 'underground', initialId: 'temp-underground', name: 'Lower cave', coordinates: { x: 0, y: 0, z: -1 } };
     const response = { worldMapUpdates: { newLocations: [underground], threatsToAdd: [{ initialTargetLocationId: 'temp-underground', threat: { threatId: 'threat-1', name: 'Golem', currentActivity: null } }] }, NPCsData: [{ ...player, NPCId: 'npc-1', name: 'Guard', initialLocationId: 'temp-underground', currentLocationId: null, inventory: [] }] };
     const applied = processAndApplyResponse(response, base, ctx.gameSettings, key => key, true, 2, ctx.worldMap);
     const next = buildNextContext(ctx, applied.processedResponse, applied.newState, [], true);
     assert.equal(next.worldMap.surface.locationId, 'surface');
+    assert.deepEqual(next.worldMap.surface.coordinates, { x: 0, y: 0, z: 0 });
     assert.equal(next.worldMap.underground.name, 'Lower cave');
+    assert.deepEqual(next.worldMap.underground.coordinates, { x: 0, y: 0, z: -1 });
     assert.equal(next.worldMap.underground.activeThreats[0].threatId, 'threat-1');
     assert.equal(next.encounteredNPCs[0].currentLocationId, 'underground');
     assert.equal(response.NPCsData[0].currentLocationId, null);
+  } finally { await server.close(); }
+});
+
+test('current-location coordinate updates inherit z from a known ID and reject conflicting layers', async () => {
+  const server = await getTestServer();
+  try {
+    const { createInitialContext } = await server.ssrLoadModule('/utils/gameContext.ts');
+    const { processAndApplyResponse } = await server.ssrLoadModule('/utils/responseProcessor.ts');
+    const ctx = createInitialContext({ universe: 'fantasy', playerName: 'Test', race: 'Human', charClass: 'Warrior', initialPrompt: 'Explore', startingYear: 1000, startingMonth: 'January', startingDay: 1, startTime: '08:00', weather: 'Clear' }, 'en');
+    const surface = { ...ctx.currentLocation, locationId: 'surface', coordinates: { x: 0, y: 0, z: 0 } };
+    const lower = { ...surface, locationId: 'lower', name: 'Lower chamber', coordinates: { x: 0, y: 0, z: -1 } };
+    const base = { playerCharacter: ctx.playerCharacter, players: [ctx.playerCharacter], activePlayerIndex: 0, currentLocationData: surface, activeQuests: [], completedQuests: [], encounteredNPCs: [], encounteredFactions: [], enemiesData: [], alliesData: [], playerCustomStates: [], plotOutline: null, worldStateFlags: [], worldEventsLog: [], imageCache: {} };
+    const legacy = processAndApplyResponse({ currentLocationData: { ...lower, coordinates: { x: 0, y: 0 } } }, base, ctx.gameSettings, key => key, true, 2, { surface, lower });
+    assert.equal(legacy.newState.currentLocationData.coordinates.z, -1, 'legacy x/y from a known location must inherit that ID’s layer');
+    assert.throws(() => processAndApplyResponse({ currentLocationData: { ...lower, coordinates: { x: 0, y: 0, z: 0 } } }, base, ctx.gameSettings, key => key, true, 2, { surface, lower }), /conflict with its known location/i);
+    assert.throws(() => processAndApplyResponse({ currentLocationData: { ...lower, coordinates: { x: 0, y: 0, z: -1.5 } } }, base, ctx.gameSettings, key => key, true, 2, { surface, lower }), /invalid 3D coordinates/i);
   } finally { await server.close(); }
 });
 
@@ -210,6 +245,18 @@ test('threat completion contract requires current activity identity', async () =
   assert.match(definition, /activityId:\s*string/);
   const rule = getGameMasterGuideRules().split('<Rule id="20.13.4">')[1].split('</Rule>')[0];
   assert.match(rule, /"activityId"/);
+});
+
+test('location guide defines z layers, legacy defaults, and ID-first navigation', async () => {
+  const { getGameMasterGuideRules } = await import('../prompts/mainPromptModule.js');
+  const guide = getGameMasterGuideRules();
+  const coordinatesRule = guide.split('<Rule id="20.2">')[1].split('</Rule>')[0];
+  const linkRule = guide.split('<Rule id="20.3.2">')[1].split('</Rule>')[0];
+  assert.match(coordinatesRule, /Every newly created location MUST include an integer 'z'/);
+  assert.match(coordinatesRule, /older location record or coordinate-only legacy link omits 'z', treat it as z = 0/);
+  assert.match(coordinatesRule, /locationId' remains the identity/);
+  assert.match(linkRule, /full tuple uniquely identifies a destination/);
+  assert.match(linkRule, /never choose between multiple locations with the same coordinates by guessing/);
 });
 
 test('location links use ID and refuse ambiguous legacy coordinate operations', async () => {
@@ -417,13 +464,13 @@ test('ID-only links acquire valid target coordinates and legacy malformed links 
     const idOnly = { name: 'Path', shortDescription: '', linkType: 'Path', linkState: 'Safe', targetLocationId: 'dest' };
     const warnings = [];
     const result = updateWorldMap({ home, dest: destination }, { newLinks: [{ sourceLocationId: 'home', link: idOnly }] }, home, 2, w => warnings.push(w));
-    assert.deepEqual(result.home.adjacencyMap[0].targetCoordinates, { x: 1, y: 2 });
+    assert.deepEqual(result.home.adjacencyMap[0].targetCoordinates, { x: 1, y: 2, z: 0 });
     assert.equal(idOnly.targetCoordinates, undefined);
     const rejected = updateWorldMap({ home, dest: destination }, { newLinks: [{ sourceLocationId: 'home', link: { ...idOnly, targetCoordinates: { x: 9, y: 9 } } }] }, home, 2, w => warnings.push(w));
     assert.equal(rejected.home.adjacencyMap.length, 0);
     assert.equal(warnings.at(-1).kind, 'link-create');
     const brokenUpdate = updateWorldMap(result, { linkUpdates: [{ sourceLocationId: 'home', targetLocationId: 'dest', updatedLink: { targetCoordinates: { x: 9, y: 9 } } }] }, result.home, 3, w => warnings.push(w));
-    assert.deepEqual(brokenUpdate.home.adjacencyMap[0].targetCoordinates, { x: 1, y: 2 });
+    assert.deepEqual(brokenUpdate.home.adjacencyMap[0].targetCoordinates, { x: 1, y: 2, z: 0 });
     assert.equal(warnings.at(-1).kind, 'link-update');
     const React = (await import('react')).default;
     const { renderToStaticMarkup } = await import('react-dom/server');
@@ -465,7 +512,7 @@ test('entering a newly declared location preserves full declaration and current 
     const next = buildNextContext(context, processedResponse, newState, [], true);
     const cave = next.worldMap.cave;
     assert.equal(cave.name, 'Cave'); assert.equal(cave.description, 'A dark cave');
-    assert.deepEqual(cave.coordinates, { x: 4, y: 0 });
+    assert.deepEqual(cave.coordinates, { x: 4, y: 0, z: 0 });
     assert.ok(cave.locationStorages[0].storageId); assert.ok(cave.activeThreats[0].threatId);
     assert.deepEqual(next.currentLocation, cave);
     assert.equal(context.worldMap.cave, undefined);

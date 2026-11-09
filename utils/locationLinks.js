@@ -1,5 +1,22 @@
-// Coordinates are only a legacy fallback when they identify at most one location.
-export const coordinateKey = c => c && Number.isFinite(c.x) && Number.isFinite(c.y) ? `${c.x},${c.y}` : null;
+// Coordinates identify a location only as a legacy fallback when they select one target.
+// Legacy coordinate-only data without z belongs to the z = 0 layer.
+export const coordinateZ = coordinates => coordinates?.z === undefined ? 0 : coordinates.z;
+
+export const coordinateKey = coordinates => {
+  if (!coordinates || !Number.isFinite(coordinates.x) || !Number.isFinite(coordinates.y)) return null;
+  const z = coordinateZ(coordinates);
+  return Number.isInteger(z) ? `${coordinates.x},${coordinates.y},${z}` : null;
+};
+
+export const normalizeCoordinates = coordinates => {
+  const key = coordinateKey(coordinates);
+  return key === null ? null : { x: coordinates.x, y: coordinates.y, z: coordinateZ(coordinates) };
+};
+
+export const sameHorizontalCoordinates = (left, right) =>
+  !!left && !!right && Number.isFinite(left.x) && Number.isFinite(left.y) &&
+  left.x === right.x && left.y === right.y;
+
 export function resolveLinkTarget(link, locations) {
   if (link?.targetLocationId) return locations.find(l => l.locationId === link.targetLocationId) || null;
   const key = coordinateKey(link?.targetCoordinates);
@@ -7,11 +24,13 @@ export function resolveLinkTarget(link, locations) {
   const matches = locations.filter(l => coordinateKey(l.coordinates) === key);
   return matches.length === 1 ? matches[0] : null;
 }
+
 export function isAmbiguousCoordinateLink(link, locations) {
   if (link?.targetLocationId) return false;
   const key = coordinateKey(link?.targetCoordinates);
   return key === null || locations.filter(l => coordinateKey(l.coordinates) === key).length > 1;
 }
+
 export function matchingLinkIndexes(links, query, locations) {
   if (!query || isAmbiguousCoordinateLink(query, locations)) return [];
   if (query.targetLocationId) {

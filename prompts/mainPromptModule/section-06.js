@@ -2941,8 +2941,8 @@ export const section = `    <InstructionBlock id="21.5">
 
                             Step A: Gather Data
                             -   '[Time_Elapsed_in_Minutes]': Calculate this by subtracting 'worldState.lastWorldProgressionTimeInMinutes' from 'worldState.currentTimeInMinutes'.
-                            -   '[Start_Coords]': Get the {x, y} coordinates of the NPC's current location from the 'worldMap' in Context.
-                            -   '[End_Coords]': Get the {x, y} coordinates of the proposed destination from the 'worldMap'.
+                            -   '[Start_Coords]': Identify the NPC's current location by ID and read its full {x, y, z} coordinates from the 'worldMap' in Context.
+                            -   '[End_Coords]': Identify the proposed destination by ID and read its full {x, y, z} coordinates from the 'worldMap'. The distance formula below still measures only the x/y map plane; z selects a map layer and is not a travel-distance or movement-cost rule.
 
                             Step B: Estimate Travel Speed ('Travel_Speed_kmh')
                             Determine the NPC's likely mode of travel and use the corresponding speed from this table:
@@ -4901,7 +4901,7 @@ export const section = `    <InstructionBlock id="21.5">
                                     
                                     - The 'locationId' for this new object MUST be 'null'.
                                     
-                                    - It MUST have a full 'description', a 'biome' (if outdoor), logically derived 'internalDifficultyProfile' and 'externalDifficultyProfile', and, crucially, a set of 'coordinates' that do not conflict with existing known locations.
+                                    - It MUST have a full 'description', a 'biome' (if outdoor), logically derived 'internalDifficultyProfile' and 'externalDifficultyProfile', and integer (x, y, z) coordinates. Avoid an existing full xyz tuple unless this is another distinct entity there; a different vertical level at the same x/y requires a different z.
                 
                                     This complete location object MUST be placed inside the 'worldMapUpdates.newLocations' array.
                                     
@@ -4976,7 +4976,7 @@ export const section = `    <InstructionBlock id="21.5">
                                                 {
                                                     "locationId": null,
                                                     "name": "Скрытая Пропасть",
-                                                    "coordinates": { "x": 26, "y": 40 },
+                                                    "coordinates": { "x": 26, "y": 40, "z": 0 },
                                                     "locationType": "outdoor",
                                                     "biome": "Mountains",
                                                     // An unexplored chasm is equally dangerous for everyone.
@@ -4995,7 +4995,7 @@ export const section = `    <InstructionBlock id="21.5">
                                                         "shortDescription": "Свежий обвал открыл зияющий вход в глубокую пропасть.",
                                                         "linkType": "Wilderness",
                                                         "linkState": "Dangerous",
-                                                        "targetCoordinates": { "x": 26, "y": 40 },
+                                                        "targetCoordinates": { "x": 26, "y": 40, "z": 0 },
                                                         "estimatedInternalDifficultyProfile": { "combat": 30, "environment": 45, "social": 0, "exploration": 50 },
                                                         "estimatedExternalDifficultyProfile": { "combat": 30, "environment": 45, "social": 0, "exploration": 50 }
                                                     }
@@ -5777,8 +5777,8 @@ export const section = `    <InstructionBlock id="21.5">
                         <Title>Example: A Plausible Travel Event (Check Passes)</Title>
                         <ScenarioContext>
                             - Time since last progression: 12 hours (720 minutes).
-                            - NPC Kaelen is at "The Capital" (coords: {x: 10, y: 15}).
-                            - His goal is to reach the "Dwarven Citadel" (coords: {x: 12, y: 22}) to buy weapons.
+                            - NPC Kaelen is at "The Capital" (coords: {x: 10, y: 15, z: 0}).
+                            - His goal is to reach the "Dwarven Citadel" (coords: {x: 12, y: 22, z: 0}) to buy weapons.
                             - He is assumed to be traveling on horseback.
                         </ScenarioContext>
                         <LogOutput target="items_and_stat_calculations">
@@ -5794,8 +5794,8 @@ export const section = `    <InstructionBlock id="21.5">
                             ### Part 2: "How" Check
                             - Step A (Data):
                               - Time_Elapsed_in_Minutes: 720
-                              - Start_Coords: {x: 10, y: 15}
-                              - End_Coords: {x: 12, y: 22}
+                              - Start_Coords: {x: 10, y: 15, z: 0}
+                              - End_Coords: {x: 12, y: 22, z: 0}
                             - Step B (Speed): Travel Mode is 'Riding (Horse)'. Travel_Speed_kmh = 15.
                             - Step C (Max Distance): Max_Distance_km = (720 / 60) * 15 = 12 * 15 = 180 km.
                             - Step D (Actual Distance):
@@ -5837,8 +5837,8 @@ export const section = `    <InstructionBlock id="21.5">
                         <Title>Example: An Impossible Travel Event (Check Fails, GM Adapts)</Title>
                         <ScenarioContext>
                             - Time since last progression: 3 hours (180 minutes).
-                            - Antagonist Malakor is at "The Capital" (coords: {x: 10, y: 15}).
-                            - His goal is to reach the "Sunken Temple of Zarthus" (coords: {x: 50, y: 5}).
+                            - Antagonist Malakor is at "The Capital" (coords: {x: 10, y: 15, z: 0}).
+                            - His goal is to reach the "Sunken Temple of Zarthus" (coords: {x: 50, y: 5, z: 0}).
                             - He is assumed to be traveling on a standard undead steed (equivalent to a horse).
                         </ScenarioContext>
                         <LogOutput target="items_and_stat_calculations">
@@ -5862,7 +5862,7 @@ export const section = `    <InstructionBlock id="21.5">
 
                             ### Part 3: Adjudication
                             - The check fails. The proposed journey is impossible.
-                            - Alternative Action: Malakor will travel to the nearest port city, "Seagate" (coords: {x: 13, y: 12}), which lies on the path to the temple, to secure faster passage by ship. This is a logical intermediate step.
+                            - Alternative Action: Malakor will travel to the nearest port city, "Seagate" (coords: {x: 13, y: 12, z: 0}), which lies on the path to the temple, to secure faster passage by ship. This is a logical intermediate step.
                             - Generating travel event for "The Capital" -> "Seagate".
 
                             ]]>

@@ -571,11 +571,18 @@ export interface ActiveThreat {
     completedActivities?: CompletedThreatActivity[];
 }
 
+export interface LocationCoordinates {
+    x: number;
+    y: number;
+    /** Vertical map layer; legacy coordinate-only data without z defaults to 0. ID-linked targets inherit stored coordinates. */
+    z?: number;
+}
+
 export interface LocationData {
     locationId: string | null;
     initialId?: string;
     name: string;
-    coordinates: { x: number, y: number };
+    coordinates: LocationCoordinates;
     locationType: 'indoor' | 'outdoor';
     biome: string | null;
     indoorType?: string | null;
@@ -1162,7 +1169,8 @@ export interface StorageRemoval {
 /** A change to the description or state of one link between locations. */
 export interface LocationLinkUpdate {
     sourceLocationId: string;
-    targetCoordinates?: { x: number; y: number };
+    targetLocationId?: string;
+    targetCoordinates?: LocationCoordinates;
     updatedLink?: { newShortDescription?: string; newLinkState?: string };
 }
 
@@ -1171,7 +1179,7 @@ interface WorldMapUpdates {
     newLinks?: { sourceLocationId: string; link: AdjacencyMapEntry }[];
     locationUpdates?: LocationUpdate[];
     linkUpdates?: LocationLinkUpdate[];
-    linksToRemove?: { sourceLocationId: string; targetCoordinates: { x: number; y: number } }[];
+    linksToRemove?: { sourceLocationId: string; targetLocationId?: string; targetCoordinates?: LocationCoordinates }[];
     threatsToAdd?: { targetLocationId?: string; initialTargetLocationId?: string; threat: ActiveThreat }[];
     threatsToUpdate?: { targetLocationId: string, threatUpdate: Partial<ActiveThreat> & { threatId: string } }[];
     threatsToRemove?: { targetLocationId: string, threatId: string }[];
@@ -1564,7 +1572,7 @@ export interface AdjacencyMapEntry {
     shortDescription: string;
     linkType: string;
     linkState: string;
-    targetCoordinates: { x: number, y: number };
+    targetCoordinates: LocationCoordinates;
     estimatedInternalDifficultyProfile?: DifficultyProfile;
     estimatedExternalDifficultyProfile?: DifficultyProfile;
 }
