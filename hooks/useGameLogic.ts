@@ -12,6 +12,7 @@ import { formatError, isAbortError } from '../utils/errorUtils';
 
 import { createTurnManager } from './logic/turn';
 import { createSaveLoadManager } from './logic/saveLoad';
+import { shouldAutosaveGameState } from './logic/autosave';
 import { createInventoryActions } from './logic/inventoryActions';
 import { createPlayerActionsManager } from './logic/playerActions';
 import { createMusicManager } from './logic/music';
@@ -740,6 +741,8 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastSavedTurnRef = useRef<number | null>(null);
+    const lastSavedImageCacheRef = useRef<unknown>(null);
+    const autosaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
     const onImageGenerated = useCallback((cacheKey: string, src: string, sourceProvider: ImageCacheEntry['sourceProvider'], sourceModel?: string) => {
         setPresentationState(prev => {
@@ -1180,15 +1183,27 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     }, [t, restoreFromSaveData, setError]);
 
     useEffect(() => {
-        if (turnNumber && turnNumber > 0 && gameState && lastSavedTurnRef.current !== turnNumber) {
-            console.log(`Autosaving for turn ${turnNumber}`);
-            // Autosave runs frequently, so keep its IndexedDB payload compact.
-            const saveData = allManagers.packageSaveData(gameState, true);
-            if (saveData) {
-                allManagers.autosave(saveData);
-                void saveCrashRecoveryFromData(saveData, 'stable');
-            }
+        if (!gameState || !shouldAutosaveGameState(
+            turnNumber,
+            lastSavedTurnRef.current,
+            gameState.imageCache,
+            lastSavedImageCacheRef.current,
+        )) return;
+
+        const newTurn = lastSavedTurnRef.current !== turnNumber;
+        console.log(newTurn ? `Autosaving for turn ${turnNumber}` : `Autosaving image updates for turn ${turnNumber}`);
+        // Autosave runs frequently, so keep its IndexedDB payload compact.
+        const saveData = allManagers.packageSaveData(gameState, true);
+        if (saveData) {
+            // Serialize writes so a slower save of an older image-cache snapshot cannot
+            // finish after a newer snapshot and overwrite it.
+            const queuedSave = autosaveQueueRef.current.then(() => allManagers.autosave(saveData));
+            autosaveQueueRef.current = queuedSave.catch(error => {
+                console.error('Queued autosave failed', error);
+            });
+            if (newTurn) void saveCrashRecoveryFromData(saveData, 'stable');
             lastSavedTurnRef.current = turnNumber;
+            lastSavedImageCacheRef.current = gameState.imageCache;
         }
     }, [turnNumber, gameState, allManagers, saveCrashRecoveryFromData]);
 
