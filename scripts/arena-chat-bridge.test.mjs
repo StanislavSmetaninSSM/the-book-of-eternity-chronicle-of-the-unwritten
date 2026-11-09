@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { JSDOM } from 'jsdom';
 import { createArenaChatBridgeServer, loadOrCreatePairingToken } from './arena-chat-bridge.mjs';
 import { ensureRuleBundle } from '../utils/arenaRuleBundle.js';
@@ -131,6 +132,13 @@ test('Arena content adapter exposes only supported tool blocks and requires a ma
   assert.equal(calls.length, 1);
   assert.equal(calls[0].payload.call.tool, 'game.pending');
   assert.match(pre.nextElementSibling.shadowRoot.querySelector('textarea').value, /No active request/);
+});
+
+test('guided setup command is available and documents the manual browser step', () => {
+  const result = spawnSync(process.execPath, [path.join(process.cwd(), 'scripts', 'setup-local-chat-bridge.mjs'), '--help'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /npm run bridge:setup/);
+  assert.match(result.stdout, /loaded once by the user/);
 });
 
 test('browser extension permissions stay limited to Arena pages and the loopback bridge', async () => {

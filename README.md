@@ -32,6 +32,8 @@ npm install
 npm run dev
 ```
 
+For the local Arena Chat bridge, use the guided setup in [docs/arena-chat-bridge.md](docs/arena-chat-bridge.md); it binds the game and bridge to loopback and explains the one-time browser extension step.
+
 The Vite server uses `0.0.0.0` by default. Without a responding Arena agent, an enabled relay request waits until it is answered or cancelled. Do not expect the game to automatically call an AI service.
 
 ## Build
@@ -47,7 +49,7 @@ npm run preview -- --host 0.0.0.0
 
 - [Arena deployment and setup](docs/ARENA-DEPLOYMENT.md)
 - [Relay protocol and safety notes](docs/arena-gm-relay.md)
-- [Local Arena Chat browser bridge (MVP)](docs/arena-chat-bridge.md)
+- [Local Arena Chat browser bridge (MVP) and guided setup](docs/arena-chat-bridge.md)
 
 ## Notes
 
