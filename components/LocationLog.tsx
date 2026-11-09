@@ -131,7 +131,7 @@ const LocationItem: React.FC<{
         <div className="text-xs text-gray-400 border-t border-gray-700/50 mt-3 pt-2 space-y-2">
             <div className="flex flex-wrap gap-x-4 gap-y-1">
                 <span><strong className="text-gray-500">{t('Type')}:</strong> {displayType}</span>
-                {loc.coordinates && <span><strong className="text-gray-500">{t('Coordinates')}:</strong> ({loc.coordinates.x}, {loc.coordinates.y})</span>}
+                {loc.coordinates && <span><strong className="text-gray-500">{t('Coordinates')}:</strong> ({loc.coordinates.x}, {loc.coordinates.y}, {loc.coordinates.z ?? 0})</span>}
             </div>
             {loc.externalDifficultyProfile && (
                 <div>

@@ -2917,9 +2917,9 @@ export const section = `    <InstructionBlock id="19.C">
             <![CDATA[
 
             When the player moves to a new location, the GM must generate or update its data.
-            - When a location is first discovered, you MUST generate its coordinates, full description, and a map of adjacent locations ('adjacencyMap').
-            - When returning to a known location, you provide its existing ID and coordinates, and only update the 'lastEventsDescription'.
-            - If the player discovers a location not on the adjacency map (e.g., through a secret passage), you must generate it and establish a new link via 'worldMapUpdates'.
+            - When a location is first discovered, you MUST generate its full integer (x, y, z) coordinates, description, and a map of adjacent locations ('adjacencyMap').
+            - When returning to a known location, use its existing 'locationId' and update only 'lastEventsDescription'. If coordinates are included, they MUST match that ID's exact existing x/y/z; never infer a floor from its name or x/y alone.
+            - If the player discovers a location not on the adjacency map (e.g., through a secret passage), you must generate it and establish a new link via 'worldMapUpdates' using the full xyz target coordinates and stable IDs whenever known.
             The goal is to provide enough structured data for the client system to construct a visual map.
 
             ]]>
@@ -3632,7 +3632,7 @@ export const section = `    <InstructionBlock id="19.C">
                         "locationId": "system_assigned_guid_or_null_for_new",
                         "initialId": "turn_local_reference_tag_string_or_null",
                         "name": "current_location_name_string",
-                        "coordinates": { "x": "integer", "y": "integer" },
+                        "coordinates": { "x": "integer", "y": "integer", "z": "integer" },
                         "locationType": "'indoor' | 'outdoor'",
                         "biome": "string_or_null",
                         "indoorType": "string_or_null",
@@ -3681,12 +3681,12 @@ export const section = `    <InstructionBlock id="19.C">
                     2.  "name": (string) 
                         Current location's name. Must be translated.
 
-                    3.  "coordinates": (object) 
-                        The location's position on a virtual grid.
-                        - When creating a new location adjacent to an existing one (with coordinates {x, y}), its coordinates should be logical 
-                        (e.g., North is {x, y+1}, East is {x+1, y}, Southwest is {x-1, y-1}).
-                        - The very first location in the game starts at {x:0, y:0}.
-                        - The GM must check the 'worldMap' in Context to avoid placing a new location at already occupied coordinates, unless it's a "vertical" location (e.g., "Cave Level 2" at the same {x,y}).
+                    3.  "coordinates": (object with integer 'x', 'y', and 'z')
+                        The location's position on a three-dimensional virtual grid. 'x' and 'y' locate it on the map plane; 'z' selects its vertical layer. Positive z is higher, negative z is lower, and z = 0 is the default layer. This coordinate is for location identity and map presentation; it does not by itself define travel distance, time, or a new movement mechanic.
+                        - Every newly created location MUST include an integer 'z'. When an older location record or coordinate-only legacy link omits 'z', treat it as z = 0; an ID-addressed link inherits the exact layer of its destination ID. Do not invent new z values for old records or silently migrate duplicate coordinates.
+                        - When creating a new location adjacent to an existing one, choose logical x/y coordinates (e.g., North changes y, East changes x). For a distinct vertical location at the same x/y (such as a lower cave or upper floor), keep x/y and assign the appropriate different z; for example, a surface entrance may be {x:5, y:3, z:0} and its lower chamber {x:5, y:3, z:-1}.
+                        - The very first location in the game starts at {x:0, y:0, z:0}.
+                        - Check the 'worldMap' in Context for the complete (x, y, z) tuple. A name or matching x/y alone does not establish that two locations are the same place or the same floor; 'locationId' remains the identity, and known destinations must be referenced by ID.
 
                     4.  "locationType": (string, mandatory) 
                         This is the most important classification for a location. You MUST choose one:
@@ -3790,7 +3790,7 @@ export const section = `    <InstructionBlock id="19.C">
                                 "shortDescription": "brief_one_sentence_teaser_description_string",
                                 "linkType": "'Road', 'Path', 'Secret Passage', 'Stairs Up', 'Stairs Down', 'Door', 'Gate', 'Waterway', 'Wilderness'",
                                 "linkState": "'Safe', 'Dangerous', 'Hidden', 'Blocked', 'Requires Key'",
-                                "targetCoordinates": { "x": "integer", "y": "integer" },
+                                "targetCoordinates": { "x": "integer", "y": "integer", "z": "integer" },
                                 "targetLocationId": "existing_destination_location_id_if_known",
                                 "estimatedInternalDifficultyProfile": {
                                     "combat": "integer",
@@ -3823,7 +3823,7 @@ export const section = `    <InstructionBlock id="19.C">
                             
                             4.  "linkState": (string) The current state of the connection. 'Hidden' requires a Perception check to find. 'Blocked' requires an action to clear.
                             
-                            5.  "targetCoordinates": (object) The coordinates {x, y} of the adjacent location, determined logically. For an existing destination, provide its exact 'targetLocationId' from context. Coordinates alone are a legacy fallback only when they uniquely identify a destination; never choose between multiple locations with the same coordinates by guessing. For undiscovered locations omit the ID until it is known.
+                            5.  "targetCoordinates": (object) The complete {x, y, z} coordinates of the adjacent location, determined logically. New links MUST include z. For an existing destination, provide its exact 'targetLocationId' from context. Coordinates alone are a legacy fallback only when the full tuple uniquely identifies a destination; never choose between multiple locations with the same coordinates by guessing. In an older coordinate-only link, a missing z means z = 0; when a valid 'targetLocationId' is present, use that ID's stored coordinates and layer. For undiscovered locations omit the ID until it is known.
                             
                             6.  "estimatedInternalDifficultyProfile": (object) 
                                 The GM's logical estimation of the internal difficulty of the adjacent location. 
@@ -3848,7 +3848,7 @@ export const section = `    <InstructionBlock id="19.C">
                     If the player, through their actions (e.g., a successful Perception check revealing a secret door), discovers a new exit from their current location:
                     1.  Generate the New Adjacent Location: 
                     Create a new "Adjacency Map Entry" object for this newly discovered location, following the structure in #20.3.1. 
-                    This includes assigning it new, logical coordinates.
+                    This includes assigning it logical integer x/y coordinates and a z layer; a newly discovered vertical destination must use its appropriate z and be linked by targetLocationId when known.
                     
                     2.  Report the Map Update: 
                     This new entry must be reported via the 'worldMapUpdates' key. 
@@ -3994,7 +3994,7 @@ export const section = `    <InstructionBlock id="19.C">
                     2.  Action: 
                         You MUST generate a COMPLETE Location Data Object for this new location, following all rules from #20.1 and #20.2.
                         - The 'locationId' for this new object MUST be 'null'.
-                        - It MUST have a full 'description', a 'biome' (if outdoor), a logically derived 'internalDifficultyProfile' and 'externalDifficultyProfile', and, crucially, a set of 'coordinates' that do not conflict with existing known locations.
+                        - It MUST have a full 'description', a 'biome' (if outdoor), logically derived 'internalDifficultyProfile' and 'externalDifficultyProfile', and integer (x, y, z) coordinates. Avoid an existing full xyz tuple unless this is another distinct entity there; a different vertical level at the same x/y requires a different z.
                         - Fill all other location fields as per the rules - it should be a full, COMPLETE Location Data Object, with all available fields filled out.
 
                     3.  Reporting: 
@@ -4167,7 +4167,7 @@ export const section = `    <InstructionBlock id="19.C">
                             Structure for each object in 'linkUpdates':
                             {
                                 "sourceLocationId": "guid_of_the_location_where_the_link_originates",
-                                "targetCoordinates": { "x": "integer", "y": "integer" },
+                                "targetCoordinates": { "x": "integer", "y": "integer", "z": "integer" },
                                 "targetLocationId": "existing_destination_id_if_known",
                                 "updatedLink": {
                                     // This object follows the Law of Partial Updates.
@@ -4187,7 +4187,7 @@ export const section = `    <InstructionBlock id="19.C">
                             <![CDATA[
 
                             1.  Identify the Link: 
-                                Uniquely identify the link using 'sourceLocationId' and 'targetLocationId' when the destination ID is known. Coordinate-only commands are accepted only when the location and link are unambiguous.
+                                Uniquely identify the link using 'sourceLocationId' and 'targetLocationId' when the destination ID is known. If using coordinates instead, provide the complete {x, y, z} tuple; an omitted z in an old command means z = 0. Coordinate-only commands are accepted only when the location and link are unambiguous.
                            
                             2.  Define Changes: 
                                 Create a partial 'updatedLink' object containing only the properties that have changed.
@@ -4197,7 +4197,7 @@ export const section = `    <InstructionBlock id="19.C">
                             
                             4.  Log: 
                                 In 'items_and_stat_calculations', log the reason for the link update. 
-                                Example: "World event 'Bridge Collapse' changed the link from 'loc-river-crossing-01' to '{x:10, y:12}' to 'Blocked'."
+                                Example: "World event 'Bridge Collapse' changed the link from 'loc-river-crossing-01' to '{x:10, y:12, z:0}' to 'Blocked'."
                             
                             ]]>
                         </Content>
@@ -4221,7 +4221,7 @@ export const section = `    <InstructionBlock id="19.C">
                             Structure for each object in 'linksToRemove':
                             {
                                 "sourceLocationId": "guid_of_the_location_where_the_link_originates",
-                                "targetCoordinates": { "x": "integer", "y": "integer" },
+                                "targetCoordinates": { "x": "integer", "y": "integer", "z": "integer" },
                                 "targetLocationId": "existing_destination_id_if_known"
                             }
 
@@ -4234,14 +4234,14 @@ export const section = `    <InstructionBlock id="19.C">
                             <![CDATA[
 
                             1.  Identify the Link: 
-                                Uniquely identify the link using 'sourceLocationId' and 'targetLocationId' when known. Coordinate-only commands are accepted only when unambiguous.
+                                Uniquely identify the link using 'sourceLocationId' and 'targetLocationId' when known. If using coordinates instead, provide the complete {x, y, z} tuple; an omitted z in an old command means z = 0. Coordinate-only commands are accepted only when unambiguous.
 
                             2.  Report: 
                                 Add the identification object to the 'linksToRemove' array.
 
                             3.  Log: 
                                 In 'items_and_stat_calculations', log the reason for the link's removal.
-                                Example: "The 'Volcanic Eruption' event has permanently destroyed the mountain pass from 'loc-peak-base-01' to '{x:25, y:30}'."
+                                Example: "The 'Volcanic Eruption' event has permanently destroyed the mountain pass from 'loc-peak-base-01' to '{x:25, y:30, z:0}'."
                            
                             ]]>
                         </Content>
@@ -4258,7 +4258,7 @@ export const section = `    <InstructionBlock id="19.C">
                                     "linkUpdates": [
                                         {
                                             "sourceLocationId": "loc-west-bank-01",
-                                            "targetCoordinates": { "x": 15, "y": 20 },
+                                            "targetCoordinates": { "x": 15, "y": 20, "z": 0 },
                                             "updatedLink": {
                                                 "newShortDescription": "The once-sturdy bridge is now a treacherous wreck of frayed ropes and broken planks.",
                                                 "newLinkState": "Dangerous"
@@ -4282,7 +4282,7 @@ export const section = `    <InstructionBlock id="19.C">
                                     "linksToRemove": [
                                         {
                                             "sourceLocationId": "loc-eldoria-gate-01",
-                                            "targetCoordinates": { "x": 5, "y": 6 }
+                                            "targetCoordinates": { "x": 5, "y": 6, "z": 0 }
                                         }
                                     ]
                                 }
@@ -4705,7 +4705,7 @@ export const section = `    <InstructionBlock id="19.C">
                                             "locationId": null,
                                             "initialId": "temp-loc-xylos-ruins", // <-- Временная метка создана
                                             "name": "Ruins of Xylos",
-                                            "coordinates": { "x": 30, "y": 50 },
+                                            "coordinates": { "x": 30, "y": 50, "z": 0 },
                                             "locationType": "outdoor",
                                             "biome": "TemperateForest",
                                             "externalDifficultyProfile": { "combat": 40, "environment": 35, "social": 0, "exploration": 60 },
@@ -4756,7 +4756,7 @@ export const section = `    <InstructionBlock id="19.C">
                         {
                             "locationId": null,
                             "name": "The Rusty Flagon Tavern",
-                            "coordinates": {"x": 5, "y": 3},
+                            "coordinates": {"x": 5, "y": 3, "z": 0},
                             "locationType": "indoor",
                             "indoorType": "Building", 
                             "biome": null, 
@@ -4771,7 +4771,7 @@ export const section = `    <InstructionBlock id="19.C">
                                     "shortDescription": "The main thoroughfare of the city, bustling with activity.",
                                     "linkType": "Door", 
                                     "linkState": "Safe", 
-                                    "targetCoordinates": {"x": 5, "y": 2}, 
+                                    "targetCoordinates": {"x": 5, "y": 2, "z": 0},
                                     "estimatedInternalDifficultyProfile": {
                                         "combat": 2,
                                         "environment": 2,
@@ -4803,7 +4803,7 @@ export const section = `    <InstructionBlock id="19.C">
                         {
                             "locationId": "loc-desert-01",
                             "name": "The Sun-Scorched Wastes",
-                            "coordinates": {"x": 25, "y": -10},
+                            "coordinates": {"x": 25, "y": -10, "z": 0},
                             "locationType": "outdoor",
                             "biome": "Desert",
                             "indoorType": null,
@@ -4830,7 +4830,7 @@ export const section = `    <InstructionBlock id="19.C">
                         {
                             "locationId": null,
                             "name": "Echoing Cavern - Entrance",
-                            "coordinates": {"x": -4, "y": 8},
+                            "coordinates": {"x": -4, "y": 8, "z": 0},
                             "locationType": "indoor",
                             "indoorType": "CaveSystem",
                             "biome": null,
@@ -4845,7 +4845,7 @@ export const section = `    <InstructionBlock id="19.C">
                                     "shortDescription": "The snowy path you left behind.",
                                     "linkType": "Exit",
                                     "linkState": "Safe", 
-                                    "targetCoordinates": {"x": -4, "y": 9}, 
+                                    "targetCoordinates": {"x": -4, "y": 9, "z": 0},
                                     "estimatedInternalDifficultyProfile": {
                                         "combat": 10,
                                         "environment": 15,

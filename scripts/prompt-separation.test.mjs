@@ -34,7 +34,9 @@ test('the entire guide is invariant across different turn contexts', () => {
   // the channel for it: the names used this turn, in 'cooldownsUsed' on that combatant's object.
   // The Logging point of #12.9.3 now carries that spend into 'items_and_stat_calculations' as well,
   // which is where the player can check the wait the panel shows against the two numbers it names.
-  assert.equal(sha256(guide), 'da3f46ec126ce26dfdd15c22387438d172ade7daf25fe50fca7d86456538395d');
+  // Location rules now define integer z layers, legacy z=0, ID-first links, and explicit scope for
+  // map layers versus travel distance; the world-progression examples carry full xyz coordinates.
+  assert.equal(sha256(guide), 'e94a6f1d5cd49d2c871fbbe59c16bf8fe67b528bfcb67d6e04bbcb2433e00a32');
   assert.match(guide, /saved history.*separated from active wounds/);
   assert.match(guide, /a WoundReference is not required/);
   assert.match(guide, /Apply each wound-generated effect once only/);
@@ -50,9 +52,9 @@ test('both original world-event branches survive intact under explicit condition
   const guide = getGameMasterGuideRules();
   const disabled = branch(guide, 'context.gameSettings.doNotUseWorldEvents is true: apply ONLY this disabled branch; ignore the enabled branch below');
   const enabled = branch(guide, 'context.gameSettings.doNotUseWorldEvents is false or absent: apply ONLY this enabled branch');
-  // The enabled branch includes intentionally updated threat-completion examples.
+  // The enabled branch includes intentionally updated threat-completion examples and xyz map coordinates.
   assert.equal(sha256(disabled), 'd67b66b0f5af9e6d6541c398fad71ee561b71e6efe6e7e0b1f2f47066167ad20');
-  assert.equal(sha256(enabled), 'd3893fa46fea0437bb12de27f183857de4edff2cc7385c411c2aefe17a01ef61');
+  assert.equal(sha256(enabled), '5805f46c3b24edcabab0deb3b442f3af4f5050e94293a99d8cd7c47d888ade50');
   assert.match(guide, /ConditionalInstruction when="context\.isRegenerationAttempt is true"/);
 });
 

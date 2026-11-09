@@ -1132,11 +1132,11 @@ Each command is {"transferId":"unique-per-transfer-never-reused", "source":{"typ
                 Step 1: The "What" - Identify the Event and its Origin
                 -   Identify the specific 'worldEvent' you want the NPC to react to.
                 -   Note the event's timestamp: 'Event_Time' (in total minutes from the start of the campaign).
-                -   Note the event's location of origin from 'affectedLocations' or infer it logically. Get its coordinates: 'Event_Coords'.
+                -   Note the event's location of origin from 'affectedLocations' or infer it logically. Identify it by locationId when known and get full {x, y, z} 'Event_Coords'; an omitted legacy z means 0.
 
                 Step 2: The "Who" - Identify the Observer
                 -   Identify the NPC who is about to react.
-                -   Note their current location and its coordinates: 'NPC_Coords'.
+                -   Note their current location, identify it by locationId when known, and read full {x, y, z} 'NPC_Coords'; an omitted legacy z means 0.
 
                 Step 3: The "How" - Determine the Dissemination Method
                 -   This is a critical step of logical reasoning. You MUST determine the most plausible method by which news of this event would travel from its origin to the NPC.
@@ -1150,7 +1150,7 @@ Each command is {"transferId":"unique-per-transfer-never-reused", "source":{"typ
                     -   Technological Means (Radio, Network): In a sci-fi setting, this could be near-instantaneous, but might be subject to jamming or require access to a terminal.
 
                 Step 4: The "When" - Calculate the Information Arrival Time
-                -   Calculate the 'Actual_Distance_km' between 'Event_Coords' and 'NPC_Coords' using the standard formula (1 unit = 10km).
+                -   Calculate the 'Actual_Distance_km' between 'Event_Coords' and 'NPC_Coords' using the existing planar x/y formula (1 unit = 10km). z identifies the map layer; this rule does not define vertical travel distance or cost.
                 -   Calculate the 'Information_Travel_Time_in_Minutes' = '(Actual_Distance_km / Speed_of_Method_kmh) * 60'.
                 -   Calculate the 'Arrival_Time' = 'Event_Time + Information_Travel_Time_in_Minutes'.
 
@@ -2384,8 +2384,8 @@ Each command is {"transferId":"unique-per-transfer-never-reused", "source":{"typ
             <Example id="InformationCausality_Example_1" type="good" contentType="log_and_json_snippet">
                 <Title>Example: Applying the Law of Information Causality (ABSOLUTE LAW 7.B)</Title>
                 <ScenarioContext>
-                    A 'worldEvent' "Pirate fleet conquers the Southern Port" was generated on Day 3, at 08:00 (480 minutes into the day, total campaign time: 3360 minutes). The port is on an island at coordinates {x: 50, y: 10}.
-                    The player is currently interacting with "Captain Valerius" on Day 3, at 14:00 (840 minutes into the day, total campaign time: 3720 minutes). The Captain is on a different island at the "Capital City", coordinates {x: 10, y: 10}.
+                    A 'worldEvent' "Pirate fleet conquers the Southern Port" was generated on Day 3, at 08:00 (480 minutes into the day, total campaign time: 3360 minutes). The port is on an island at coordinates {x: 50, y: 10, z: 0}.
+                    The player is currently interacting with "Captain Valerius" on Day 3, at 14:00 (840 minutes into the day, total campaign time: 3720 minutes). The Captain is on a different island at the "Capital City", coordinates {x: 10, y: 10, z: 0}.
                     The GM considers having Captain Valerius react to the news.
                 </ScenarioContext>
                 <LogOutput target="items_and_stat_calculations">
@@ -3353,7 +3353,7 @@ Each command is {"transferId":"unique-per-transfer-never-reused", "source":{"typ
 
                     "locationId": "(string, GUID) The unique ID of the current location.",
                     "name": "(string) Name of the current location. Translate.",
-                    "coordinates": { "x": "integer", "y": "integer" },
+                    "coordinates": { "x": "integer", "y": "integer", "z": "integer" },
                     "locationType": "'indoor' | 'outdoor'",
                     "biome": "(string, optional) MANDATORY if locationType is 'outdoor'. The biome type from Rule 20.5.",
                     "indoorType": "'Building' | 'CaveSystem' | 'Dungeon' | 'Vehicle' | 'UniqueIndoor', optional. Provides specific context for indoor locations.",
@@ -3445,14 +3445,16 @@ Each command is {"transferId":"unique-per-transfer-never-reused", "source":{"typ
                     "linkUpdates": [ 
                         { 
                             "sourceLocationId": "string", 
-                            "targetCoordinates": {"x": int, "y": int}, 
+                            "targetLocationId": "existing_destination_id_if_known",
+                            "targetCoordinates": {"x": int, "y": int, "z": int},
                             "updatedLink": { /* partial update fields for link */ } 
                         } 
                     ],
                     "linksToRemove": [
                         { 
                             "sourceLocationId": "string", 
-                            "targetCoordinates": {"x": int, "y": int} 
+                            "targetLocationId": "existing_destination_id_if_known",
+                            "targetCoordinates": {"x": int, "y": int, "z": int}
                         } 
                     ],
                     "threatsToAdd": [

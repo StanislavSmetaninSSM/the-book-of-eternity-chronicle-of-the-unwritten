@@ -10,6 +10,8 @@ import { experienceForLevelTransition } from './derivedStats.js';
 import { applyCooldownUses } from './combatCooldowns.js';
 import { asRecord } from './typeGuards';
 import { generateFactionColor } from './colorUtils';
+// @ts-ignore -- shared JS helpers
+import { coordinateKey, coordinateZ, normalizeCoordinates, sameHorizontalCoordinates } from './locationLinks.js';
 
 type TFunction = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -74,7 +76,8 @@ const arrayMergeConfig: Record<string, { idField: string, nameField?: string, co
         compositeKey: item => {
             if (item.targetLocationId) return `id:${item.targetLocationId}`;
             const coordinates = asRecord(item.targetCoordinates);
-            return `xy:${coordinates?.x},${coordinates?.y}`;
+            const key = coordinateKey(coordinates);
+            return key === null ? undefined : `xyz:${key}`;
         },
     },
     worldStateFlags: { idField: 'flagId', nameField: 'displayName' },
@@ -1074,9 +1077,13 @@ export const processAndApplyResponse = (
     const newLocationIds = new Set<string>();
     const newLocationTags = new Set<string>();
     asArray(mutableResponse.worldMapUpdates?.newLocations).forEach(location => {
-        if (!location?.coordinates || !Number.isFinite(location.coordinates.x) || !Number.isFinite(location.coordinates.y)) {
-            throw new Error(`New location "${location?.name || location?.initialId || 'unknown'}" has invalid or missing coordinates`);
+        const coordinates = location?.coordinates;
+        if (!coordinates || !Number.isFinite(coordinates.x) || !Number.isFinite(coordinates.y) ||
+            (coordinates.z !== undefined && !Number.isInteger(coordinates.z))) {
+            throw new Error(`New location "${location?.name || location?.initialId || 'unknown'}" has invalid or missing 3D coordinates`);
         }
+        // Preserve pre-z responses and old data as the default layer.
+        if (coordinates.z === undefined) coordinates.z = 0;
         if (location.locationId && (worldMap?.[location.locationId] || newLocationIds.has(location.locationId))) {
             throw new Error(`New location ID "${location.locationId}" already exists`);
         }
@@ -1229,6 +1236,34 @@ export const processAndApplyResponse = (
     const processedResponse = preProcessAndAssignIds(mutableResponse, baseState, worldMap);
     const changes = processedResponse;
 
+    const currentLocationUpdate = changes.currentLocationData;
+    if (currentLocationUpdate?.coordinates) {
+        const coordinates = currentLocationUpdate.coordinates;
+        if (!Number.isFinite(coordinates.x) || !Number.isFinite(coordinates.y) ||
+            (coordinates.z !== undefined && !Number.isInteger(coordinates.z))) {
+            throw new Error(`Current location "${currentLocationUpdate.name || currentLocationUpdate.locationId || 'unknown'}" has invalid 3D coordinates`);
+        }
+        const declaredLocation = asArray(changes.worldMapUpdates?.newLocations)
+            .find(location => location?.locationId === currentLocationUpdate.locationId);
+        const knownLocation = currentLocationUpdate.locationId === baseState.currentLocationData?.locationId
+            ? baseState.currentLocationData
+            : (currentLocationUpdate.locationId ? worldMap?.[currentLocationUpdate.locationId] : undefined);
+        const referenceLocation = declaredLocation || knownLocation;
+        if (referenceLocation) {
+            const referenceCoordinates = normalizeCoordinates(referenceLocation.coordinates);
+            if (!referenceCoordinates || !sameHorizontalCoordinates(coordinates, referenceCoordinates) ||
+                (coordinates.z !== undefined && coordinateKey(coordinates) !== coordinateKey(referenceCoordinates))) {
+                const referenceKind = declaredLocation ? 'new-location declaration' : 'known location';
+                throw new Error(`Current location "${currentLocationUpdate.name || currentLocationUpdate.locationId || 'unknown'}" has coordinates that conflict with its ${referenceKind}`);
+            }
+            // Keep the declared/known z when a partial legacy response gives only x/y.
+            if (coordinates.z === undefined) coordinates.z = coordinateZ(referenceCoordinates);
+        } else if (coordinates.z === undefined) {
+            // New current locations not repeated in worldMapUpdates still receive the legacy default layer.
+            coordinates.z = 0;
+        }
+    }
+
     // Clamping Faction Reputation
     if (changes.factionDataChanges) {
         asArray(changes.factionDataChanges).forEach(f => {
@@ -1296,7 +1331,7 @@ export const processAndApplyResponse = (
                     eventDescriptions: [],
                     activeThreats: [],
                     locationStorages: [],
-                    coordinates: newLocData.coordinates || { x: 0, y: 0},
+                    coordinates: newLocData.coordinates || { x: 0, y: 0, z: 0 },
                     locationType: newLocData.locationType || 'outdoor',
                     internalDifficultyProfile: newLocData.internalDifficultyProfile || { combat: 0, environment: 0, social: 0, exploration: 0 },
                     externalDifficultyProfile: newLocData.externalDifficultyProfile || { combat: 0, environment: 0, social: 0, exploration: 0 },

@@ -429,7 +429,7 @@ const LocationDetailsRenderer: React.FC<LocationDetailsProps> = (props) => {
             case 'Information': return (
                 <Section title={t("Information")} icon={InformationCircleIcon}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
-                        <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2"><MapPinIcon className="w-4 h-4" />{t("Coordinates")}</span><div className="text-right text-sm text-gray-200">{`(${location.coordinates?.x}, ${location.coordinates?.y})`}</div></div>
+                        <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2"><MapPinIcon className="w-4 h-4" />{t("Coordinates")}</span><div data-testid="location-coordinates" className="text-right text-sm text-gray-200">{`(${location.coordinates?.x}, ${location.coordinates?.y}, ${location.coordinates?.z ?? 0})`}</div></div>
                         <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2">{location.locationType === 'outdoor' ? <SunIcon className="w-4 h-4" /> : <BuildingOfficeIcon className="w-4 h-4" />}{t("Location Type")}</span><div className="text-right text-sm text-gray-200">{t(location.locationType)}</div></div>
                         {location.biome && <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2"><GlobeAltIcon className="w-4 h-4" />{t("Biome")}</span><div className="text-right text-sm text-gray-200">{t(location.biome)}</div></div>}
                         {location.indoorType && <div className="flex justify-between items-center py-1.5"><span className="text-sm font-medium text-gray-400 flex items-center gap-2"><HomeModernIcon className="w-4 h-4" />{t("Indoor Type")}</span><div className="text-right text-sm text-gray-200">{t(location.indoorType)}</div></div>}
@@ -458,7 +458,7 @@ const LocationDetailsRenderer: React.FC<LocationDetailsProps> = (props) => {
                                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
                                             <span><strong className="text-gray-500">{t("Type")}:</strong> {t(link.linkType)}</span>
                                             <span><strong className="text-gray-500">{t("State")}:</strong> {t(link.linkState)}</span>
-                                            <span><strong className="text-gray-500">{t("Coordinates")}:</strong> ({link.targetCoordinates.x}, {link.targetCoordinates.y})</span>
+                                            <span><strong className="text-gray-500">{t("Coordinates")}:</strong> ({link.targetCoordinates.x}, {link.targetCoordinates.y}, {link.targetCoordinates.z ?? 0})</span>
                                         </div>
                                         {(link.estimatedInternalDifficultyProfile || link.estimatedExternalDifficultyProfile) && playerCharacter && (
                                             <div className="pt-2 border-t border-gray-700/50 mt-2">
