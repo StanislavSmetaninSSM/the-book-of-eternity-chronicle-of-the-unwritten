@@ -383,11 +383,9 @@ function registerRelayMiddleware(server: { middlewares: { use: (handler: Connect
 const isPromptSourceUrl = (pathname: string): boolean => pathname.startsWith('/prompts/') && pathname.endsWith('.js');
 
 /**
- * The rulebook and the step guides are megabytes of template literals. Vite can do
- * nothing useful with them in dev: the transform pipeline leaves the code as it is and
- * still inlines a sourcemap that repeats the whole text, so the 697 kB first rulebook
- * section arrived as 4.2 MB and the guide as a whole as 20 MB — on the first turn of
- * every session, which is the documented way of running this game.
+ * The rulebook and the step guides are megabytes of template literals. Vite's dev
+ * transform inlines source maps that repeat this prose, multiplying each module response
+ * and the total guide download on the first turn of every session.
  *
  * These modules are therefore answered straight from disk. They can be: each one is
  * plain JavaScript whose only specifiers are relative paths with extensions, so the
@@ -441,7 +439,13 @@ export default defineConfig({
         // it touched, not the whole guide.
         manualChunks: (id) => {
           const section = /[\\/]prompts[\\/]mainPromptModule[\\/]section-(\d+)\.js$/.exec(id);
-          return section ? `game-master-guide-section-${section[1]}` : undefined;
+          if (section) return `game-master-guide-section-${section[1]}`;
+          // Keep static shell dictionaries separate while leaving the larger *_loc imports lazy.
+          if (/[\\/]utils[\\/]translations[\\/]ui[\\/]/.test(id)) return 'localization-ui';
+          const worldBase = /[\\/]utils[\\/]translations[\\/]worlds[\\/](?:[^\\/]+|(?:history|myths)[\\/][^\\/]+)\.ts$/.exec(id);
+          if (worldBase && !/[\\/]([^\\/]+)_loc\.ts$/.test(id)) return 'localization-world-base';
+          if (/[\\/]node_modules[\\/]react-dom[\\/]/.test(id)) return 'vendor-react-dom';
+          return undefined;
         },
       },
     },

@@ -1,5 +1,5 @@
 /**
- * Cuts the game-master rulebook into one file per top-level section.
+ * Cuts the game-master rulebook into bundle-friendly sections.
  *
  * The rulebook is a few megabytes of prose that every stage needs verbatim, so it
  * used to live in a single module the browser had to download and parse in one piece.
@@ -22,17 +22,18 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const monolithPath = path.join(repositoryRoot, 'prompts', 'mainPromptModule.js');
 const sectionDirectory = path.join(repositoryRoot, 'prompts', 'mainPromptModule');
 const testPath = path.join(repositoryRoot, 'scripts', 'prompt-separation.test.mjs');
-const MAX_SECTION_BYTES = 400 * 1024;
+const MAX_SECTION_BYTES = 240 * 1024;
 
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 
-/** A section may only begin on a top-level or first-level opening tag. */
-const isSectionStart = line => /^<[A-Za-z_]/.test(line) || /^ {4}<[A-Za-z_]/.test(line);
+/** A bundle section may begin at any line that starts an opening markup tag. */
+const isSectionStart = line => /^\s*<[A-Za-z_]/.test(line);
 
 const escape = text => text
   .replace(/\\/g, '\\\\')
   .replace(/`/g, '\\`')
   .replace(/\$\{/g, '\\${')
+  .replace(/ +(?=\r?(?:\n|$))/g, spaces => '\\x20'.repeat(spaces.length))
   .replace(/\r/g, '\\r');
 
 const readPinnedDigest = async () => {
