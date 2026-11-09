@@ -164,6 +164,31 @@ export function assessHierarchy(faction, subject) {
 }
 
 /**
+ * The gate a relationship is locked behind. #19.F writes the standing and the lock in one transaction
+ * and orders the standing clamped to the gate itself - "You MUST clamp the 'relationshipLevel' to the
+ * exact cap value" for a cap, "You MUST clamp the 'relationshipLevel' to this floor value" for a floor -
+ * so a locked person either stands at the gate or on the open side of it. A number past the gate is a
+ * state that transaction cannot produce, and the panel is left holding a standing the next turn clamps
+ * back without anyone asking.
+ *
+ * The other half of the rule is not read: the gate is meant to open again once the standing drops
+ * "significantly below" it, and the guide offers its own margin as an example ("e.g., by 15 or more
+ * points"). A boundary stated as an example is a judgement, and the client has no business second-
+ * guessing how far below the number the turn was meant to land.
+ */
+function assessGate(npc, subject, notes) {
+    const lock = npc?.relationshipLock;
+    if (!lock || typeof lock !== 'object' || lock.isLocked !== true) return;
+    const gate = statedNumber(lock.currentCap);
+    const standing = statedNumber(npc.relationshipLevel);
+    if (gate === null || standing === null) return;
+    const beyond = gate >= 0 ? standing > gate : standing < gate;
+    if (beyond) {
+        notes.push(worldNote('relationship_level_beyond_gate', subject, { subject, value: standing, gate }));
+    }
+}
+
+/**
  * A wound whose treatment reached what it needed: the rules make that the moment the state
  * changes, so a wound left where it was has either the wrong progress or the wrong threshold.
  */
@@ -211,6 +236,7 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
         const subject = npc.name || npc.NPCId || '?';
         assessTrackerInto(npc.currentActivity, subject, notes);
         assessStanding(npc.relationshipLevel, subject, notes);
+        assessGate(npc, subject, notes);
         assessWoundList(npc.wounds, subject, notes);
         // A person's own effects are read by the same reader the character sheet uses, so a buff
         // listed in the world and in the sheet cannot disagree about what it states.
