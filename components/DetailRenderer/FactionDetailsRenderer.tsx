@@ -8,6 +8,8 @@ import { Faction, NPC, PlayerCharacter, Project, CompletedProject, StructuredBon
 import { DetailRendererProps } from './types';
 import { useLocalization } from '../../context/LocalizationContext';
 import { locateFactionProject } from '../../utils/factionProjects';
+import { assessFactionArchive, assessHierarchy, rankRowKey } from '../../utils/worldAssessment.js';
+import { statedNumber } from '../../utils/effectAssessment.js';
 import SectionHeader from '../CharacterSheet/Shared/SectionHeader';
 import EditableField from './Shared/EditableField';
 import IdDisplay from './Shared/IdDisplay';
@@ -386,6 +388,14 @@ const CompletedProjectCard: React.FC<{ project: CompletedProject; onDelete?: () 
 
 const ProjectsView: React.FC<FactionDetailsProps> = (props) => {
     const { faction, allowHistoryManipulation, deleteFactionProject, deleteFactionCompletedProject, clearAllCompletedFactionProjects } = props;
+
+    // This tab is where the archive is read and deleted from, so the reader of finished work speaks
+    // here too and not only on the card: a record filed twice, or filed while it still runs, is exactly
+    // the record this list cannot reach.
+    const archiveNotes = useMemo(
+        () => assessFactionArchive(faction, faction.name || faction.factionId || '?').notes,
+        [faction],
+    );
     const { t } = useLocalization();
     const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
     const [projectToDelete, setProjectToDelete] = useState<Project | CompletedProject | null>(null);
@@ -433,6 +443,9 @@ const ProjectsView: React.FC<FactionDetailsProps> = (props) => {
                 )}
                 {activeTab === 'completed' && (
                     <section>
+                        {archiveNotes.length > 0 && (
+                            <WorldStateNotes notes={archiveNotes} compact className="mb-3" />
+                        )}
                         {(faction.completedProjects || []).length > 0 ? (
                             <div className="space-y-3">
                             {(faction.completedProjects || []).map(proj => (
@@ -579,6 +592,26 @@ const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: 
 
     const branches = useMemo(() => faction.ranks?.branches || [], [faction.ranks]);
 
+    // The ladder is read by the reader the card of the faction already uses, so the two views of one
+    // hierarchy quote the same impossible threshold instead of arguing about it twice.
+    const subject = faction.name || faction.factionId || '?';
+    const hierarchy = useMemo(() => assessHierarchy(faction, subject), [faction, subject]);
+    // What the next rank of the branch asks for: the number #21.2.5 promotes against, and the number the
+    // rows of the ladder used to carry as if it were their own. A rank at the top is promised nothing.
+    const nextRank = useMemo(() => {
+        if (!characterRank) return null;
+        for (const branch of branches) {
+            const ranks = Array.isArray(branch.ranks) ? branch.ranks : [];
+            const at = ranks.findIndex(r => r.rankNameMale === characterRank || r.rankNameFemale === characterRank);
+            if (at < 0) continue;
+            const next = ranks[at + 1];
+            const threshold = next ? statedNumber(next.requiredReputation) : null;
+            if (threshold === null) return null;
+            return { name: next.rankNameMale || next.rankNameFemale, threshold };
+        }
+        return null;
+    }, [branches, characterRank]);
+
     const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
 
     useEffect(() => {
@@ -612,6 +645,14 @@ const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: 
                             {t('Branch')}: <span className="font-semibold">{t(branches.find(b => b.branchId === characterBranchId)?.displayName)}</span>
                         </p>
                     )}
+                    {nextRank && (
+                        <p className="text-xs text-cyan-200/80 mt-1" data-testid="faction-next-rank">
+                            {t('next rank {rank} at {rep} reputation', { rank: nextRank.name, rep: nextRank.threshold })}
+                        </p>
+                    )}
+                    {hierarchy.aboutHeld.length > 0 && (
+                        <WorldStateNotes notes={hierarchy.aboutHeld} compact className="mt-1" />
+                    )}
                 </div>
             )}
             
@@ -633,12 +674,19 @@ const HierarchyView: React.FC<Omit<FactionDetailsProps, 'faction'> & { faction: 
                 <div className="space-y-3 animate-fade-in-down-fast">
                     {activeBranch.ranks.map((rank, index) => {
                         const isCharacterRank = (characterRank === rank.rankNameMale || characterRank === rank.rankNameFemale) && (characterBranchId === activeBranch.branchId);
+                        const threshold = statedNumber(rank.requiredReputation);
+                        const rowNotes = hierarchy.byRank[rankRowKey(activeBranch.branchId, index)] || [];
                         return (
                             <div key={rank.rankNameMale + index} className={`p-4 rounded-lg border-l-4 transition-all ${isCharacterRank ? 'bg-cyan-900/20 border-cyan-500 shadow-lg' : 'bg-gray-800/40 border-gray-600'}`}>
                                 <div className="flex justify-between items-baseline flex-wrap gap-x-4">
                                         <h4 className="font-semibold text-gray-200">{rank.rankNameMale} / {rank.rankNameFemale}</h4>
-                                        <p className="text-sm text-gray-400">{t('next rank at {rep} reputation', { rep: rank.requiredReputation })}</p>
+                                        {threshold !== null && (
+                                            <p className="text-sm text-gray-400">{t('requires {rep} reputation', { rep: threshold })}</p>
+                                        )}
                                 </div>
+                                {rowNotes.length > 0 && (
+                                    <WorldStateNotes notes={rowNotes} compact className="mt-1" />
+                                )}
                                 {rank.unlockCondition && (
                                     <p className="text-xs text-yellow-400/80 italic mt-1">{t('unlock_condition')}: {t(rank.unlockCondition)}</p>
                                 )}

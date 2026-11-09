@@ -1774,10 +1774,17 @@ export const processAndApplyResponse = (
         if(npc) { 
             let newLevel = c.newRelationshipLevel;
             
-            // Programmatic Clamping for Locked Reputation
+            // Programmatic Clamping for Locked Reputation. A positive cap and a negative floor gate the
+            // same number from opposite sides - #19.F orders the level clamped to the value in both of
+            // its scenarios, and only the ceiling was enforced while the interface already explains a
+            // floor as a lock.
             if (npc.relationshipLock?.isLocked && npc.relationshipLock.currentCap !== undefined) {
-                if (newLevel > npc.relationshipLock.currentCap) {
-                    newLevel = npc.relationshipLock.currentCap;
+                const gate = npc.relationshipLock.currentCap;
+                if (gate >= 0 && newLevel > gate) {
+                    newLevel = gate;
+                }
+                if (gate < 0 && newLevel < gate) {
+                    newLevel = gate;
                 }
             }
 
@@ -2373,7 +2380,13 @@ export const processAndApplyResponse = (
                     npc.attitude = getAttitudeAtLevel(cap);
                     
                     // Add a system log to inform the user
-                    logsToAdd.push(t('relationship_locked_auto_msg', { name: npc.name, cap: cap }));
+                    // The player is told the number the gate stopped them at, and - when the turn carried
+                    // them past it - how much of the way was not counted. A card that reads 100 after a
+                    // turn that earned 130 is only honest while it names both.
+                    const claimed = typeof newRel === 'number' ? newRel : Number(newRel);
+                    logsToAdd.push(Number.isFinite(claimed) && claimed > cap
+                        ? t('relationship_locked_auto_msg_over', { name: npc.name, cap, claimed, excess: claimed - cap })
+                        : t('relationship_locked_auto_msg', { name: npc.name, cap: cap }));
                 }
             }
         }

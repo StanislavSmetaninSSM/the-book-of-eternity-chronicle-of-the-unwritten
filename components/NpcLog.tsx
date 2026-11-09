@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { NPC, Faction, GameState, GameSettings, ImageCacheEntry, DetailData} from '../types';
-import { UserGroupIcon, UserIcon, UserPlusIcon, ArrowsUpDownIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { UserGroupIcon, UserIcon, UserPlusIcon, ArrowsUpDownIcon, TrashIcon, LockClosedIcon } from '@heroicons/react/24/outline';
 import { CheckIcon, Bars3Icon } from '@heroicons/react/24/solid';
 import { useLocalization } from '../context/LocalizationContext';
 import ImageRenderer from './ImageRenderer';
@@ -132,6 +132,15 @@ const NpcItem: React.FC<{
                             <p className={`text-xs mt-1 font-semibold ${attitudeColorMap[npc.attitude || ''] || 'text-gray-400'}`}>
                                 {t('Relationship')}: {npc.relationshipLevel} {npc.attitude ? `(${t(npc.attitude)})` : ''}
                             </p>
+                            {npc.relationshipLock?.isLocked && npc.relationshipLock.currentCap !== undefined && (
+                                // The gate is why the number above stops moving, so it is said where the
+                                // number is watched - with the wording the character sheet already uses,
+                                // rather than a second name for one fact.
+                                <p className="text-xs text-gray-500 mt-0.5 flex items-start gap-1" data-testid="npc-relationship-gate">
+                                    <LockClosedIcon className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                    <span>{t(npc.relationshipLock.currentCap >= 0 ? 'relationship_locked_positive_cap' : 'relationship_locked_negative_floor', { cap: npc.relationshipLock.currentCap })}</span>
+                                </p>
+                            )}
                         </div>
                     ) : npc.attitude && (
                         <p className={`text-xs mt-1 font-semibold ${attitudeColorMap[npc.attitude] || 'text-gray-400'}`}>{t('Attitude')}: {t(npc.attitude)}</p>

@@ -13,7 +13,10 @@
     "test": "node --test scripts/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "e2e:fixtures": "node scripts/make-e2e-fixtures.mjs"
+    "e2e:fixtures": "node scripts/make-e2e-fixtures.mjs",
+    "sandbox:chromium": "node scripts/prepare-sandbox-chromium.mjs",
+    "sandbox:setup": "npm i --no-save @sparticuz/chromium puppeteer-core && node scripts/prepare-sandbox-chromium.mjs",
+    "test:e2e:sandbox": "npm run build && playwright test --config=playwright.sandbox.config.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

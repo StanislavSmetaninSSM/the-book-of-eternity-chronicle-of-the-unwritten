@@ -68,6 +68,13 @@ For `kind: "arena-gm-image"`, generate the requested image using an available Ar
 
 For the app's protocol and deployment details, see [docs/ARENA-DEPLOYMENT.md](docs/ARENA-DEPLOYMENT.md) and [docs/arena-gm-relay.md](docs/arena-gm-relay.md).
 
+## Running the browser tests in a sandbox
+
+- `npm ci && npm run sandbox:setup` prepares what a fresh sandbox has no network for: the Playwright browser CDN is unreachable there, so the script installs the npm-hosted Chromium substitute and unpacks the shared libraries it needs into `/tmp`. Repeat it after a sandbox reset; it exits at once when the browser is already in place.
+- `npm run test:e2e:sandbox` builds the app and runs the same specs against that Chromium through `playwright.sandbox.config.ts`. Run the build - the specs read the produced bundle, and a stale one passes tests the source would fail.
+- CI keeps using `playwright.config.ts` with a regular Playwright browser, so neither script belongs to the pipeline.
+- The substitute is deliberately not a project dependency: it exists only where the download is blocked, and `package-lock.json` stays free of it. Install it with `--no-save`, which is what `sandbox:setup` does.
+
 <!-- spec-kit-superpowers-bridge:arena:start -->
 ## Spec Kit Superpowers Bridge (Arena)
 

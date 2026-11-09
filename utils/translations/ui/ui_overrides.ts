@@ -227,6 +227,7 @@ export const ui = {
     'Hide UI': 'Hide UI',
     'Show UI': 'Show UI',
     'relationship_locked_auto_msg': '[System] Reputation with {name} has been capped at {cap}. Progress is locked until a breakthrough event occurs.',
+    'relationship_locked_auto_msg_over': '[System] Reputation with {name} has been capped at {cap} - the turn brought it to {claimed}, and the {excess} above the cap is not counted. Progress is locked until a breakthrough event occurs.',
     'breakthrough_bonus': 'Breakthrough Bonus: +{value} Reputation',
   },
   ru: {
@@ -460,6 +461,7 @@ export const ui = {
     'Hide UI': 'Скрыть интерфейс',
     'Show UI': 'Показать интерфейс',
     'relationship_locked_auto_msg': '[Система] Репутация с {name} ограничена уровнем {cap}. Прогресс заблокирован до наступления события прорыва.',
+    'relationship_locked_auto_msg_over': '[Система] Репутация с {name} ограничена уровнем {cap} — ход довёл её до {claimed}, сверх предела {excess} не засчитывается. Прогресс заблокирован до наступления события прорыва.',
     'breakthrough_bonus': 'Бонус прорыва: +{value} к репутации',
   }
 }

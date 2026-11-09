@@ -4,7 +4,8 @@
  * The game master advances projects, off-screen activities, reputations, wounds and effects; the
  * interface stores the numbers it is given. Some of those numbers are bounded by the rules
  * themselves: effort written into a tracker cannot fall below zero, a task whose spent time reached its cost is a
- * finished task, the reputation scale runs from -400 to +400, and a wound whose treatment reached
+ * finished task, the reputation scale runs from -400 to +400, a wound whose treatment reached,
+ * and every threshold a rank of a faction ladder asks its member to have.
  * `progressNeeded` has changed state rather than stopped at the threshold. Effects are read by
  * `./effectAssessment.js`, which the NPC lists below feed, and every chronicle entry of a
  * location is read for the stamp #18.A.0 puts at its head. A record that contradicts one of those
@@ -14,7 +15,9 @@
  * Nothing is repaired here. The client cannot know which of the two numbers the turn meant to
  * write: the cost, or the time spent against it. So it names the pair and stays quiet about
  * everything it cannot read off the state - judgement calls (an abandoned project, a bonus the GM
- * granted by hand) are never reported, and a number that is absent is not treated as a zero.
+ * granted by hand) are never reported, and a number that is absent is not treated as a zero. The order
+ * a ladder is written in is a decision of the same kind - #21.2.6 puts a rank granted for a great deed
+ * where the story wants it - so a threshold is read on its own and the sequence between them is not.
  */
 
 import { assessEffects, groupNotesBySubject, statedNumber } from './effectAssessment.js';
@@ -90,6 +93,213 @@ function assessStanding(value, subject, notes) {
 }
 
 /**
+ * One rank of a ladder, read for the two facts its threshold owes the rules. #21.2.5 asks that the
+ * requirements of the ranks "be appropriately spaced out along the new -400 to +400 scale", and its
+ * point 4 promotes whoever reaches them: a threshold outside the scale can never be met, because the
+ * standing of a character is capped to those same ends, and a threshold that is not a number cannot
+ * be compared against anything - the panel would only be quoting it.
+ */
+function assessRankRow(rank) {
+    if (!rank || typeof rank !== 'object') return null;
+    const threshold = statedNumber(rank.requiredReputation);
+    if (threshold === null) return { kind: 'rank_threshold_unreadable' };
+    if (threshold < REPUTATION_FLOOR || threshold > REPUTATION_CEILING) {
+        return { kind: 'rank_threshold_out_of_range', value: threshold };
+    }
+    return null;
+}
+
+/** A row of the ladder is addressed by the branch it is listed under and its place in that branch. */
+export const rankRowKey = (branchId, index) => `${branchId || 'ranks'}#${index}`;
+
+/**
+ * The hierarchy of a faction as the panel of that faction shows it: a line per rank row that states an
+ * impossible threshold, kept with the row it belongs to, and one line about the rank the faction claims
+ * its member holds. The marks are attached row by row because a ladder is long, and a reader has to see
+ * which rank is being questioned; the held rank is a fact about the whole faction, so it comes back apart.
+ *
+ * The sequence of the thresholds is not read. #21.2.5 asks them to increase, while #21.2.6 takes a rank
+ * awarded for a great deed and inserts it "usually at the very top" with the reputation the player already
+ * has as its threshold - a rank placed above a higher number is the story deciding, and two ranks at one
+ * number are legal for the same reason, since the promotion the rules ask for is a narrative event.
+ * @param {object} [faction]
+ * @param {string} subject
+ * @returns {{ notes: StateNote[], byRank: Record<string, StateNote[]>, aboutHeld: StateNote[] }}
+ */
+export function assessHierarchy(faction, subject) {
+    const notes = [];
+    /** @type {Record<string, StateNote[]>} */
+    const byRank = {};
+    const aboutHeld = [];
+    const branches = Array.isArray(faction?.ranks?.branches) ? faction.ranks.branches : [];
+    const names = [];
+    // The ids the ladder and the member are allowed to point at. Both are dereferenced by the panel:
+    // `playerBranch` picks whose ladder is drawn, and the paths a junction rank offers are looked up
+    // in the same list - a name missing from it reaches the player as a raw id.
+    const branchIds = new Set(branches.map(b => (typeof b?.branchId === 'string' ? b.branchId.trim() : '')).filter(Boolean));
+    for (const branch of branches) {
+        if (!branch || typeof branch !== 'object') continue;
+        const ranks = Array.isArray(branch.ranks) ? branch.ranks : [];
+        ranks.forEach((rank, index) => {
+            if (rank && typeof rank === 'object') names.push(rank.rankNameMale, rank.rankNameFemale);
+            const found = assessRankRow(rank);
+            if (!found) return;
+            const rankName = String(rank.rankNameMale || rank.rankNameFemale || '?').trim() || '?';
+            const params = found.kind === 'rank_threshold_out_of_range'
+                ? { subject, rank: rankName, value: found.value, floor: REPUTATION_FLOOR, ceiling: REPUTATION_CEILING }
+                : { subject, rank: rankName };
+            const note = worldNote(found.kind, subject, params);
+            notes.push(note);
+            const key = rankRowKey(branch.branchId, index);
+            if (!byRank[key]) byRank[key] = [];
+            byRank[key].push(note);
+        });
+    }
+    // The two questions a junction rank owes the shape of a rank: an array of offered branches "MUST be present if
+    // 'isJunctionPoint' is 'true'", and it has to hold the 'branchId' values the faction defines - a
+    // choice offered to the player that leads to no branch is not a choice.
+    const pathsOf = rank => (Array.isArray(rank?.availableBranches) ? rank.availableBranches : [])
+        .map(id => (typeof id === 'string' ? id.trim() : '')).filter(Boolean);
+    for (const branch of branches) {
+        const ranks = Array.isArray(branch?.ranks) ? branch.ranks : [];
+        ranks.forEach((rank, index) => {
+            if (!rank || typeof rank !== 'object' || rank.isJunctionPoint !== true) return;
+            const key = rankRowKey(branch.branchId, index);
+            const push = (kind, params) => {
+                const note = worldNote(kind, subject, { subject, ...params });
+                notes.push(note);
+                if (!byRank[key]) byRank[key] = [];
+                byRank[key].push(note);
+            };
+            const paths = pathsOf(rank);
+            const rankName = String(rank.rankNameMale || rank.rankNameFemale || '?').trim() || '?';
+            if (paths.length === 0) {
+                push('junction_without_paths', { rank: rankName });
+                return;
+            }
+            const missing = paths.filter(id => !branchIds.has(id));
+            if (missing.length > 0) {
+                push('junction_branch_unknown', { rank: rankName, branches: missing.join(', ') });
+            }
+        });
+    }
+    const held = typeof faction?.playerRank === 'string' ? faction.playerRank.trim() : '';
+    // A name the ladder does not carry. #21.2.6 requires a rank it invents to be inserted into the array,
+    // and the panel highlights a row by that very name, so a title outside the ladder has nothing to
+    // point at. An empty ladder says nothing of its own: no rank was ever promised there.
+    if (held && names.filter(Boolean).length > 0 && !names.filter(Boolean).includes(held)) {
+        const note = worldNote('rank_unlisted', subject, { subject, rank: held });
+        notes.push(note);
+        aboutHeld.push(note);
+    }
+    // Which ladder the member walks is named by an id, and #23.A keeps it a branch of this faction (or
+    // null while the core one is walked): a name the faction does not have leaves the panel choosing a
+    // different branch to show, while the save still says something else.
+    const walked = typeof faction?.playerBranch === 'string' ? faction.playerBranch.trim() : '';
+    if (walked && branchIds.size > 0 && !branchIds.has(walked)) {
+        const note = worldNote('branch_unknown', subject, { subject, branch: walked });
+        notes.push(note);
+        aboutHeld.push(note);
+    }
+    return { notes, byRank, aboutHeld };
+}
+
+/**
+ * The gate a relationship is locked behind. #19.F writes the standing and the lock in one transaction
+ * and orders the standing clamped to the gate itself - "You MUST clamp the 'relationshipLevel' to the
+ * exact cap value" for a cap, "You MUST clamp the 'relationshipLevel' to this floor value" for a floor -
+ * so a locked person either stands at the gate or on the open side of it. A number past the gate is a
+ * state that transaction cannot produce, and the panel is left holding a standing the next turn clamps
+ * back without anyone asking.
+ *
+ * The other half of the rule is not read: the gate is meant to open again once the standing drops
+ * "significantly below" it, and the guide offers its own margin as an example ("e.g., by 15 or more
+ * points"). A boundary stated as an example is a judgement, and the client has no business second-
+ * guessing how far below the number the turn was meant to land.
+ */
+function assessGate(npc, subject, notes) {
+    const lock = npc?.relationshipLock;
+    if (!lock || typeof lock !== 'object' || lock.isLocked !== true) return;
+    const gate = statedNumber(lock.currentCap);
+    const standing = statedNumber(npc.relationshipLevel);
+    if (gate === null || standing === null) return;
+    const beyond = gate >= 0 ? standing > gate : standing < gate;
+    if (beyond) {
+        notes.push(worldNote('relationship_level_beyond_gate', subject, { subject, value: standing, gate }));
+    }
+}
+
+/**
+ * The archive of finished work: the completed projects of a faction, and the completed activities of a
+ * threat and of a person. Three questions are asked, each answered by the shape the record itself
+ * declares, and none of them by the story.
+ *
+ * - The ending has to be one of the values the record holds. `finalState` is written as
+ *   "'Completed' | 'Abandoned'" and `finalOutcome` as "'Success' | 'SuccessWithComplication' | 'Failure'",
+ *   and the interface reads those words by name (`project.activeState === 'Abandoned'`, the "Completed"
+ *   and "Abandoned" counts of the archive) - so a third word is an ending nothing acts on, and an entry
+ *   with no ending at all is work filed away without ever being finished.
+ * - One identity is filed away once. A faction resolves a project by its `projectId` before it looks at
+ *   the archive (`locateFactionProject`), so the second copy of an id is a record the player cannot reach.
+ * - A record is either running or filed. The delayed completion command can leave the same id in both
+ *   lists of one owner, and that is the state where the panel counts the project twice and the delete
+ *   handler takes the running copy.
+ *
+ * Repetition is not duplication: an activity can be carried out twice, so the reader compares identities
+ * only when both sides state one (`activityId` is optional, legacy records omit it) and never the
+ * wording of a name. The archive of a location is not read: no panel lists those entries, so a mark
+ * there would have nowhere to sit.
+ */
+const ARCHIVE_ENDINGS = ['Completed', 'Abandoned'];
+const ARCHIVE_OUTCOMES = ['Success', 'SuccessWithComplication', 'Failure'];
+
+/** A record is addressed by the id it carries, and by name in the line the panel shows. */
+const statedIdOf = (record, field) => (typeof record?.[field] === 'string' && record[field].trim() ? record[field].trim() : null);
+const namedAs = (record, fallback) => String(record?.projectName ?? record?.activityName ?? '').trim() || fallback;
+
+function assessArchiveInto(subject, archive, { active, idField, stateField, allowed, label, notes }) {
+    const filed = Array.isArray(archive) ? archive : [];
+    const times = new Map();
+    for (const record of filed) {
+        if (!record || typeof record !== 'object') continue;
+        const name = namedAs(record, label);
+        const stated = typeof record[stateField] === 'string' ? record[stateField].trim() : '';
+        if (!stated) {
+            notes.push(worldNote('archive_state_missing', subject, { subject, record: name }));
+        } else if (!allowed.includes(stated)) {
+            notes.push(worldNote('archive_state_unknown', subject, { subject, record: name, value: stated, allowed: allowed.join(' / ') }));
+        }
+        const id = statedIdOf(record, idField);
+        if (id) times.set(id, (times.get(id) || 0) + 1);
+    }
+    for (const [id, count] of times) {
+        if (count > 1) notes.push(worldNote('archive_filed_twice', subject, { subject, id, times: count }));
+    }
+    const running = Array.isArray(active) ? active : (active ? [active] : []);
+    for (const record of running) {
+        const id = statedIdOf(record, idField);
+        if (!id || !times.has(id)) continue;
+        notes.push(worldNote('archive_running_and_filed', subject, { subject, record: namedAs(record, label), id }));
+    }
+}
+
+/**
+ * The finished work of one faction, read on its own: for the tab that lists the archive and offers to
+ * delete from it, where the row a player points at is the row the line has to describe.
+ * @param {object} [faction]
+ * @param {string} subject
+ * @returns {{ notes: StateNote[] }}
+ */
+export function assessFactionArchive(faction, subject) {
+    const notes = [];
+    assessArchiveInto(subject, faction?.completedProjects, {
+        active: faction?.activeProjects, idField: 'projectId', stateField: 'finalState',
+        allowed: ARCHIVE_ENDINGS, label: 'project', notes,
+    });
+    return { notes };
+}
+
+/**
  * A wound whose treatment reached what it needed: the rules make that the moment the state
  * changes, so a wound left where it was has either the wrong progress or the wrong threshold.
  */
@@ -128,13 +338,25 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
             assessTrackerInto(project, subject, notes);
         }
         assessStanding(faction.reputation, subject, notes);
+        assessArchiveInto(subject, faction.completedProjects, {
+            active: faction.activeProjects, idField: 'projectId', stateField: 'finalState',
+            allowed: ARCHIVE_ENDINGS, label: 'project', notes,
+        });
+        // The ladder is read by the same reader the hierarchy view uses, so a card of a faction and the
+        // view of its ranks cannot disagree about which threshold is impossible.
+        notes.push(...assessHierarchy(faction, subject).notes);
     }
     for (const npc of Array.isArray(npcs) ? npcs : []) {
         if (!npc || typeof npc !== 'object') continue;
         const subject = npc.name || npc.NPCId || '?';
         assessTrackerInto(npc.currentActivity, subject, notes);
         assessStanding(npc.relationshipLevel, subject, notes);
+        assessGate(npc, subject, notes);
         assessWoundList(npc.wounds, subject, notes);
+        assessArchiveInto(subject, npc.completedActivities, {
+            active: npc.currentActivity ? [npc.currentActivity] : [], idField: 'activityId',
+            stateField: 'finalOutcome', allowed: ARCHIVE_OUTCOMES, label: 'activity', notes,
+        });
         // A person's own effects are read by the same reader the character sheet uses, so a buff
         // listed in the world and in the sheet cannot disagree about what it states.
         notes.push(...assessEffects({
@@ -144,6 +366,11 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
     for (const threat of Array.isArray(threats) ? threats : []) {
         if (!threat || typeof threat !== 'object') continue;
         assessTrackerInto(threat.currentActivity, threat.name || threat.threatId || '?', notes);
+        const threatSubject = threat.name || threat.threatId || '?';
+        assessArchiveInto(threatSubject, threat.completedActivities, {
+            active: threat.currentActivity ? [threat.currentActivity] : [], idField: 'activityId',
+            stateField: 'finalState', allowed: ARCHIVE_ENDINGS, label: 'activity', notes,
+        });
     }
 
     return { notes, bySubject: groupNotesBySubject(notes) };
