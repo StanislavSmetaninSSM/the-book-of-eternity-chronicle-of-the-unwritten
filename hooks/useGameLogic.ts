@@ -6,9 +6,7 @@ import { beginGameplayMutation, gameplayMutationCommitted, guardGameplayActions 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { GameState, GameContext, ChatMessage, SaveFile, WorldState, GameSettings, Language, DBSaveSlotInfo, PlayerCharacter, CharacterCreationData, Location, NPC, Faction, Wound, WorldStateFlag, UnlockedMemory, Effect, LocationStorage, Item, CompletedActivity, Cinematic, CinemaFrame, ImageCacheEntry, DayInfo, Month } from '../types';
 import { useLocalization } from '../context/LocalizationContext';
-import { GoogleGenAI, Modality } from "@google/genai";
 import { getCinemaPrompt, getContinueCinemaPrompt } from '../prompts/cinemaPrompt';
-import narrativeStyleGuide from '../prompts/narrativeStyleGuide.js';
 
 import { formatError, isAbortError } from '../utils/errorUtils';
 
@@ -40,11 +38,11 @@ import type { CrashRecoveryMarker, CrashRecoveryMetadata, CrashRecoveryReason, I
 import { initializeAndPreviewSound, playNotificationSound } from '../utils/soundManager';
 import { createNewPlayerCharacter } from '../utils/characterManager';
 import { generateFactionColor } from '../utils/colorUtils';
-import { executeCancellableJsonGeneration } from '../utils/gemini';
 import { gameData } from '../utils/localizationGameData';
 import { translate } from '../utils/localization';
 import { cancelInterruptedArenaGmRequest, requestArenaGmImage } from '../utils/arenaGmRelay';
 import { notifyError } from '../utils/notifications';
+import { executeCancellableJsonGeneration } from '../utils/gemini';
 
 
 
@@ -69,7 +67,10 @@ const asArray = <T>(value: T | T[] | null | undefined): T[] => {
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-
+const loadNarrativeStyleGuide = async () => {
+    const narrativeModule = await import('../prompts/narrativeStyleGuide.js');
+    return narrativeModule.default;
+};
 
 export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
     // Party transitions must change the active player, turn number and history
@@ -1941,6 +1942,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         cinemaAbortControllerRef.current = cinemaController;
 
         try {
+            const narrativeStyleGuide = await loadNarrativeStyleGuide();
             const cinemaContext = {
                 ...gameContextRef.current,
                 superInstructions: narrativeStyleGuide.getGuide() + '\n' + superInstructions,
@@ -2024,6 +2026,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
         cinemaAbortControllerRef.current = cinemaController;
 
         try {
+            const narrativeStyleGuide = await loadNarrativeStyleGuide();
             const cinemaContext = {
                 ...gameContextRef.current,
                 superInstructions: narrativeStyleGuide.getGuide() + '\n' + superInstructions,
@@ -2213,6 +2216,7 @@ export function useGameLogic({ language, setLanguage }: UseGameLogicProps) {
             if (!cinematic) throw new Error("Cinematic not found");
 
             const fullText = cinematic.frames.map(f => f.subtitle).join('\n');
+            const { GoogleGenAI, Modality } = await import('@google/genai');
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const response = await ai.models.generateContent({
                 model: "gemini-2.5-flash-preview-tts",

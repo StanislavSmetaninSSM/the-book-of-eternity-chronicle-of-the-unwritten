@@ -14,6 +14,12 @@ import { section as section4 } from './section-04.js';
 import { section as section5 } from './section-05.js';
 import { section as section6 } from './section-06.js';
 import { section as section7 } from './section-07.js';
+import { section as section8 } from './section-08.js';
+import { section as section9 } from './section-09.js';
+import { section as section10 } from './section-10.js';
+import { section as section11 } from './section-11.js';
+import { section as section12 } from './section-12.js';
+import { section as section13 } from './section-13.js';
 
 /**
  * The complete guide. It is deliberately independent of the turn: every {{context.path}}
@@ -31,4 +37,10 @@ export const GAME_MASTER_GUIDE_SECTIONS = [
   section5,
   section6,
   section7,
+  section8,
+  section9,
+  section10,
+  section11,
+  section12,
+  section13,
 ];

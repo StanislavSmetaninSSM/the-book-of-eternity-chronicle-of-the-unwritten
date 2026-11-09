@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { getGameMasterGuideRules } from '../prompts/mainPromptModule.js';
+import { getGameMasterGuideRules, GAME_MASTER_GUIDE_SECTIONS } from '../prompts/mainPromptModule.js';
 import { withGameContext } from '../utils/relayPromptContext.js';
 
 const sha256 = text => createHash('sha256').update(text).digest('hex');
@@ -10,6 +10,12 @@ const branch = (guide, condition) => {
   assert(guide.includes(opening));
   return guide.split(opening)[1].split('\n    </ConditionalInstruction>')[0];
 };
+
+test('each rulebook module stays below the JavaScript chunk budget', () => {
+  const sizes = GAME_MASTER_GUIDE_SECTIONS.map(section => Buffer.byteLength(section, 'utf8'));
+  const largest = Math.max(...sizes);
+  assert.ok(largest <= 300 * 1024, `largest prompt section is ${(largest / 1024).toFixed(1)} KiB`);
+});
 
 test('the entire guide is invariant across different turn contexts', () => {
   const guide = getGameMasterGuideRules();
