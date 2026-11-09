@@ -133,6 +133,10 @@ export function assessHierarchy(faction, subject) {
     const aboutHeld = [];
     const branches = Array.isArray(faction?.ranks?.branches) ? faction.ranks.branches : [];
     const names = [];
+    // The ids the ladder and the member are allowed to point at. Both are dereferenced by the panel:
+    // `playerBranch` picks whose ladder is drawn, and the paths a junction rank offers are looked up
+    // in the same list - a name missing from it reaches the player as a raw id.
+    const branchIds = new Set(branches.map(b => (typeof b?.branchId === 'string' ? b.branchId.trim() : '')).filter(Boolean));
     for (const branch of branches) {
         if (!branch || typeof branch !== 'object') continue;
         const ranks = Array.isArray(branch.ranks) ? branch.ranks : [];
@@ -151,12 +155,49 @@ export function assessHierarchy(faction, subject) {
             byRank[key].push(note);
         });
     }
+    // The two questions a junction rank owes the shape of a rank: an array of offered branches "MUST be present if
+    // 'isJunctionPoint' is 'true'", and it has to hold the 'branchId' values the faction defines - a
+    // choice offered to the player that leads to no branch is not a choice.
+    const pathsOf = rank => (Array.isArray(rank?.availableBranches) ? rank.availableBranches : [])
+        .map(id => (typeof id === 'string' ? id.trim() : '')).filter(Boolean);
+    for (const branch of branches) {
+        const ranks = Array.isArray(branch?.ranks) ? branch.ranks : [];
+        ranks.forEach((rank, index) => {
+            if (!rank || typeof rank !== 'object' || rank.isJunctionPoint !== true) return;
+            const key = rankRowKey(branch.branchId, index);
+            const push = (kind, params) => {
+                const note = worldNote(kind, subject, { subject, ...params });
+                notes.push(note);
+                if (!byRank[key]) byRank[key] = [];
+                byRank[key].push(note);
+            };
+            const paths = pathsOf(rank);
+            const rankName = String(rank.rankNameMale || rank.rankNameFemale || '?').trim() || '?';
+            if (paths.length === 0) {
+                push('junction_without_paths', { rank: rankName });
+                return;
+            }
+            const missing = paths.filter(id => !branchIds.has(id));
+            if (missing.length > 0) {
+                push('junction_branch_unknown', { rank: rankName, branches: missing.join(', ') });
+            }
+        });
+    }
     const held = typeof faction?.playerRank === 'string' ? faction.playerRank.trim() : '';
     // A name the ladder does not carry. #21.2.6 requires a rank it invents to be inserted into the array,
     // and the panel highlights a row by that very name, so a title outside the ladder has nothing to
     // point at. An empty ladder says nothing of its own: no rank was ever promised there.
     if (held && names.filter(Boolean).length > 0 && !names.filter(Boolean).includes(held)) {
         const note = worldNote('rank_unlisted', subject, { subject, rank: held });
+        notes.push(note);
+        aboutHeld.push(note);
+    }
+    // Which ladder the member walks is named by an id, and #23.A keeps it a branch of this faction (or
+    // null while the core one is walked): a name the faction does not have leaves the panel choosing a
+    // different branch to show, while the save still says something else.
+    const walked = typeof faction?.playerBranch === 'string' ? faction.playerBranch.trim() : '';
+    if (walked && branchIds.size > 0 && !branchIds.has(walked)) {
+        const note = worldNote('branch_unknown', subject, { subject, branch: walked });
         notes.push(note);
         aboutHeld.push(note);
     }

@@ -141,3 +141,72 @@ test('the rule the reader leans on is still the rule in the guide', () => {
   assert.ok(lines.some(line => line.includes('-400 to +400 scale')),
     'and still places those thresholds on the scale the reader compares them against');
 });
+
+const of = (branches, extra = {}) => faction({ branches }, { playerRank: null, playerBranch: null, ...extra });
+
+test('the branches a ladder and a member point at have to be branches of that faction', () => {
+  const core = branch([rank('Initiate', 125), rank('Veteran', 275)], 'core');
+  const arms = branch([rank('Shield', 200)], 'arms');
+
+  assert.deepEqual(assessHierarchy(of([core, arms], { playerRank: 'Initiate', playerBranch: 'arms' }), 'Mill Watch').notes, [],
+    'a member walking a branch the faction owns says nothing');
+  assert.deepEqual(assessHierarchy(of([core], { playerRank: 'Initiate', playerBranch: null }), 'Mill Watch').notes, [],
+    "and #23.A keeps the core branch written as no branch at all, so that is the same state");
+
+  const ghost = assessHierarchy(of([core, arms], { playerRank: 'Initiate', playerBranch: 'cult' }), 'Mill Watch');
+  assert.deepEqual(ghost.notes.map(note => note.key), ['world_notes_branch_unknown'], 'a name the faction does not have is named');
+  assert.deepEqual(ghost.notes[0].params, { subject: 'Mill Watch', branch: 'cult' }, 'with the id the save carries');
+  assert.deepEqual(ghost.aboutHeld.map(note => note.kind), ['branch_unknown'],
+    'and it is a fact about the member, so it is returned beside the held rank, not on a row');
+
+  const blank = assessHierarchy(of([core, arms], { playerRank: 'Initiate', playerBranch: '   ' }), 'Mill Watch');
+  assert.deepEqual(blank.notes, [], 'a branch written as blanks is no branch, which is what the core one means');
+});
+
+test('a junction rank owes the player a list of branches that exist', () => {
+  const junction = (name, requiredReputation = 200, availableBranches) => ({
+    ...rank(name, requiredReputation), isJunctionPoint: true,
+    ...(availableBranches === undefined ? {} : { availableBranches }),
+  });
+
+  const silent = assessHierarchy(of([branch([junction('Elder')], 'core')]), 'Mill Watch');
+  assert.deepEqual(silent.notes.map(note => `${note.kind}:${note.params.rank}`), ['junction_without_paths:Elder'],
+    "the array is a duty of a junction point, and no array is no choice");
+  assert.deepEqual(Object.keys(silent.byRank), [rankRowKey('core', 0)], 'and the mark sits on the row that offers nothing');
+  assert.deepEqual(silent.aboutHeld, [], 'while the box above the ladder keeps only the facts about the member');
+
+  const empty = assessHierarchy(of([branch([junction('Elder', 200, [])], 'core')]), 'Mill Watch');
+  assert.deepEqual(empty.notes.map(note => note.kind), ['junction_without_paths'], 'an empty list is the same silence in another spelling');
+
+  const dangling = assessHierarchy(of([
+    branch([junction('Elder', 200, ['arms', 'void', 'abyss'])], 'core'),
+    branch([rank('Shield', 200)], 'arms'),
+  ]), 'Mill Watch');
+  assert.deepEqual(dangling.notes.map(note => note.kind), ['junction_branch_unknown'], 'the path that leads to a real branch is not reported');
+  assert.equal(dangling.notes[0].params.branches, 'void, abyss', 'and the paths that lead nowhere are named together, as one row of the ladder');
+
+  const optional = assessHierarchy(of([branch([{ ...rank('Initiate', 125), availableBranches: ['ghost'] }], 'core')]), 'Mill Watch');
+  assert.deepEqual(optional.notes, [], 'a rank that is not a junction point owes no list, however odd the list it carries looks');
+
+  const piled = assessHierarchy(of([branch([junction('Elder', 900)], 'core')]), 'Watch');
+  assert.deepEqual(piled.notes.map(note => note.kind), ['rank_threshold_out_of_range', 'junction_without_paths'],
+    'two facts about one rank are two lines, not one blurred');
+  assert.equal(piled.byRank[rankRowKey('core', 0)].length, 2, 'and both hang on the same row');
+});
+
+test('the panel dereferences the references the reader checks', () => {
+  const view = readFileSync(new URL('../components/DetailRenderer/FactionDetailsRenderer.tsx', import.meta.url), 'utf8');
+  const strings = readFileSync(new URL('../utils/translations/ui/common.ts', import.meta.url), 'utf8');
+
+  assert.match(view, /availableBranch \? t\(availableBranch\.displayName\) : branchId/,
+    'an offered path with no branch behind it reaches the player as a raw id - which is why the line about it exists');
+  for (const key of ['branch_unknown', 'junction_without_paths', 'junction_branch_unknown']) {
+    assert.equal((strings.match(new RegExp(`"world_notes_${key}"`, 'g')) || []).length, 2, `the line for ${key} exists in both locales`);
+  }
+
+  const lines = getGameMasterGuideRules().split('\n').map(line => line.trim());
+  assert.ok(lines.some(line => line.includes("MUST be present if 'isJunctionPoint' is 'true'")),
+    'the guide still makes the list a duty of a junction point');
+  assert.ok(lines.some(line => line.includes("It is 'null' while the player is on the 'coreBranch'")),
+    ' and still keeps the core branch a blank, not an id, for the member');
+});
