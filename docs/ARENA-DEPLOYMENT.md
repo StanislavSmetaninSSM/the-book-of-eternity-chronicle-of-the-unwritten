@@ -99,3 +99,13 @@ The current relay is Vite middleware backed by local filesystem I/O. It runs in 
 - **Request waits indefinitely:** the app cannot invoke the agent. Start/continue an Arena agent interaction and have it process the pending file.
 - **Response ignored:** verify exact `correlationId`, `kind`, `protocolVersion: 1`, valid JSON, and that the response is in `.arena-gm-relay/responses/<correlationId>.json` (or, for a legacy client only, `.arena-gm-relay/response.json`).
 - **Image not displayed:** verify the PNG exists at the correlation-ID path and is readable before writing the image response envelope.
+
+### If Arena resets the sandbox
+
+A sandbox reset can stop the preview and watcher and remove transient files such as `.arena-gm-relay/` and `/tmp`. It does not by itself establish whether browser saves survived: IndexedDB/localStorage belong to a browser profile and origin, so check the same preview origin first. A newly issued preview URL may use a different origin and therefore a different browser storage namespace.
+
+1. Confirm the current Git branch and worktree; preserve tracked and uncommitted work. Do not use `git reset --hard`, `git clean`, or switch branches as recovery steps.
+2. Check whether the original preview and watcher are actually down, inspect `/__arena_gm/status`, and check for the active `pending.json`, request queue, and matching response files. Reuse healthy processes; restart only the missing service.
+3. If the preview is gone, rebuild only if dependencies are absent (`npm ci`), then start `npm run arena:preview`. Start `npm run relay:watch` only if the watcher is needed. Keep using the existing preview origin when possible.
+4. If a pending packet remains, continue that exact correlation ID. If it does not, do not invent a GM response or claim that the turn finished. Check the same-origin start screen for **Resume** or **Load Autosave**. Resume may replay the submitted action from its pre-turn baseline, repeating completed stages; it cannot continue an intermediate stage exactly.
+5. If the reset may affect unsaved browser state, warn the player before causing a reload or changing preview origin. Explain only what was verified, offer the recovery options actually available, and ask how to proceed if no recovery point exists. Do not promise browser data was retained or erased without checking.

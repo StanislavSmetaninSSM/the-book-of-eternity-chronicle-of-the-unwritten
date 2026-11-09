@@ -64,14 +64,6 @@ export default function ArenaGmRelayPanel(): React.ReactNode {
   };
 
   return <>
-    <div
-      className="fixed top-4 left-4 z-[1200] rounded-lg border border-emerald-400 bg-emerald-950/90 px-3 py-2 text-xs font-semibold text-emerald-200 shadow-lg backdrop-blur"
-      title={t('relay_title')}
-      role="status"
-    >
-      {t('relay_active_badge')}
-    </div>
-
     {pending && <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 p-3 md:p-8">
       <section className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-cyan-700 bg-gray-950 text-gray-100 shadow-2xl">
         <header className="flex items-center justify-between border-b border-gray-800 p-4">

@@ -37,6 +37,7 @@ test('the game core is fetched only once a chronicle starts', async ({ page }) =
 
   await importSave(page, fixture);
   await expect(page.getByTestId('chat-window')).toBeVisible();
+  await expect(page.getByText('Arena GM: active', { exact: true })).toHaveCount(0);
   await expect.poll(() => hostChunks().length, { message: 'the game host should load with the chronicle' }).toBe(1);
   const hostBody = await page.evaluate(async source => (await fetch(source)).text(), hostChunks()[0]);
   expect(hostBody).toContain(CORE_MARKER);

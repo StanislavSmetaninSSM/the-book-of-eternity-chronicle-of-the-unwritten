@@ -12,7 +12,7 @@ test('the attack command is translated for both languages', async () => {
     assert.equal(translate('ru', 'attack_command', { name: 'Goblin' }), 'Я атакую Goblin');
 
     // The relay panel reaches English players as well.
-    for (const key of ['relay_title', 'relay_hint', 'relay_apply', 'relay_active_badge']) {
+    for (const key of ['relay_title', 'relay_hint', 'relay_apply']) {
       assert.notEqual(translate('en', key), key, `${key} must exist in English`);
       assert.notEqual(translate('ru', key), key, `${key} must exist in Russian`);
       assert.notEqual(translate('ru', key), translate('en', key), `${key} must be translated`);
