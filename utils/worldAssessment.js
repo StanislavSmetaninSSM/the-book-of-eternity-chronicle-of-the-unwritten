@@ -230,6 +230,76 @@ function assessGate(npc, subject, notes) {
 }
 
 /**
+ * The archive of finished work: the completed projects of a faction, and the completed activities of a
+ * threat and of a person. Three questions are asked, each answered by the shape the record itself
+ * declares, and none of them by the story.
+ *
+ * - The ending has to be one of the values the record holds. `finalState` is written as
+ *   "'Completed' | 'Abandoned'" and `finalOutcome` as "'Success' | 'SuccessWithComplication' | 'Failure'",
+ *   and the interface reads those words by name (`project.activeState === 'Abandoned'`, the "Completed"
+ *   and "Abandoned" counts of the archive) - so a third word is an ending nothing acts on, and an entry
+ *   with no ending at all is work filed away without ever being finished.
+ * - One identity is filed away once. A faction resolves a project by its `projectId` before it looks at
+ *   the archive (`locateFactionProject`), so the second copy of an id is a record the player cannot reach.
+ * - A record is either running or filed. The delayed completion command can leave the same id in both
+ *   lists of one owner, and that is the state where the panel counts the project twice and the delete
+ *   handler takes the running copy.
+ *
+ * Repetition is not duplication: an activity can be carried out twice, so the reader compares identities
+ * only when both sides state one (`activityId` is optional, legacy records omit it) and never the
+ * wording of a name. The archive of a location is not read: no panel lists those entries, so a mark
+ * there would have nowhere to sit.
+ */
+const ARCHIVE_ENDINGS = ['Completed', 'Abandoned'];
+const ARCHIVE_OUTCOMES = ['Success', 'SuccessWithComplication', 'Failure'];
+
+/** A record is addressed by the id it carries, and by name in the line the panel shows. */
+const statedIdOf = (record, field) => (typeof record?.[field] === 'string' && record[field].trim() ? record[field].trim() : null);
+const namedAs = (record, fallback) => String(record?.projectName ?? record?.activityName ?? '').trim() || fallback;
+
+function assessArchiveInto(subject, archive, { active, idField, stateField, allowed, label, notes }) {
+    const filed = Array.isArray(archive) ? archive : [];
+    const times = new Map();
+    for (const record of filed) {
+        if (!record || typeof record !== 'object') continue;
+        const name = namedAs(record, label);
+        const stated = typeof record[stateField] === 'string' ? record[stateField].trim() : '';
+        if (!stated) {
+            notes.push(worldNote('archive_state_missing', subject, { subject, record: name }));
+        } else if (!allowed.includes(stated)) {
+            notes.push(worldNote('archive_state_unknown', subject, { subject, record: name, value: stated, allowed: allowed.join(' / ') }));
+        }
+        const id = statedIdOf(record, idField);
+        if (id) times.set(id, (times.get(id) || 0) + 1);
+    }
+    for (const [id, count] of times) {
+        if (count > 1) notes.push(worldNote('archive_filed_twice', subject, { subject, id, times: count }));
+    }
+    const running = Array.isArray(active) ? active : (active ? [active] : []);
+    for (const record of running) {
+        const id = statedIdOf(record, idField);
+        if (!id || !times.has(id)) continue;
+        notes.push(worldNote('archive_running_and_filed', subject, { subject, record: namedAs(record, label), id }));
+    }
+}
+
+/**
+ * The finished work of one faction, read on its own: for the tab that lists the archive and offers to
+ * delete from it, where the row a player points at is the row the line has to describe.
+ * @param {object} [faction]
+ * @param {string} subject
+ * @returns {{ notes: StateNote[] }}
+ */
+export function assessFactionArchive(faction, subject) {
+    const notes = [];
+    assessArchiveInto(subject, faction?.completedProjects, {
+        active: faction?.activeProjects, idField: 'projectId', stateField: 'finalState',
+        allowed: ARCHIVE_ENDINGS, label: 'project', notes,
+    });
+    return { notes };
+}
+
+/**
  * A wound whose treatment reached what it needed: the rules make that the moment the state
  * changes, so a wound left where it was has either the wrong progress or the wrong threshold.
  */
@@ -268,6 +338,10 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
             assessTrackerInto(project, subject, notes);
         }
         assessStanding(faction.reputation, subject, notes);
+        assessArchiveInto(subject, faction.completedProjects, {
+            active: faction.activeProjects, idField: 'projectId', stateField: 'finalState',
+            allowed: ARCHIVE_ENDINGS, label: 'project', notes,
+        });
         // The ladder is read by the same reader the hierarchy view uses, so a card of a faction and the
         // view of its ranks cannot disagree about which threshold is impossible.
         notes.push(...assessHierarchy(faction, subject).notes);
@@ -279,6 +353,10 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
         assessStanding(npc.relationshipLevel, subject, notes);
         assessGate(npc, subject, notes);
         assessWoundList(npc.wounds, subject, notes);
+        assessArchiveInto(subject, npc.completedActivities, {
+            active: npc.currentActivity ? [npc.currentActivity] : [], idField: 'activityId',
+            stateField: 'finalOutcome', allowed: ARCHIVE_OUTCOMES, label: 'activity', notes,
+        });
         // A person's own effects are read by the same reader the character sheet uses, so a buff
         // listed in the world and in the sheet cannot disagree about what it states.
         notes.push(...assessEffects({
@@ -288,6 +366,11 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
     for (const threat of Array.isArray(threats) ? threats : []) {
         if (!threat || typeof threat !== 'object') continue;
         assessTrackerInto(threat.currentActivity, threat.name || threat.threatId || '?', notes);
+        const threatSubject = threat.name || threat.threatId || '?';
+        assessArchiveInto(threatSubject, threat.completedActivities, {
+            active: threat.currentActivity ? [threat.currentActivity] : [], idField: 'activityId',
+            stateField: 'finalState', allowed: ARCHIVE_ENDINGS, label: 'activity', notes,
+        });
     }
 
     return { notes, bySubject: groupNotesBySubject(notes) };

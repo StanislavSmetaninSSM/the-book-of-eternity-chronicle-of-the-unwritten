@@ -8,7 +8,7 @@ import { Faction, NPC, PlayerCharacter, Project, CompletedProject, StructuredBon
 import { DetailRendererProps } from './types';
 import { useLocalization } from '../../context/LocalizationContext';
 import { locateFactionProject } from '../../utils/factionProjects';
-import { assessHierarchy, rankRowKey } from '../../utils/worldAssessment.js';
+import { assessFactionArchive, assessHierarchy, rankRowKey } from '../../utils/worldAssessment.js';
 import { statedNumber } from '../../utils/effectAssessment.js';
 import SectionHeader from '../CharacterSheet/Shared/SectionHeader';
 import EditableField from './Shared/EditableField';
@@ -388,6 +388,14 @@ const CompletedProjectCard: React.FC<{ project: CompletedProject; onDelete?: () 
 
 const ProjectsView: React.FC<FactionDetailsProps> = (props) => {
     const { faction, allowHistoryManipulation, deleteFactionProject, deleteFactionCompletedProject, clearAllCompletedFactionProjects } = props;
+
+    // This tab is where the archive is read and deleted from, so the reader of finished work speaks
+    // here too and not only on the card: a record filed twice, or filed while it still runs, is exactly
+    // the record this list cannot reach.
+    const archiveNotes = useMemo(
+        () => assessFactionArchive(faction, faction.name || faction.factionId || '?').notes,
+        [faction],
+    );
     const { t } = useLocalization();
     const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
     const [projectToDelete, setProjectToDelete] = useState<Project | CompletedProject | null>(null);
@@ -435,6 +443,9 @@ const ProjectsView: React.FC<FactionDetailsProps> = (props) => {
                 )}
                 {activeTab === 'completed' && (
                     <section>
+                        {archiveNotes.length > 0 && (
+                            <WorldStateNotes notes={archiveNotes} compact className="mb-3" />
+                        )}
                         {(faction.completedProjects || []).length > 0 ? (
                             <div className="space-y-3">
                             {(faction.completedProjects || []).map(proj => (
