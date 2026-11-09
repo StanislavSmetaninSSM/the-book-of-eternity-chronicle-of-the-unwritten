@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "arena:preview": "npm run build && vite preview --host 0.0.0.0",
     "relay:watch": "node scripts/arena-gm-mailbox-watcher.mjs",
+    "bridge:local": "node scripts/arena-chat-bridge.mjs",
     "test:relay": "node --test scripts/arena-gm-relay.integration.test.mjs",
     "test": "node --test scripts/*.test.mjs",
     "typecheck": "tsc --noEmit",

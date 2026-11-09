@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Book of Eternity Bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="mark">B</div>
+      <div><h1>Book of Eternity Bridge</h1><p>Local mailbox · manually approved</p></div>
+    </header>
+    <label for="token">Pairing token</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token from npm run bridge:local">
+    <div class="actions">
+      <button id="save" class="primary">Save &amp; test</button>
+      <button id="clear" class="secondary" type="button">Forget</button>
+    </div>
+    <output id="status" aria-live="polite">Not connected</output>
+    <p class="notice">The extension can read the current game request, read verified rule excerpts, and submit one correlated game response. It has no shell, general file, or desktop access. Review each call before running it.</p>
+    <footer>Local endpoint: <code>127.0.0.1:8765</code></footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

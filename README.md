@@ -47,6 +47,7 @@ npm run preview -- --host 0.0.0.0
 
 - [Arena deployment and setup](docs/ARENA-DEPLOYMENT.md)
 - [Relay protocol and safety notes](docs/arena-gm-relay.md)
+- [Local Arena Chat browser bridge (MVP)](docs/arena-chat-bridge.md)
 
 ## Notes
 
