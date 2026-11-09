@@ -5,9 +5,8 @@ import { defineConfig } from '@playwright/test';
  * Config for environments without the Playwright browser download and without the system
  * NSS libraries (the Arena sandbox). Prepare a Chromium first:
  *
- *   npm i --no-save @sparticuz/chromium puppeteer-core
- *   node scripts/prepare-sandbox-chromium.mjs
- *   LD_LIBRARY_PATH=/tmp/al2023/lib npx playwright test --config=playwright.sandbox.config.ts
+ *   npm ci && npm run sandbox:setup        # once per fresh sandbox
+ *   npm run test:e2e:sandbox
  *
  * CI keeps using `playwright.config.ts` with a regular Playwright browser.
  */
