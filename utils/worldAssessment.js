@@ -4,7 +4,8 @@
  * The game master advances projects, off-screen activities, reputations, wounds and effects; the
  * interface stores the numbers it is given. Some of those numbers are bounded by the rules
  * themselves: effort written into a tracker cannot fall below zero, a task whose spent time reached its cost is a
- * finished task, the reputation scale runs from -400 to +400, and a wound whose treatment reached
+ * finished task, the reputation scale runs from -400 to +400, a wound whose treatment reached,
+ * and every threshold a rank of a faction ladder asks its member to have.
  * `progressNeeded` has changed state rather than stopped at the threshold. Effects are read by
  * `./effectAssessment.js`, which the NPC lists below feed, and every chronicle entry of a
  * location is read for the stamp #18.A.0 puts at its head. A record that contradicts one of those
@@ -14,7 +15,9 @@
  * Nothing is repaired here. The client cannot know which of the two numbers the turn meant to
  * write: the cost, or the time spent against it. So it names the pair and stays quiet about
  * everything it cannot read off the state - judgement calls (an abandoned project, a bonus the GM
- * granted by hand) are never reported, and a number that is absent is not treated as a zero.
+ * granted by hand) are never reported, and a number that is absent is not treated as a zero. The order
+ * a ladder is written in is a decision of the same kind - #21.2.6 puts a rank granted for a great deed
+ * where the story wants it - so a threshold is read on its own and the sequence between them is not.
  */
 
 import { assessEffects, groupNotesBySubject, statedNumber } from './effectAssessment.js';
@@ -90,6 +93,77 @@ function assessStanding(value, subject, notes) {
 }
 
 /**
+ * One rank of a ladder, read for the two facts its threshold owes the rules. #21.2.5 asks that the
+ * requirements of the ranks "be appropriately spaced out along the new -400 to +400 scale", and its
+ * point 4 promotes whoever reaches them: a threshold outside the scale can never be met, because the
+ * standing of a character is capped to those same ends, and a threshold that is not a number cannot
+ * be compared against anything - the panel would only be quoting it.
+ */
+function assessRankRow(rank) {
+    if (!rank || typeof rank !== 'object') return null;
+    const threshold = statedNumber(rank.requiredReputation);
+    if (threshold === null) return { kind: 'rank_threshold_unreadable' };
+    if (threshold < REPUTATION_FLOOR || threshold > REPUTATION_CEILING) {
+        return { kind: 'rank_threshold_out_of_range', value: threshold };
+    }
+    return null;
+}
+
+/** A row of the ladder is addressed by the branch it is listed under and its place in that branch. */
+export const rankRowKey = (branchId, index) => `${branchId || 'ranks'}#${index}`;
+
+/**
+ * The hierarchy of a faction as the panel of that faction shows it: a line per rank row that states an
+ * impossible threshold, kept with the row it belongs to, and one line about the rank the faction claims
+ * its member holds. The marks are attached row by row because a ladder is long, and a reader has to see
+ * which rank is being questioned; the held rank is a fact about the whole faction, so it comes back apart.
+ *
+ * The sequence of the thresholds is not read. #21.2.5 asks them to increase, while #21.2.6 takes a rank
+ * awarded for a great deed and inserts it "usually at the very top" with the reputation the player already
+ * has as its threshold - a rank placed above a higher number is the story deciding, and two ranks at one
+ * number are legal for the same reason, since the promotion the rules ask for is a narrative event.
+ * @param {object} [faction]
+ * @param {string} subject
+ * @returns {{ notes: StateNote[], byRank: Record<string, StateNote[]>, aboutHeld: StateNote[] }}
+ */
+export function assessHierarchy(faction, subject) {
+    const notes = [];
+    /** @type {Record<string, StateNote[]>} */
+    const byRank = {};
+    const aboutHeld = [];
+    const branches = Array.isArray(faction?.ranks?.branches) ? faction.ranks.branches : [];
+    const names = [];
+    for (const branch of branches) {
+        if (!branch || typeof branch !== 'object') continue;
+        const ranks = Array.isArray(branch.ranks) ? branch.ranks : [];
+        ranks.forEach((rank, index) => {
+            if (rank && typeof rank === 'object') names.push(rank.rankNameMale, rank.rankNameFemale);
+            const found = assessRankRow(rank);
+            if (!found) return;
+            const rankName = String(rank.rankNameMale || rank.rankNameFemale || '?').trim() || '?';
+            const params = found.kind === 'rank_threshold_out_of_range'
+                ? { subject, rank: rankName, value: found.value, floor: REPUTATION_FLOOR, ceiling: REPUTATION_CEILING }
+                : { subject, rank: rankName };
+            const note = worldNote(found.kind, subject, params);
+            notes.push(note);
+            const key = rankRowKey(branch.branchId, index);
+            if (!byRank[key]) byRank[key] = [];
+            byRank[key].push(note);
+        });
+    }
+    const held = typeof faction?.playerRank === 'string' ? faction.playerRank.trim() : '';
+    // A name the ladder does not carry. #21.2.6 requires a rank it invents to be inserted into the array,
+    // and the panel highlights a row by that very name, so a title outside the ladder has nothing to
+    // point at. An empty ladder says nothing of its own: no rank was ever promised there.
+    if (held && names.filter(Boolean).length > 0 && !names.filter(Boolean).includes(held)) {
+        const note = worldNote('rank_unlisted', subject, { subject, rank: held });
+        notes.push(note);
+        aboutHeld.push(note);
+    }
+    return { notes, byRank, aboutHeld };
+}
+
+/**
  * A wound whose treatment reached what it needed: the rules make that the moment the state
  * changes, so a wound left where it was has either the wrong progress or the wrong threshold.
  */
@@ -128,6 +202,9 @@ export function assessWorld({ factions = [], npcs = [], threats = [] } = {}) {
             assessTrackerInto(project, subject, notes);
         }
         assessStanding(faction.reputation, subject, notes);
+        // The ladder is read by the same reader the hierarchy view uses, so a card of a faction and the
+        // view of its ranks cannot disagree about which threshold is impossible.
+        notes.push(...assessHierarchy(faction, subject).notes);
     }
     for (const npc of Array.isArray(npcs) ? npcs : []) {
         if (!npc || typeof npc !== 'object') continue;
