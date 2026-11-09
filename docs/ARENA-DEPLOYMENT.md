@@ -2,6 +2,8 @@
 
 This is a practical setup guide for rebuilding the Arena-adapted game from the repository. The Arena game-master connection is a **manual, file-based relay**. It is not an Arena agent plugin or background invocation API: the browser cannot invoke/wake an agent. The agent must be asked to handle mailbox files in the same workspace while the game is waiting.
 
+For a local player's computer, an optional loopback-only Chrome/Chromium adapter can move mailbox packets to Arena Chat with manual approval: [Local Arena Chat browser bridge (MVP)](arena-chat-bridge.md). The bridge is not yet verified against the current Agent Mode interface.
+
 ## 1. Start the app
 
 From the repository root in an Arena terminal:

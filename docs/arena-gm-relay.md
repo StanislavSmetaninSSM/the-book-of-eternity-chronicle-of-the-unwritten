@@ -1,5 +1,7 @@
 # Arena GM Relay protocol
 
+For an optional local Chrome/Chromium adapter between a player's computer and Arena Chat, see [Local Arena Chat browser bridge](arena-chat-bridge.md). It is a narrow, manually approved bridge; it does not replace or make the existing relay autonomous.
+
 The current follow-up work and acceptance criteria for combat consequences and the living world are documented in [combat-world-progression-spec.md](combat-world-progression-spec.md).
 
 The relay lets the Arena conversation agent act as the RPG game master without a separate text-model API. It uses the project workspace as a temporary mailbox, served to the browser through Vite development middleware. The app cannot trigger or wake the agent: a user/active Arena agent turn must handle mailbox requests. For setup and exact file workflows, see [ARENA-DEPLOYMENT.md](ARENA-DEPLOYMENT.md).
